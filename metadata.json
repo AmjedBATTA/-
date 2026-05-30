@@ -1,0 +1,6 @@
+{
+  "name": "Capsula Iraq",
+  "description": "منصة كبسولة الدوائية المتكاملة لربط الصيدليات بمذاخر ومستودعات الأدوية في العراق B2B",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

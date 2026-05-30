@@ -1,0 +1,170 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- GLOBAL SAFETY NET ---
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- REUSABLE SECURITY PRIMITIVES & HELPERS ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- DATA ENTITY SCHEMAS & SANITIZATION CONTROLS ---
+
+    function isValidUser(data) {
+      return data.uid == request.auth.uid
+        && data.email is string
+        && data.email.size() <= 128
+        && data.pharmacyName is string
+        && data.pharmacyName.size() <= 256
+        && data.keys().hasAll(['uid', 'email', 'pharmacyName', 'createdAt'])
+        && data.keys().size() >= 4;
+    }
+
+    function isValidMedicine(data, userId) {
+      return data.id is string
+        && data.id.size() <= 128
+        && data.nameAr is string
+        && data.nameAr.size() <= 256
+        && data.nameEn is string
+        && data.nameEn.size() <= 256
+        && data.price is int
+        && data.price >= 0
+        && data.availableQuantity is int
+        && data.availableQuantity >= 0
+        && data.status is string
+        && data.userId == userId
+        && data.keys().hasAll(['id', 'nameAr', 'nameEn', 'price', 'availableQuantity', 'status', 'userId']);
+    }
+
+    function isValidB2BOrder(data, userId) {
+      return data.id is string
+        && data.id.size() <= 128
+        && data.warehouseName is string
+        && data.warehouseName.size() <= 256
+        && data.totalAmount is int
+        && data.totalAmount >= 0
+        && data.status is string
+        && data.userId == userId
+        && data.keys().hasAll(['id', 'date', 'warehouseName', 'totalAmount', 'status', 'userId']);
+    }
+
+    function isValidSaleRecord(data, userId) {
+      return data.invoiceId is string
+        && data.invoiceId.size() <= 128
+        && data.total is int
+        && data.total >= 0
+        && data.customerName is string
+        && data.customerName.size() <= 256
+        && data.isControlled is bool
+        && data.userId == userId
+        && data.keys().hasAll(['invoiceId', 'timestamp', 'total', 'customerName', 'isControlled', 'userId']);
+    }
+
+    function isValidControlledPrescription(data, userId) {
+      return data.id is string
+        && data.id.size() <= 128
+        && data.patientName is string
+        && data.patientName.size() <= 256
+        && data.doctorName is string
+        && data.doctorName.size() <= 256
+        && data.medicineName is string
+        && data.medicineName.size() <= 256
+        && data.quantity is int
+        && data.quantity >= 1
+        && data.userId == userId
+        && data.keys().hasAll(['id', 'patientName', 'doctorName', 'medicineName', 'quantity', 'userId']);
+    }
+
+    function isValidTeamMember(data, userId) {
+      return data.id is string
+        && data.id.size() <= 128
+        && data.name is string
+        && data.name.size() <= 256
+        && data.role is string
+        && data.role.size() <= 128
+        && data.userId == userId
+        && data.keys().hasAll(['id', 'name', 'role', 'userId']);
+    }
+
+    // --- SECURED USER MATCH BLOCKS ---
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if isOwner(userId) && isValidUser(incoming()) && (
+        incoming().diff(existing()).affectedKeys().hasOnly(['pharmacyName', 'licenseNumber', 'governorate'])
+      );
+      allow delete: if false; // Pharmacy profiles are immutable once registered
+
+      // --- INVENTORY SUBCOLLECTION ---
+      match /inventory/{medicineId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(medicineId) && isValidMedicine(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(medicineId) && isValidMedicine(incoming(), userId) && (
+          // Action: Stock Take / Refill (Modifies stock count or price)
+          incoming().diff(existing()).affectedKeys().hasOnly(['availableQuantity', 'price', 'status', 'updatedAt']) ||
+          // Action: Rename or edit clinical metadata
+          incoming().diff(existing()).affectedKeys().hasOnly(['nameAr', 'nameEn', 'scientificName', 'activeIngredient', 'category', 'status', 'warehouse'])
+        );
+        allow delete: if isOwner(userId);
+      }
+
+      // --- B2B ORDERS SUBCOLLECTION ---
+      match /b2bOrders/{orderId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(orderId) && isValidB2BOrder(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(orderId) && isValidB2BOrder(incoming(), userId) && (
+          // Action: Status cancellation or shipping movement update
+          incoming().diff(existing()).affectedKeys().hasOnly(['status'])
+        );
+        allow delete: if false; // Audit logs should not be modified
+      }
+
+      // --- SALES LEDGER SUBCOLLECTION ---
+      match /salesLedger/{invoiceId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(invoiceId) && isValidSaleRecord(incoming(), userId);
+        allow update: if false; // Invoices are legally immutable financial sheets
+        allow delete: if false; // Ledger rules require zero deletions
+      }
+
+      // --- CONTROLLED NARCOTIC PRESCRIPTIONS SUBCOLLECTION ---
+      match /narcoticPrescriptions/{prescriptionId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(prescriptionId) && isValidControlledPrescription(incoming(), userId);
+        allow update: if false; // Monitored narcotic records must never be altered once registered
+        allow delete: if false; // Controlled audits are immutable
+      }
+
+      // --- TEAM MEMBERS SUBCOLLECTION ---
+      match /teamMembers/{memberId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(memberId) && isValidTeamMember(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(memberId) && isValidTeamMember(incoming(), userId) && (
+          // Action: Promote staff or change duty role
+          incoming().diff(existing()).affectedKeys().hasOnly(['role', 'license', 'name'])
+        );
+        allow delete: if isOwner(userId); // Permit full roster pruning
+      }
+    }
+  }
+}

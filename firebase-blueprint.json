@@ -1,0 +1,300 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Registered pharmacist or pharmacy owner user profile",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Unique Firebase Authentication UID of the user"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Email address of the pharmacist"
+        },
+        "pharmacyName": {
+          "type": "string",
+          "description": "Name of the pharmacist's pharmacy in Iraq"
+        },
+        "licenseNumber": {
+          "type": "string",
+          "description": "Pharmacist syndicate license number for MOH validation"
+        },
+        "governorate": {
+          "type": "string",
+          "description": "Iraq governorate where the pharmacy resides"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the user account was initialized"
+        }
+      },
+      "required": ["uid", "email", "pharmacyName", "createdAt"]
+    },
+    "Medicine": {
+      "title": "Medicine Stock Item",
+      "description": "Stock medicine item stored in the pharmacy inventory",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique medicine ID"
+        },
+        "nameAr": {
+          "type": "string",
+          "description": "Arabic brand name of the drug"
+        },
+        "nameEn": {
+          "type": "string",
+          "description": "English brand name of the drug"
+        },
+        "scientificName": {
+          "type": "string",
+          "description": "Scientific chemical compound name"
+        },
+        "activeIngredient": {
+          "type": "string",
+          "description": "Arabic active chemical ingredients"
+        },
+        "category": {
+          "type": "string",
+          "description": "Therapeutic or clinical classification"
+        },
+        "warehouse": {
+          "type": "string",
+          "description": "Source scientific office or drug warehouse in Iraq"
+        },
+        "price": {
+          "type": "integer",
+          "description": "Sale price in Iraqi Dinars (IQD) per unit"
+        },
+        "availableQuantity": {
+          "type": "integer",
+          "description": "Current on-hand physical stock quantity in the pharmacy"
+        },
+        "status": {
+          "type": "string",
+          "description": "Stock status code (available, low, unavailable)"
+        },
+        "expiryDate": {
+          "type": "string",
+          "format": "date",
+          "description": "Expected batch expiry date"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Owner pharmacist UID"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the stock or details were modified"
+        }
+      },
+      "required": ["id", "nameAr", "nameEn", "price", "availableQuantity", "status", "userId"]
+    },
+    "B2BOrder": {
+      "title": "B2B Supplier Order",
+      "description": "B2B wholesale restocking order placed with scientific offices or warehouses",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique supply order tracking ID (e.g., CAP-xxxxx)"
+        },
+        "date": {
+          "type": "string",
+          "format": "date",
+          "description": "Date of placing the order"
+        },
+        "warehouseName": {
+          "type": "string",
+          "description": "Name of the supply partner/warehouse drug center"
+        },
+        "itemsCount": {
+          "type": "integer",
+          "description": "Total different line items ordered"
+        },
+        "totalAmount": {
+          "type": "integer",
+          "description": "Total purchase invoice amount in IQD"
+        },
+        "status": {
+          "type": "string",
+          "description": "Order delivery status (pending, preparing, on_way, delivered, cancelled)"
+        },
+        "userId": {
+          "type": "string",
+          "description": "UID of the ordering pharmacist"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Created at timestamp"
+        }
+      },
+      "required": ["id", "date", "warehouseName", "totalAmount", "status", "userId"]
+    },
+    "SaleRecord": {
+      "title": "POS Sales Receipt",
+      "description": "Recorded retail customer sales transactions through Point of Sale register",
+      "type": "object",
+      "properties": {
+        "invoiceId": {
+          "type": "string",
+          "description": "Point-of-sale receipt layout tracking ID"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Precise timestamp of selling dispatch"
+        },
+        "subtotal": {
+          "type": "integer",
+          "description": "Cart items sum price in IQD"
+        },
+        "discount": {
+          "type": "integer",
+          "description": "Deducted loyalty discount in IQD"
+        },
+        "total": {
+          "type": "integer",
+          "description": "Final collected revenue amount in IQD"
+        },
+        "customerName": {
+          "type": "string",
+          "description": "Name of the target client patient"
+        },
+        "isControlled": {
+          "type": "boolean",
+          "description": "True if transaction includes MOH monitored psychotic/narcotic elements"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Register counter dispatcher UID"
+        }
+      },
+      "required": ["invoiceId", "timestamp", "total", "customerName", "isControlled", "userId"]
+    },
+    "ControlledPrescription": {
+      "title": "Narcotic monitored prescription record",
+      "description": "Medical controlled narcology paper validation form monitored by Ministry of Health audit",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique serialization license verification ID"
+        },
+        "patientName": {
+          "type": "string",
+          "description": "Target patient name"
+        },
+        "doctorName": {
+          "type": "string",
+          "description": "Prescribing physician medical stamp name"
+        },
+        "prescriptionDate": {
+          "type": "string",
+          "format": "date",
+          "description": "Stamp date of drug order issue"
+        },
+        "medicineName": {
+          "type": "string",
+          "description": "Monitored chemical compound trade or active formula name"
+        },
+        "quantity": {
+          "type": "integer",
+          "description": "Authorized dosage quantity units in integers"
+        },
+        "pharmacistLicense": {
+          "type": "string",
+          "description": "Syndicate license ID verifying the pharmacist in charge of dispatch"
+        },
+        "userId": {
+          "type": "string",
+          "description": "UID of the executing validator pharmacist"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Created at timestamp"
+        }
+      },
+      "required": ["id", "patientName", "doctorName", "medicineName", "quantity", "userId"]
+    },
+    "TeamMember": {
+      "title": "Staff/Team Member",
+      "description": "Staff and pharmacy employees permitted access or logging duty hours",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Staff index tracking ID"
+        },
+        "name": {
+          "type": "string",
+          "description": "Full staff member Arabic name"
+        },
+        "role": {
+          "type": "string",
+          "description": "Employment/Duty group title"
+        },
+        "license": {
+          "type": "string",
+          "description": "Verified MOH credentials"
+        },
+        "userId": {
+          "type": "string",
+          "description": "Pharmacy manager user UID"
+        },
+		"createdAt": {
+		  "type": "string",
+		  "format": "date-time",
+		  "description": "Created at timestamp"
+		}
+      },
+      "required": ["id", "name", "role", "userId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "User"
+      },
+      "description": "Store individual pharmacist profile definitions at their unique Auth UID document path"
+    },
+    "/users/{userId}/inventory/{medicineId}": {
+      "schema": {
+        "$ref": "Medicine"
+      },
+      "description": "The stock items tracked within the private database inventory of the pharmacy"
+    },
+    "/users/{userId}/b2bOrders/{orderId}": {
+      "schema": {
+        "$ref": "B2BOrder"
+      },
+      "description": "Private restock and distribution invoices submitted to drug offices"
+    },
+    "/users/{userId}/salesLedger/{invoiceId}": {
+      "schema": {
+        "$ref": "SaleRecord"
+      },
+      "description": "Register sales invoice receipts generated on outer terminal"
+    },
+    "/users/{userId}/narcoticPrescriptions/{prescriptionId}": {
+      "schema": {
+        "$ref": "ControlledPrescription"
+      },
+      "description": "Regulatory controlled drug registers and clinical patient audit logs"
+    },
+    "/users/{userId}/teamMembers/{memberId}": {
+      "schema": {
+        "$ref": "TeamMember"
+      },
+      "description": "Verified pharmacy staff roster data assigned under manager scope"
+    }
+  }
+}
