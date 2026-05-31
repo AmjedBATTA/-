@@ -7,7 +7,10 @@ export interface Medicine {
   warehouse: string;
   price: number; // IQD
   secondaryPrice?: number; // IQD - سعر البيع في قائمة المخزون (الرسمي)
+  costPrice?: number; // IQD - متوسط تكلفة الشراء (متوسط متحرك) — أساس حساب الربح
+  lastCostPrice?: number; // IQD - آخر سعر شراء فعلي من المذخر (للمقارنة)
   availableQuantity: number;
+  minStock?: number;
   status: 'available' | 'low' | 'unavailable';
   scientificName: string;
   barcode?: string;

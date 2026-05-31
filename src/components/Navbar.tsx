@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { Menu, X, LayoutGrid, Cpu, User, Activity, Search, Sparkles } from 'lucide-react';
 
 interface NavbarProps {
@@ -12,14 +12,14 @@ export default function Navbar({ currentTab, setCurrentTab }: NavbarProps) {
   const navLinks = [
     { id: 'landing', label: 'الرئيسية' },
     { id: 'search', label: 'دليل الأدوية والمذاخر' },
-    { id: 'ecosystem', label: 'منظومة كبسولة' },
+    { id: 'ecosystem', label: 'منظومة انوار الحسن' },
     { id: 'register', label: 'انضم كصيدلية' },
   ] as const;
 
   return (
     <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-sm transition-all duration-300">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div class="flex items-center justify-between h-20" id="nav-container">
+        <div className="flex items-center justify-between h-20" id="nav-container">
           {/* Logo & Brand */}
           <button 
             onClick={() => setCurrentTab('landing')}
@@ -31,7 +31,7 @@ export default function Navbar({ currentTab, setCurrentTab }: NavbarProps) {
             </div>
             <div>
               <span className="text-2xl font-black text-slate-900 tracking-tight block">
-                Capsula <span className="text-emerald-600 font-extrabold text-xl">كبسولة</span>
+                ANWAR AL-HASSAN
               </span>
               <span className="text-[10px] text-slate-400 font-bold block -mt-1 tracking-wider uppercase">
                 B2B Pharma Network

@@ -106,6 +106,37 @@ service cloud.firestore {
         && data.keys().hasAll(['id', 'name', 'role', 'userId']);
     }
 
+    function isValidExpense(data, userId) {
+      return data.id is string
+        && data.id.size() <= 128
+        && data.category is string
+        && data.category.size() <= 128
+        && data.amount is number
+        && data.amount >= 0
+        && data.userId == userId
+        && data.keys().hasAll(['id', 'date', 'category', 'amount', 'userId']);
+    }
+
+    function isValidPayable(data, userId) {
+      return data.id is string && data.id.size() <= 128
+        && data.supplierName is string && data.supplierName.size() <= 256
+        && data.amount is number && data.amount >= 0
+        && data.paidAmount is number && data.paidAmount >= 0
+        && data.status is string
+        && data.userId == userId
+        && data.keys().hasAll(['id', 'supplierName', 'amount', 'paidAmount', 'date', 'status', 'userId']);
+    }
+
+    function isValidReceivable(data, userId) {
+      return data.id is string && data.id.size() <= 128
+        && data.customerName is string && data.customerName.size() <= 256
+        && data.amount is number && data.amount >= 0
+        && data.paidAmount is number && data.paidAmount >= 0
+        && data.status is string
+        && data.userId == userId
+        && data.keys().hasAll(['id', 'customerName', 'amount', 'paidAmount', 'date', 'status', 'userId']);
+    }
+
     // --- SECURED USER MATCH BLOCKS ---
     match /users/{userId} {
       allow get: if isOwner(userId);
@@ -164,6 +195,39 @@ service cloud.firestore {
           incoming().diff(existing()).affectedKeys().hasOnly(['role', 'license', 'name'])
         );
         allow delete: if isOwner(userId); // Permit full roster pruning
+      }
+
+      // --- EXPENSES LEDGER SUBCOLLECTION ---
+      match /expenses/{expenseId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(expenseId) && isValidExpense(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(expenseId) && isValidExpense(incoming(), userId) && (
+          // Action: edit expense details
+          incoming().diff(existing()).affectedKeys().hasOnly(['category', 'amount', 'description', 'paidBy', 'date'])
+        );
+        allow delete: if isOwner(userId);
+      }
+
+      // --- ACCOUNTS PAYABLE / SUPPLIER DEBTS SUBCOLLECTION (الذمم الدائنة) ---
+      match /payables/{payableId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(payableId) && isValidPayable(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(payableId) && isValidPayable(incoming(), userId) && (
+          // Action: record a settlement payment or edit terms
+          incoming().diff(existing()).affectedKeys().hasOnly(['paidAmount', 'status', 'dueDate', 'description'])
+        );
+        allow delete: if isOwner(userId);
+      }
+
+      // --- ACCOUNTS RECEIVABLE / CUSTOMER CREDIT SALES (الذمم المدينة) ---
+      match /receivables/{receivableId} {
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(receivableId) && isValidReceivable(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(receivableId) && isValidReceivable(incoming(), userId) && (
+          // Action: record a collection payment or edit terms
+          incoming().diff(existing()).affectedKeys().hasOnly(['paidAmount', 'status', 'dueDate', 'description'])
+        );
+        allow delete: if isOwner(userId);
       }
     }
   }

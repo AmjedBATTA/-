@@ -39,3 +39,16 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* Print styles - Receipt */
+@media print {
+  body > * { display: none !important; }
+  .print-receipt { display: block !important; }
+}
+
+/* Print styles - Financial report */
+@media print {
+  body.printing-financial > * { display: none !important; }
+  body.printing-financial .print-financial { display: block !important; }
+}
+.print-financial { display: none; }

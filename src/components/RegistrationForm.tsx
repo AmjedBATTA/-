@@ -137,7 +137,7 @@ export default function RegistrationForm() {
                 <div className="space-y-2">
                   <h3 className="text-2xl font-black text-slate-900">لقد تم استلام طلبك بنجاح!</h3>
                   <p className="text-slate-500 font-semibold text-sm max-w-md mx-auto leading-relaxed">
-                    مرحباً دكتور، أهلاً بك في عائلة كبسولة. يقوم المكاتب الفنية والتحقق النقابي الآن بمراجعة مستندات صيدليتك (<span className="text-slate-900 font-bold">{formData.pharmacyName}</span>).
+                    مرحباً دكتور، أهلاً بك في عائلة انوار الحسن. يقوم المكاتب الفنية والتحقق النقابي الآن بمراجعة مستندات صيدليتك (<span className="text-slate-900 font-bold">{formData.pharmacyName}</span>).
                   </p>
                 </div>
                 <div className="bg-slate-50 rounded-2xl p-4 text-xs font-semibold text-slate-600 max-w-sm mx-auto space-y-2.5 border border-slate-100 text-right">

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { motion } from 'motion/react';
 import { ECOSYSTEM_SERVICES } from '../data';
 import { EcosystemService } from '../types';
@@ -31,7 +31,7 @@ export default function Ecosystem() {
             بوابة الخدمات السبع المتكاملة
           </span>
           <h2 className="text-3xl font-black text-slate-900 sm:text-4xl">
-            منظومة كبسولة الرقمية المتكاملة
+            منظومة انوار الحسن الرقمية المتكاملة
           </h2>
           <p className="mt-3 text-base text-slate-600 leading-relaxed font-semibold">
             أدوات متخصصة تخدم الصيدليات ومستودعات الأدوية والمندوبين والمؤسسات الطبية في العراق، كلها مرتبطة معاً لتسريع نمو وتوسيع قطاع الرعاية الصحية.
@@ -213,7 +213,7 @@ export default function Ecosystem() {
                       </div>
                       <div className="p-3 bg-slate-50 rounded-xl">
                         <span className="font-bold text-slate-800 block mb-0.5 font-bold">عروض بونص تصل لـ 50%</span>
-                        <p className="text-[10px] text-slate-500 leading-normal">مستويات بونص فريدة تطرح حصرياً عبر تجمع كبسولة المشترك.</p>
+                        <p className="text-[10px] text-slate-500 leading-normal">مستويات بونص فريدة تطرح حصرياً عبر تجمع انوار الحسن المشترك.</p>
                       </div>
                     </div>
                   )}
@@ -236,7 +236,7 @@ export default function Ecosystem() {
 
               {/* Action Banner inside preview */}
               <div className="mt-8 pt-6 border-t border-slate-200/50 flex flex-col sm:flex-row items-center justify-between text-xs gap-4">
-                <span className="text-slate-500 font-bold">كل هذه الخدمات مرتبطة ومؤمنة في حساب كبسولة واحد موحد.</span>
+                <span className="text-slate-500 font-bold">كل هذه الخدمات مرتبطة ومؤمنة في حساب انوار الحسن واحد موحد.</span>
                 <span className="text-emerald-700 font-extrabold flex items-center space-x-reverse space-x-1.5 bg-emerald-100/50 px-3 py-1.5 rounded-lg">
                   <span>فعال وآمن 100%</span>
                 </span>
