@@ -5,7 +5,7 @@ import {
   Truck, HelpCircle, PlusCircle, Search, Trash2, ArrowLeft, 
   MapPin, UserCheck, ShieldCheck, Users, Sparkles, Plus, Check,
   TrendingUp, FileText, Ban, DollarSign, Calendar, RefreshCw, BarChart3, Pill, ClipboardList, ShieldAlert, Heart,
-  Barcode, X, Volume2, VolumeX, Camera, Download, Bell
+  Barcode, X, Volume2, VolumeX, Camera, Download, Bell, Moon, Sun
 } from 'lucide-react';
 import { Medicine, Order } from '../types';
 
@@ -479,6 +479,9 @@ export default function Dashboard() {
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [showVirtualPriceInPOS, setShowVirtualPriceInPOS] = useState(false);
   const [chartRange, setChartRange] = useState<7 | 30 | 90>(30); // مدى الرسم البياني للمبيعات
+  const [darkMode, setDarkMode] = useState<boolean>(() => {
+    try { return localStorage.getItem('darkMode') === 'true'; } catch { return false; }
+  });
   const [plPeriod, setPlPeriod] = useState<'month' | 'year'>('month'); // فترة قائمة الأرباح والخسائر
 
   // --- SALES HISTORY LEDGER ---
@@ -766,6 +769,12 @@ export default function Dashboard() {
       stopScanning();
     }, 1500);
   };
+
+  // Dark mode: sync .dark class on <html> + persist to localStorage
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', darkMode);
+    try { localStorage.setItem('darkMode', String(darkMode)); } catch {}
+  }, [darkMode]);
 
   // RBAC: reset activeTab when role changes
   useEffect(() => {
@@ -2227,6 +2236,15 @@ export default function Dashboard() {
                 تفعيل الإشعارات
               </button>
             )}
+            {/* Dark / Light mode toggle */}
+            <button
+              onClick={() => setDarkMode(prev => !prev)}
+              title={darkMode ? 'الوضع النهاري' : 'الوضع الليلي'}
+              className="w-8 h-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 transition cursor-pointer"
+            >
+              {darkMode ? <Sun className="w-4 h-4 text-amber-500" /> : <Moon className="w-4 h-4" />}
+            </button>
+
             {/* Notification Bell */}
             <div className="relative">
               <button
