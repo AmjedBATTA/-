@@ -474,7 +474,7 @@ export default function Dashboard() {
   const [stmtCustomer, setStmtCustomer] = useState('');
 
   // App Section Select
-  const [activeTab, setActiveTab] = useState<'pos' | 'inventory' | 'b2b' | 'financial' | 'team'>('pos');
+  const [activeTab, setActiveTab] = useState<'home' | 'pos' | 'inventory' | 'b2b' | 'financial' | 'team'>('home');
 
   // --- STOCK MOVEMENT LOG ---
   interface StockMovement {
@@ -809,11 +809,11 @@ export default function Dashboard() {
   // RBAC: reset activeTab when role changes
   useEffect(() => {
     const allowed: Record<typeof currentRole, string[]> = {
-      admin: ['pos', 'inventory', 'b2b', 'financial', 'team'],
-      pharmacist: ['pos', 'inventory', 'b2b', 'financial'],
-      cashier: ['pos', 'inventory'],
+      admin: ['home', 'pos', 'inventory', 'b2b', 'financial', 'team'],
+      pharmacist: ['home', 'pos', 'inventory', 'b2b', 'financial'],
+      cashier: ['home', 'pos', 'inventory'],
     };
-    if (!allowed[currentRole].includes(activeTab)) setActiveTab('pos');
+    if (!allowed[currentRole].includes(activeTab)) setActiveTab('home');
   }, [currentRole]);
 
   // Web push notifications on load
@@ -2511,113 +2511,171 @@ export default function Dashboard() {
           WORKSPACE INNER LAYOUT - SIDEBAR LINKS & VIEWS
           =========================================================
         */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          
-          {/* Sidebar Controller tabs */}
-          <div className="lg:col-span-3 space-y-2.5">
-            <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block px-2">مفاتيح النظام</span>
-            
-            <button
-              onClick={() => setActiveTab('pos')}
-              className={`w-full flex items-center justify-between p-4 rounded-2xl font-bold text-xs transition border cursor-pointer ${
-                activeTab === 'pos'
-                  ? 'bg-emerald-600 text-white border-transparent shadow-lg shadow-emerald-200/50'
-                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200/60'
-              }`}
-            >
-              <div className="flex items-center space-x-reverse space-x-3.5">
-                <ShoppingBag className="w-4.5 h-4.5" />
-                <span>نقطة البيع السريعة (POS)</span>
-              </div>
-              <span className="text-[10px] bg-emerald-100/10 text-slate-600 font-extrabold py-0.5 px-2 rounded-full">كاش</span>
-            </button>
+        {activeTab === 'home' ? (
+          /* ======================================================
+             الصفحة الرئيسية — بطاقات تنقل لكل قسم
+             ====================================================== */
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 
-            <button
-              onClick={() => setActiveTab('inventory')}
-              className={`w-full flex items-center justify-between p-4 rounded-2xl font-bold text-xs transition border cursor-pointer ${
-                activeTab === 'inventory'
-                  ? 'bg-emerald-600 text-white border-transparent shadow-lg shadow-emerald-200/50'
-                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200/60'
-              }`}
-            >
-              <div className="flex items-center space-x-reverse space-x-3.5">
-                <Pill className="w-4.5 h-4.5" />
-                <span>المخزن وتنبيهات الصلاحية</span>
-              </div>
-              <span className="text-[10px] bg-amber-500 text-white font-extrabold py-0.5 px-2 rounded-full">
-                {inventory.filter(m => (getDaysUntilExpiry(m.id) <= 30) || m.availableQuantity < 15).length} تنبيه
-              </span>
-            </button>
-
-            {currentRole !== 'cashier' && (
+              {/* POS */}
               <button
-                onClick={() => setActiveTab('b2b')}
-                className={`w-full flex items-center justify-between p-4 rounded-2xl font-bold text-xs transition border cursor-pointer ${
-                  activeTab === 'b2b'
-                    ? 'bg-emerald-600 text-white border-transparent shadow-lg shadow-emerald-200/50'
-                    : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200/60'
-                }`}
+                onClick={() => setActiveTab('pos')}
+                className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-emerald-300 transition-all cursor-pointer text-right space-y-4 group"
               >
-                <div className="flex items-center space-x-reverse space-x-3.5">
-                  <Truck className="w-4.5 h-4.5" />
-                  <span>طلبيات المذاخر (انوار الحسن B2B)</span>
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-emerald-100 transition">
+                    <ShoppingBag className="w-6 h-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-black text-slate-800 text-sm">نقطة البيع السريعة</h3>
+                    <p className="text-[10px] text-slate-500 font-semibold mt-0.5">إصدار الفواتير وتسجيل المبيعات</p>
+                  </div>
                 </div>
-                <span className="text-[10px] bg-blue-100/20 text-slate-500 font-semibold py-0.5 px-2 rounded-full">شراء وعروض</span>
-              </button>
-            )}
-
-            {(currentRole === 'admin' || currentRole === 'pharmacist') && (
-              <button
-                onClick={() => setActiveTab('financial')}
-                className={`w-full flex items-center justify-between p-4 rounded-2xl font-bold text-xs transition border cursor-pointer ${
-                  activeTab === 'financial'
-                    ? 'bg-emerald-600 text-white border-transparent shadow-lg shadow-emerald-200/50'
-                    : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200/60'
-                }`}
-              >
-                <div className="flex items-center space-x-reverse space-x-3.5">
-                  <BarChart3 className="w-4.5 h-4.5" />
-                  <span>الحسابات المالية وجرد الذمم</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full font-black">
+                    {salesLedger.filter(s => s.timestamp.startsWith(finTodayStr)).length} فاتورة اليوم
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-bold group-hover:text-emerald-600 transition">دخول ←</span>
                 </div>
               </button>
-            )}
 
-            {currentRole === 'admin' && (
+              {/* Inventory */}
               <button
-                onClick={() => setActiveTab('team')}
-                className={`w-full flex items-center justify-between p-4 rounded-2xl font-bold text-xs transition border cursor-pointer ${
-                  activeTab === 'team'
-                    ? 'bg-emerald-600 text-white border-transparent shadow-lg shadow-emerald-200/50'
-                    : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200/60'
-                }`}
+                onClick={() => setActiveTab('inventory')}
+                className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-amber-300 transition-all cursor-pointer text-right space-y-4 group"
               >
-                <div className="flex items-center space-x-reverse space-x-3.5">
-                  <Users className="w-4.5 h-4.5" />
-                  <span>الصيادلة والدوام</span>
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-amber-100 transition">
+                    <Pill className="w-6 h-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-black text-slate-800 text-sm">المخزن وتنبيهات الصلاحية</h3>
+                    <p className="text-[10px] text-slate-500 font-semibold mt-0.5">إدارة المخزون ومتابعة الصلاحية</p>
+                  </div>
                 </div>
-                <span className="text-[9px] bg-slate-100 text-emerald-700 px-2.5 py-0.5 rounded-full font-bold">٢ نشط</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] bg-amber-50 text-amber-700 px-2.5 py-1 rounded-full font-black">
+                    {inventory.filter(m => (getDaysUntilExpiry(m.id) <= 30) || m.availableQuantity < 15).length} تنبيه نشط
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-bold group-hover:text-amber-600 transition">دخول ←</span>
+                </div>
               </button>
-            )}
 
-            {/* Compliance inspection note */}
-            <div className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 space-y-3.5 text-xs">
-              <div className="flex items-center space-x-reverse space-x-2 text-emerald-400 font-extrabold text-[11px]">
-                <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                <span>تفتيش نقابة صيادلة العراق</span>
-              </div>
-              <p className="text-[10px] text-slate-300 font-semibold leading-relaxed">
-                الصيدلية ممتثلة لكافة شروط نقابة صيادلة العراق ووزارة الصحة الاتحادية. تم رصد آخر تحديث وتعميم من اللجنة الطبية.
-              </p>
-              <div className="p-2 bg-slate-850 rounded-lg text-slate-400 text-[10px] space-y-1 font-mono">
-                <div>ترخيص صيدلية: مجاز رسمي</div>
-                <div>آخر مطابقة: اليوم الصباح</div>
-              </div>
+              {/* B2B */}
+              {currentRole !== 'cashier' && (
+                <button
+                  onClick={() => setActiveTab('b2b')}
+                  className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-blue-300 transition-all cursor-pointer text-right space-y-4 group"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition">
+                      <Truck className="w-6 h-6" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-black text-slate-800 text-sm">طلبيات المذاخر</h3>
+                      <p className="text-[10px] text-slate-500 font-semibold mt-0.5">فواتير الشراء وعروض انوار الحسن B2B</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full font-black">
+                      {b2bOrders.filter(o => o.status === 'pending' || o.status === 'preparing').length} طلبية نشطة
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-bold group-hover:text-blue-600 transition">دخول ←</span>
+                  </div>
+                </button>
+              )}
+
+              {/* Financial */}
+              {(currentRole === 'admin' || currentRole === 'pharmacist') && (
+                <button
+                  onClick={() => setActiveTab('financial')}
+                  className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-violet-300 transition-all cursor-pointer text-right space-y-4 group"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-violet-50 text-violet-600 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-violet-100 transition">
+                      <BarChart3 className="w-6 h-6" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-black text-slate-800 text-sm">الحسابات المالية</h3>
+                      <p className="text-[10px] text-slate-500 font-semibold mt-0.5">الأرباح والذمم وقائمة الدخل وسجل التدقيق</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className={`text-[10px] px-2.5 py-1 rounded-full font-black ${netProfitMonth >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                      صافي الشهر: {netProfitMonth.toLocaleString()} د.ع
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-bold group-hover:text-violet-600 transition">دخول ←</span>
+                  </div>
+                </button>
+              )}
+
+              {/* Team */}
+              {currentRole === 'admin' && (
+                <button
+                  onClick={() => setActiveTab('team')}
+                  className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-slate-400 transition-all cursor-pointer text-right space-y-4 group"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-slate-100 text-slate-600 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-slate-200 transition">
+                      <Users className="w-6 h-6" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-black text-slate-800 text-sm">الصيادلة والدوام</h3>
+                      <p className="text-[10px] text-slate-500 font-semibold mt-0.5">إدارة فريق العمل والجداول</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] bg-slate-100 text-slate-700 px-2.5 py-1 rounded-full font-black">
+                      {teamMembers.length} موظف
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-bold group-hover:text-slate-700 transition">دخول ←</span>
+                  </div>
+                </button>
+              )}
+
             </div>
 
+            {/* Compliance card — كان في الـ sidebar، يظهر في الصفحة الرئيسية فقط */}
+            <div className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-emerald-400 font-extrabold text-[11px]">
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>تفتيش نقابة صيادلة العراق</span>
+                </div>
+                <p className="text-[10px] text-slate-300 font-semibold">الصيدلية ممتثلة لكافة شروط نقابة صيادلة العراق ووزارة الصحة الاتحادية.</p>
+              </div>
+              <div className="flex gap-4 text-[10px] font-mono text-slate-400 shrink-0">
+                <span>ترخيص: مجاز رسمي</span>
+                <span>آخر مطابقة: اليوم</span>
+              </div>
+            </div>
           </div>
-
-          {/* Main workspace container viewport */}
-          <div className="lg:col-span-9 space-y-6">
+        ) : (
+          /* ======================================================
+             صفحة القسم — شريط رجوع + محتوى كامل العرض
+             ====================================================== */
+          <div className="space-y-4">
+            {/* شريط الرجوع للرئيسية */}
+            <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-2xl px-5 py-3 shadow-sm">
+              <button
+                onClick={() => setActiveTab('home')}
+                className="flex items-center gap-1.5 text-emerald-600 hover:text-emerald-700 font-black text-xs transition cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>الرئيسية</span>
+              </button>
+              <span className="text-slate-300 font-mono text-sm">/</span>
+              <span className="text-slate-700 font-black text-xs">
+                {activeTab === 'pos' ? 'نقطة البيع السريعة (POS)'
+                  : activeTab === 'inventory' ? 'المخزن وتنبيهات الصلاحية'
+                  : activeTab === 'b2b' ? 'طلبيات المذاخر (انوار الحسن B2B)'
+                  : activeTab === 'financial' ? 'الحسابات المالية وجرد الذمم'
+                  : activeTab === 'team' ? 'الصيادلة والدوام' : ''}
+              </span>
+            </div>
+            {/* محتوى القسم — كامل العرض */}
+            <div className="space-y-6">
             
             <AnimatePresence mode="wait">
               
@@ -5056,9 +5114,9 @@ export default function Dashboard() {
 
             </AnimatePresence>
 
+            </div>
           </div>
-
-        </div>
+        )}
 
       </div>
 
