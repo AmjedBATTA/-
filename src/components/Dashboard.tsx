@@ -77,6 +77,16 @@ interface SalesReturn {
   customerName: string;
 }
 
+interface AuditEntry {
+  id: string;              // AUD-xxxx
+  timestamp: string;       // YYYY-MM-DD HH:mm
+  action: 'sale' | 'purchase' | 'expense' | 'payable_add' | 'payable_settle' | 'receivable_add' | 'receivable_collect' | 'return';
+  actor: string;           // currentUser.displayName || currentRole
+  amount: number;          // المبلغ المالي (0 إذا لم ينطبق)
+  description: string;     // وصف قصير بالعربي
+  relatedId?: string;      // INV-xxxx / EXP-xxxx / PAY-xxxx / REC-xxxx / RET-xxxx
+}
+
 // مولّد مصاريف تشغيلية مبدئية لهذا الشهر (لإظهار حساب الربح الصافي)
 function generateSeedExpenses(): Expense[] {
   const specs = [
@@ -167,6 +177,23 @@ function generateSeedReturns(): SalesReturn[] {
     refundMethod: 'cash',
     customerName: 'أم سليم الكرخي',
   }];
+}
+
+function generateSeedAuditLog(): AuditEntry[] {
+  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  const now = new Date();
+  const ago = (days: number, h = 10, m = 0) => { const d = new Date(now); d.setDate(d.getDate()-days); d.setHours(h,m,0); return d; };
+  const entries: AuditEntry[] = [
+    { id:'AUD-1001', timestamp:fmt(ago(12,9,15)),  action:'purchase',          actor:'مدير', amount:950000, description:'فاتورة شراء آجلة من مذخر بغداد المركزي (4 أصناف)', relatedId:'ORD-9300' },
+    { id:'AUD-1002', timestamp:fmt(ago(9,11,30)),  action:'expense',           actor:'مدير', amount:35000,  description:'مصروف كهرباء ومولّدة — فاتورة شهر أيار',          relatedId:'EXP-9100' },
+    { id:'AUD-1003', timestamp:fmt(ago(6,14,20)),  action:'sale',              actor:'كاشير',amount:54000,  description:'فاتورة بيع نقدي (5 أصناف) — أبو ليلى الساعدي',   relatedId:'INV-4705' },
+    { id:'AUD-1004', timestamp:fmt(ago(5,10,0)),   action:'payable_settle',    actor:'مدير', amount:200000, description:'تسديد جزئي لذمة شركة الرافدين للتجهيزات الطبية', relatedId:'PAY-9301' },
+    { id:'AUD-1005', timestamp:fmt(ago(4,11,30)),  action:'return',            actor:'صيدلاني',amount:3500, description:'مرتجع بندول اكسترا — سبب: منتهي الصلاحية',       relatedId:'RET-1001' },
+    { id:'AUD-1006', timestamp:fmt(ago(3,15,45)),  action:'receivable_add',    actor:'مدير', amount:450000, description:'ذمّة جديدة على عيادة د. سرمد للأطفال',           relatedId:'REC-9400' },
+    { id:'AUD-1007', timestamp:fmt(ago(2,9,0)),    action:'sale',              actor:'كاشير',amount:65200,  description:'فاتورة بيع بالآجل — محمد التميمي',               relatedId:'INV-4713' },
+    { id:'AUD-1008', timestamp:fmt(ago(1,13,10)),  action:'receivable_collect',actor:'مدير', amount:100000, description:'تحصيل جزئي من مختبر النور الطبي',               relatedId:'REC-9401' },
+  ];
+  return entries.reverse(); // الأحدث أولاً
 }
 
 // مولّد مبيعات تاريخية تجريبية موزّعة على آخر ~80 يوماً (لإظهار تمايز الفترات والرسوم البيانية)
@@ -433,6 +460,9 @@ export default function Dashboard() {
   // --- SALES RETURNS (مرتجعات المبيعات) ---
   const [salesReturns, setSalesReturns] = useState<SalesReturn[]>(() => generateSeedReturns());
   const [showReturnModal, setShowReturnModal] = useState(false);
+
+  // --- AUDIT LOG (سجل التدقيق) ---
+  const [auditLog, setAuditLog] = useState<AuditEntry[]>(() => generateSeedAuditLog());
   const [returnTarget, setReturnTarget] = useState<SaleRecord | null>(null);
   const [returnQtys, setReturnQtys] = useState<Record<number, number>>({});
   const [returnReason, setReturnReason] = useState('');
@@ -1099,6 +1129,19 @@ export default function Dashboard() {
       console.warn('[Returns] onSnapshot error:', error);
     });
 
+    // 10. Sync Audit Log Collection (سجل التدقيق)
+    const auditLogCol = collection(db, 'users', userId, 'auditLog');
+    const unsubAuditLog = onSnapshot(auditLogCol, (snapshot) => {
+      if (!snapshot.empty) {
+        const loaded: AuditEntry[] = [];
+        snapshot.forEach(d => loaded.push(d.data() as AuditEntry));
+        loaded.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+        setAuditLog(loaded.slice(0, 300));
+      }
+    }, (error) => {
+      console.warn('[AuditLog] onSnapshot error:', error);
+    });
+
     setIsSyncing(false);
 
     return () => {
@@ -1110,8 +1153,27 @@ export default function Dashboard() {
       unsubPayables();
       unsubReceivables();
       unsubReturns();
+      unsubAuditLog();
     };
   }, [currentUser]);
+
+  // --- AUDIT LOG HELPER (يُضيف إدخالاً جديداً لسجل التدقيق محلياً وفي Firestore) ---
+  const addAuditEntry = (entry: Omit<AuditEntry, 'id' | 'timestamp' | 'actor'>) => {
+    const now = new Date();
+    const ts = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    const full: AuditEntry = {
+      id: `AUD-${Math.floor(Math.random()*90000+10000)}`,
+      timestamp: ts,
+      actor: currentUser?.displayName || currentRole,
+      ...entry,
+    };
+    setAuditLog(prev => [full, ...prev].slice(0, 300));
+    if (currentUser) {
+      const userId = currentUser.uid;
+      setDoc(doc(db, 'users', userId, 'auditLog', full.id), { ...full, userId })
+        .catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${userId}/auditLog/${full.id}`));
+    }
+  };
 
   // --- PROCESS SALES RETURN (تسجيل مرتجع مبيعات وعكس تأثيره على المخزون والسيولة) ---
   const handleProcessReturn = (e: FormEvent) => {
@@ -1157,6 +1219,12 @@ export default function Dashboard() {
 
     // 3. سجّل المرتجع
     setSalesReturns(prev => [newReturn, ...prev]);
+    addAuditEntry({
+      action: 'return',
+      amount: returnTotal,
+      description: `مرتجع (${returnedItems.length} صنف) — ${newReturn.reason}`,
+      relatedId: newReturn.returnId,
+    });
 
     // 3b. Record stock movements (return)
     returnedItems.forEach(it => {
@@ -1214,6 +1282,12 @@ export default function Dashboard() {
     }
     // المصروف يُخصم من السيولة المتاحة بالصندوق
     setWalletBalance(prev => Math.max(0, prev - newExpense.amount));
+    addAuditEntry({
+      action: 'expense',
+      amount: newExpense.amount,
+      description: `مصروف ${newExpense.category}${newExpense.description ? ' — ' + newExpense.description : ''}`,
+      relatedId: expId,
+    });
     setExpenseSuccess(true);
     setNewExpDesc('');
     setTimeout(() => setExpenseSuccess(false), 2200);
@@ -1255,6 +1329,12 @@ export default function Dashboard() {
     }
     // تسجيل الذمّة لا يُحرّك السيولة (نشوء دين وليس صرفاً نقدياً)
     setPayableSuccess(true);
+    addAuditEntry({
+      action: 'payable_add',
+      amount: newPayable.amount,
+      description: `ذمّة جديدة للمورّد: ${newPayable.supplierName}`,
+      relatedId: payId,
+    });
     setNewPaySupplier('');
     setNewPayDesc('');
     setTimeout(() => setPayableSuccess(false), 2200);
@@ -1275,6 +1355,12 @@ export default function Dashboard() {
         .catch(err => handleFirestoreError(err, OperationType.WRITE, `users/${userId}/payables/${p.id}`));
     }
     setSettleInputs(prev => ({ ...prev, [p.id]: 0 }));
+    addAuditEntry({
+      action: 'payable_settle',
+      amount: pay,
+      description: `تسديد ذمّة ${p.supplierName} — المتبقي: ${(p.amount - newPaid).toLocaleString()} د.ع`,
+      relatedId: p.id,
+    });
   };
 
   // --- ADD RECEIVABLE (تسجيل ذمّة جديدة مستحقة لنا على زبون — لا يؤثر على السيولة) ---
@@ -1313,6 +1399,12 @@ export default function Dashboard() {
     }
     // تسجيل الذمّة لا يُحرّك السيولة (الزبون مدين لنا، وليس نقداً في الصندوق)
     setReceivableSuccess(true);
+    addAuditEntry({
+      action: 'receivable_add',
+      amount: newReceivable.amount,
+      description: `ذمّة جديدة على الزبون: ${newReceivable.customerName}`,
+      relatedId: recId,
+    });
     setNewRecCustomer('');
     setNewRecDesc('');
     setTimeout(() => setReceivableSuccess(false), 2200);
@@ -1333,6 +1425,12 @@ export default function Dashboard() {
         .catch(err => handleFirestoreError(err, OperationType.WRITE, `users/${userId}/receivables/${r.id}`));
     }
     setCollectInputs(prev => ({ ...prev, [r.id]: 0 }));
+    addAuditEntry({
+      action: 'receivable_collect',
+      amount: collect,
+      description: `تحصيل من ${r.customerName} — المتبقي: ${(r.amount - newPaid).toLocaleString()} د.ع`,
+      relatedId: r.id,
+    });
   };
 
   // Handle Google OAuth Action
@@ -1678,6 +1776,12 @@ export default function Dashboard() {
         }
       });
 
+      addAuditEntry({
+        action: 'sale',
+        amount: posTotal,
+        description: `فاتورة بيع ${posOnCredit ? 'آجل' : 'نقدي'} (${currentCart.length} صنف) — ${posCustomerName}`,
+        relatedId: invoiceId,
+      });
       setLastPrintedInvoice(newSaleRecord);
       setShowReceiptModal(true);
       setCurrentCart([]);
@@ -1726,6 +1830,12 @@ export default function Dashboard() {
 
       // Store sales record local fallback
       setSalesLedger([newSaleRecord, ...salesLedger]);
+      addAuditEntry({
+        action: 'sale',
+        amount: posTotal,
+        description: `فاتورة بيع ${posOnCredit ? 'آجل' : 'نقدي'} (${currentCart.length} صنف) — ${posCustomerName}`,
+        relatedId: invoiceId,
+      });
       setLastPrintedInvoice(newSaleRecord);
       setShowReceiptModal(true);
 
@@ -1918,6 +2028,13 @@ export default function Dashboard() {
           timestamp: purchaseTsStr,
         }, ...prev].slice(0, 200));
       }
+    });
+
+    addAuditEntry({
+      action: 'purchase',
+      amount: totalCost,
+      description: `فاتورة شراء ${purchaseOnCredit ? 'آجلة' : 'نقدية'} (${purchaseDraft.length} صنف)${purchaseOnCredit ? ' — ' + (creditSupplierName.trim() || 'المذخر') : ''}`,
+      relatedId: orderId,
     });
 
     if (purchaseOnCredit) {
@@ -4776,10 +4893,61 @@ export default function Dashboard() {
 
                     </div>
                   </div>
+
+                  {/* --- سجل التدقيق --- */}
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-slate-600" />
+                        <span className="text-[11px] text-slate-600 font-black">سجل التدقيق (آخر 50 عملية)</span>
+                      </div>
+                      <span className="text-[9px] text-slate-400 font-bold">{auditLog.length} إدخال</span>
+                    </div>
+
+                    <div className="space-y-1.5 max-h-96 overflow-y-auto">
+                      {auditLog.slice(0, 50).map(entry => {
+                        const actionMeta: Record<AuditEntry['action'], { label: string; color: string; bg: string }> = {
+                          sale:               { label: 'بيع',       color: 'text-emerald-700', bg: 'bg-emerald-50' },
+                          purchase:           { label: 'شراء',      color: 'text-blue-700',   bg: 'bg-blue-50'   },
+                          expense:            { label: 'مصروف',     color: 'text-rose-700',   bg: 'bg-rose-50'   },
+                          payable_add:        { label: 'ذمّة مورّد', color: 'text-amber-700',  bg: 'bg-amber-50'  },
+                          payable_settle:     { label: 'تسديد',     color: 'text-emerald-700',bg: 'bg-emerald-50'},
+                          receivable_add:     { label: 'ذمّة زبون', color: 'text-violet-700', bg: 'bg-violet-50' },
+                          receivable_collect: { label: 'تحصيل',     color: 'text-emerald-700',bg: 'bg-emerald-50'},
+                          return:             { label: 'مرتجع',     color: 'text-rose-700',   bg: 'bg-rose-50'   },
+                        };
+                        const meta = actionMeta[entry.action];
+                        return (
+                          <div key={entry.id} className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-[10px] font-bold gap-3">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className={`shrink-0 px-1.5 py-0.5 rounded-md font-black text-[9px] ${meta.bg} ${meta.color}`}>{meta.label}</span>
+                              <span className="text-slate-600 truncate">{entry.description}</span>
+                            </div>
+                            <div className="flex items-center gap-3 shrink-0 text-right">
+                              {entry.amount > 0 && (
+                                <span className={`font-mono font-black ${['expense','payable_settle','return'].includes(entry.action) ? 'text-rose-600' : 'text-emerald-700'}`}>
+                                  {['expense','payable_settle','return'].includes(entry.action) ? '−' : '+'}{entry.amount.toLocaleString()} د.ع
+                                </span>
+                              )}
+                              <div className="text-slate-400 text-right">
+                                <span className="block font-mono">{entry.timestamp}</span>
+                                <span className="block text-[9px]">{entry.actor}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {auditLog.length === 0 && (
+                        <p className="text-[10px] text-slate-400 font-bold text-center py-6">لا توجد سجلات تدقيق بعد.</p>
+                      )}
+                    </div>
+                    <p className="text-[9px] text-slate-400 font-bold">* يُسجَّل كل بيع، شراء، مصروف، تسديد ذمّة، تحصيل، ومرتجع تلقائياً مع الوقت والمسؤول.</p>
+                  </div>
+
                 </motion.div>
               )}
 
-              {/* 
+              {/*
                 =========================================================
                 VIEWPORT SECTION 6: PHARMACY TEAM MANAGMENT
                 =========================================================

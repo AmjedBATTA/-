@@ -137,6 +137,13 @@ service cloud.firestore {
         && data.keys().hasAll(['id', 'customerName', 'amount', 'paidAmount', 'date', 'status', 'userId']);
     }
 
+    function isValidAuditEntry(data) {
+      return data.keys().hasAll(['id','timestamp','action','actor','amount','description'])
+        && data.action in ['sale','purchase','expense','payable_add','payable_settle','receivable_add','receivable_collect','return']
+        && data.amount is number
+        && data.actor is string;
+    }
+
     // --- SECURED USER MATCH BLOCKS ---
     match /users/{userId} {
       allow get: if isOwner(userId);
@@ -228,6 +235,11 @@ service cloud.firestore {
           incoming().diff(existing()).affectedKeys().hasOnly(['paidAmount', 'status', 'dueDate', 'description'])
         );
         allow delete: if isOwner(userId);
+      }
+
+      // --- AUDIT LOG SUBCOLLECTION (سجل التدقيق) ---
+      match /auditLog/{entryId} {
+        allow read, write: if isOwner(userId) && isValidAuditEntry(request.resource.data);
       }
     }
   }
