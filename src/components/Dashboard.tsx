@@ -479,6 +479,7 @@ export default function Dashboard() {
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [showVirtualPriceInPOS, setShowVirtualPriceInPOS] = useState(false);
   const [chartRange, setChartRange] = useState<7 | 30 | 90>(30); // مدى الرسم البياني للمبيعات
+  const [plPeriod, setPlPeriod] = useState<'month' | 'year'>('month'); // فترة قائمة الأرباح والخسائر
 
   // --- SALES HISTORY LEDGER ---
   const [salesLedger, setSalesLedger] = useState<SaleRecord[]>([
@@ -1454,6 +1455,46 @@ export default function Dashboard() {
   const expYear = sumExpenses(d => d.getFullYear() === finNow.getFullYear());
   const netProfitMonth = statsMonth.profit - expMonth;
   const netProfitYear = statsYear.profit - expYear;
+
+  // --- قائمة الأرباح والخسائر (P&L / income statement) — تجمع الإيراد والتكلفة والمرتجعات والمصاريف لفترة واحدة ---
+  // مرتجعات الفترة: value = قيمة البيع المُرتجَع (تُخصم من الإيراد)، cost = تكلفة البضاعة العائدة للمخزون (تُخصم من COGS)
+  const sumReturns = (predicate: (d: Date) => boolean) => {
+    let value = 0, cost = 0, count = 0;
+    salesReturns.forEach(r => {
+      const d = new Date(String(r.timestamp).replace(' ', 'T'));
+      if (isNaN(d.getTime()) || !predicate(d)) return;
+      count++;
+      value += r.total || 0;
+      cost += r.items.reduce((s, it) => s + (it.costPrice ?? 0) * (it.quantity || 0), 0);
+    });
+    return { value, cost, count };
+  };
+  // تجميع المصاريف حسب النوع لفترة واحدة (لعرضها مفصّلة داخل القائمة)
+  const expensesByCategory = (predicate: (d: Date) => boolean) => {
+    const map: Record<string, number> = {};
+    expenses.forEach(e => {
+      const d = new Date(e.date);
+      if (isNaN(d.getTime()) || !predicate(d)) return;
+      map[e.category] = (map[e.category] || 0) + (e.amount || 0);
+    });
+    return Object.entries(map).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
+  };
+  const plIsMonth = plPeriod === 'month';
+  const plPredicate = plIsMonth
+    ? (d: Date) => d.getFullYear() === finNow.getFullYear() && d.getMonth() === finNow.getMonth()
+    : (d: Date) => d.getFullYear() === finNow.getFullYear();
+  const plStats = plIsMonth ? statsMonth : statsYear;
+  const plReturns = sumReturns(plPredicate);
+  const plExpenseRows = expensesByCategory(plPredicate);
+  const plGrossSales = plStats.sales;                  // إجمالي المبيعات (الإيراد)
+  const plCogs = plStats.sales - plStats.profit;       // تكلفة البضاعة المباعة = المبيعات − الربح الإجمالي
+  const plNetSales = plGrossSales - plReturns.value;   // صافي المبيعات بعد خصم المرتجعات
+  const plNetCogs = plCogs - plReturns.cost;           // التكلفة بعد إرجاع بضاعة المرتجعات للمخزون
+  const plGrossProfit = plNetSales - plNetCogs;        // مجمل الربح = صافي المبيعات − التكلفة
+  const plTotalExpenses = plExpenseRows.reduce((s, r) => s + r.amount, 0);
+  const plNetProfit = plGrossProfit - plTotalExpenses; // صافي الربح = مجمل الربح − المصاريف التشغيلية
+  const plGrossMargin = plNetSales > 0 ? Math.round((plGrossProfit / plNetSales) * 100) : 0;
+  const plNetMargin = plNetSales > 0 ? Math.round((plNetProfit / plNetSales) * 100) : 0;
 
   // --- إجمالي الذمم الدائنة المستحقة (مشتقّ من دفتر ديون الموردين) ---
   const totalDebts = payables.reduce((sum, p) => sum + Math.max(0, (p.amount || 0) - (p.paidAmount || 0)), 0);
@@ -4134,6 +4175,72 @@ export default function Dashboard() {
                           </div>
                         </div>
                       </div>
+                    </div>
+
+                    {/* --- قائمة الأرباح والخسائر (Income Statement / P&L) --- */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-violet-600" />
+                          <span className="text-[11px] text-slate-600 font-black">قائمة الأرباح والخسائر (الدخل)</span>
+                        </div>
+                        <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
+                          {([['month', 'هذا الشهر'], ['year', 'هذا العام']] as const).map(([k, lbl]) => (
+                            <button
+                              key={k}
+                              onClick={() => setPlPeriod(k)}
+                              className={`text-[10px] font-black px-3 py-1.5 rounded-lg transition cursor-pointer border-none font-sans ${plPeriod === k ? 'bg-white text-violet-700 shadow-sm' : 'bg-transparent text-slate-500'}`}
+                            >
+                              {lbl}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="border border-slate-100 rounded-2xl overflow-hidden text-[11px] font-bold">
+                        {/* الإيراد */}
+                        <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50">
+                          <span className="text-slate-700">إجمالي المبيعات (الإيراد)</span>
+                          <span className="font-mono text-slate-800">{plGrossSales.toLocaleString()} د.ع</span>
+                        </div>
+                        <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100">
+                          <span className="text-slate-500">(−) مرتجعات المبيعات{plReturns.count > 0 ? ` (${plReturns.count})` : ''}</span>
+                          <span className="font-mono text-rose-600">−{plReturns.value.toLocaleString()} د.ع</span>
+                        </div>
+                        <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100 bg-slate-50/60">
+                          <span className="text-slate-700 font-black">= صافي المبيعات</span>
+                          <span className="font-mono text-slate-800 font-black">{plNetSales.toLocaleString()} د.ع</span>
+                        </div>
+                        {/* التكلفة */}
+                        <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100">
+                          <span className="text-slate-500">(−) تكلفة البضاعة المباعة (COGS)</span>
+                          <span className="font-mono text-rose-600">−{plNetCogs.toLocaleString()} د.ع</span>
+                        </div>
+                        {/* مجمل الربح */}
+                        <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 bg-emerald-50">
+                          <span className="text-emerald-800 font-black">= مجمل الربح <span className="text-[9px] text-emerald-600 font-bold">(هامش {plGrossMargin}%)</span></span>
+                          <span className="font-mono text-emerald-800 font-black">{plGrossProfit.toLocaleString()} د.ع</span>
+                        </div>
+                        {/* المصاريف التشغيلية مفصّلة */}
+                        <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100">
+                          <span className="text-slate-700 font-black">(−) المصاريف التشغيلية</span>
+                          <span className="font-mono text-rose-600">−{plTotalExpenses.toLocaleString()} د.ع</span>
+                        </div>
+                        {plExpenseRows.length === 0 ? (
+                          <div className="px-6 py-2 border-t border-slate-50 text-[10px] text-slate-400 font-bold">لا مصاريف مسجّلة في هذه الفترة</div>
+                        ) : plExpenseRows.map(row => (
+                          <div key={row.category} className="flex items-center justify-between px-6 py-1.5 border-t border-slate-50 text-[10px]">
+                            <span className="text-slate-500">• {row.category}</span>
+                            <span className="font-mono text-slate-500">−{row.amount.toLocaleString()} د.ع</span>
+                          </div>
+                        ))}
+                        {/* صافي الربح */}
+                        <div className={`flex items-center justify-between px-4 py-3.5 border-t-2 ${plNetProfit >= 0 ? 'bg-emerald-600 border-emerald-700' : 'bg-rose-600 border-rose-700'}`}>
+                          <span className="text-white font-black">= صافي الربح <span className="text-[9px] text-white/75 font-bold">(هامش {plNetMargin}%)</span></span>
+                          <span className="font-mono text-white font-black text-sm">{plNetProfit.toLocaleString()} د.ع</span>
+                        </div>
+                      </div>
+                      <p className="text-[9px] text-slate-400 font-bold">* تُحتسب القائمة آلياً من سجل المبيعات (الإيراد والتكلفة) ومرتجعات المبيعات والمصاريف التشغيلية ضمن {plIsMonth ? 'الشهر الحالي' : 'السنة المالية الحالية'}. صافي الربح = مجمل الربح − المصاريف التشغيلية.</p>
                     </div>
 
                     {/* --- ديون الموردين والذمم الدائنة --- */}
