@@ -5574,37 +5574,8 @@ export default function Dashboard() {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                        {/* نموذج تسجيل ذمّة جديدة */}
-                        <form onSubmit={handleAddPayable} className="md:col-span-5 bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-3 text-xs font-semibold">
-                          <span className="text-[10px] text-slate-400 font-black block">تسجيل ذمّة جديدة مستحقة لمذخر</span>
-                          <div className="space-y-1">
-                            <label className="block text-slate-500 text-[10px]">المورّد</label>
-                            <select required value={newPaySupplier} onChange={(e) => setNewPaySupplier(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700 cursor-pointer text-xs">
-                              <option value="">— اختر المورد —</option>
-                              {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
-                            </select>
-                          </div>
-                          <div className="space-y-1">
-                            <label className="block text-slate-500 text-[10px]">مبلغ الدين (د.ع)</label>
-                            <input type="number" min="0" required value={newPayAmount} onChange={(e) => setNewPayAmount(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-mono text-center font-bold" />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="block text-slate-500 text-[10px]">تاريخ الاستحقاق (اختياري)</label>
-                            <input type="date" value={newPayDueDate} onChange={(e) => setNewPayDueDate(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700" />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="block text-slate-500 text-[10px]">وصف (اختياري)</label>
-                            <input type="text" value={newPayDesc} onChange={(e) => setNewPayDesc(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2" placeholder="مثال: فاتورة توريد أدوية مزمنة" />
-                          </div>
-                          <button type="submit" className="w-full bg-rose-600 hover:bg-rose-700 text-white font-black py-2.5 rounded-xl cursor-pointer transition shadow-sm border-none font-sans text-xs">
-                            تسجيل ذمّة جديدة
-                          </button>
-                          {payableSuccess && <p className="text-[10px] text-emerald-700 font-black text-center">✓ تم تسجيل الذمّة في دفتر ديون الموردين</p>}
-                        </form>
-
-                        {/* قائمة الذمم الدائنة */}
-                        <div className="md:col-span-7 space-y-2">
+                      {/* قائمة الذمم الدائنة — تُضاف تلقائياً عبر طلبيات الشراء بالآجل */}
+                      <div className="space-y-2">
                           <div className="flex items-center justify-between">
                             <span className="text-[10px] text-slate-400 font-black">ذمم الموردين المسجّلة</span>
                             <span className="text-[9px] text-slate-400 font-bold">العدد: {payables.length}</span>
@@ -5664,7 +5635,6 @@ export default function Dashboard() {
                               );
                             })}
                           </div>
-                        </div>
                       </div>
                     </div>
 
