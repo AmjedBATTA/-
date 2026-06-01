@@ -538,6 +538,8 @@ export default function Dashboard() {
   // state for supplier payment modal
   const [supPayModalId, setSupPayModalId] = useState<string | null>(null);
   const [supPayAmount, setSupPayAmount] = useState<number>(0);
+  // مبالغ تسديد الديون لكل مورد في قسم سداد الديون بالتبويب المالي (مفتاح = اسم المورد)
+  const [debtPayAmounts, setDebtPayAmounts] = useState<Record<string, number>>({});
 
   // --- STATEMENT VIEW (كشف الحساب) ---
   const [stmtSupplier, setStmtSupplier] = useState('');
@@ -5739,44 +5741,95 @@ export default function Dashboard() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-                      {/* Left: Supp debts breakdown & settle simulator */}
+                      {/* Left: Supp debts breakdown & settle per supplier */}
                       <div className="bg-slate-50 p-5 rounded-2xl border border-slate-150 text-xs space-y-4 font-semibold text-slate-705">
                         <h4 className="font-extrabold text-slate-900 text-xs">سداد الديون وتسوية ذمم المذاخر والتقاص الطبية</h4>
-                        
+
                         <div className="space-y-2">
                           <p className="flex justify-between">
-                            <span>ملفات الذمم المستحقة الإجمالي للمذاخر:</span>
+                            <span>إجمالي الذمم المستحقة للموردين:</span>
                             <strong className="text-rose-700 font-mono text-sm">{totalDebts.toLocaleString()} د.ع</strong>
                           </p>
                           <p className="flex justify-between text-slate-500">
-                            <span>الرصيد المتاح حالياً بالصندوق:</span>
+                            <span>الرصيد المتاح بالصندوق:</span>
                             <span className="font-mono">{walletBalance.toLocaleString()} د.ع</span>
                           </p>
                         </div>
 
-                        <div className="bg-white p-3.5 rounded-xl border border-slate-100 text-[11px] space-y-2.5 font-bold">
-                          <p className="flex justify-between">
-                            <span>مكتب دجلة العلمي للأدوية (بغداد)</span>
-                            <span className="font-mono text-slate-800">750,000 د.ع</span>
-                          </p>
-                          <p className="flex justify-between">
-                            <span>مذخر قصر الشفاء الحديث (أربيل)</span>
-                            <span className="font-mono text-slate-800">1,100,000 د.ع</span>
-                          </p>
-                        </div>
+                        {/* قائمة ديناميكية لكل مورد له ذمم مفتوحة */}
+                        {(() => {
+                          // تجميع الذمم المفتوحة حسب المورد
+                          const grouped = payables
+                            .filter(p => p.status !== 'paid')
+                            .reduce((acc, p) => {
+                              const key = p.supplierName;
+                              if (!acc[key]) acc[key] = { name: key, supplierId: p.supplierId, remaining: 0 };
+                              acc[key].remaining += Math.max(0, p.amount - p.paidAmount);
+                              return acc;
+                            }, {} as Record<string, { name: string; supplierId?: string; remaining: number }>);
+                          const debtSuppliers = Object.values(grouped).filter(s => s.remaining > 0);
 
-                        <div className="space-y-2.5">
-                          <button 
-                            onClick={settleSupplierDebts}
-                            disabled={walletBalance < 500000 || totalDebts === 0}
-                            className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black py-2.5 rounded-xl text-center cursor-pointer transition shadow-sm text-xs font-sans"
-                          >
-                            تسوية ذمم المذاخر بقيمة (500,000 د.ع ثنائية)
-                          </button>
-                          <p className="text-[10px] text-slate-400 text-center font-medium leading-normal block">
-                            * الضغط على الزر سيقوم بسحب قيمة 500,000 د.ع من السيولة وتسوية كشف المذاخر المعنية أوتوماتيكياً.
-                          </p>
-                        </div>
+                          if (debtSuppliers.length === 0) {
+                            return (
+                              <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 text-center text-emerald-700 font-bold text-[11px]">
+                                ✓ لا توجد ذمم مستحقة — جميع الموردين مسوَّون
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="space-y-3">
+                              {debtSuppliers.map(sup => {
+                                const payAmt = debtPayAmounts[sup.name] || 0;
+                                const canPay = walletBalance >= payAmt && payAmt > 0;
+                                const canPayAll = walletBalance >= sup.remaining;
+                                // ابحث عن كائن المورد الكامل أو أنشئ واحداً مؤقتاً
+                                const supplierObj = suppliers.find(s => s.id === sup.supplierId || s.name === sup.name)
+                                  || { id: sup.supplierId || sup.name, name: sup.name, createdAt: '' } as any;
+                                return (
+                                  <div key={sup.name} className="bg-white border border-slate-100 rounded-xl p-3 space-y-2.5">
+                                    {/* اسم المورد والمبلغ المستحق */}
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-black text-slate-800 text-[11px]">{sup.name}</span>
+                                      <span className="font-mono text-rose-600 font-black text-[11px]">{sup.remaining.toLocaleString()} د.ع</span>
+                                    </div>
+                                    {/* حقل المبلغ + أزرار التسديد */}
+                                    <div className="flex gap-1.5 items-center">
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        max={sup.remaining}
+                                        placeholder="مبلغ الدفعة"
+                                        value={payAmt || ''}
+                                        onChange={e => setDebtPayAmounts(prev => ({ ...prev, [sup.name]: Number(e.target.value) }))}
+                                        className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 font-mono text-center text-[10px] font-bold min-w-0"
+                                      />
+                                      <button
+                                        type="button"
+                                        disabled={!canPay}
+                                        onClick={() => {
+                                          paySupplierDebt(supplierObj, payAmt);
+                                          setDebtPayAmounts(prev => ({ ...prev, [sup.name]: 0 }));
+                                        }}
+                                        className="shrink-0 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-black px-3 py-1.5 rounded-lg text-[10px] cursor-pointer transition border-none"
+                                      >
+                                        دفعة
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={!canPayAll}
+                                        onClick={() => paySupplierDebt(supplierObj, null)}
+                                        className="shrink-0 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-black px-3 py-1.5 rounded-lg text-[10px] cursor-pointer transition border-none"
+                                      >
+                                        سدّد الكل
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {/* Right: Dynamic capital and markup calculator logic */}
