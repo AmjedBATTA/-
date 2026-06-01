@@ -540,6 +540,8 @@ export default function Dashboard() {
   const [supPayAmount, setSupPayAmount] = useState<number>(0);
   // مبالغ تسديد الديون لكل مورد في قسم سداد الديون بالتبويب المالي (مفتاح = اسم المورد)
   const [debtPayAmounts, setDebtPayAmounts] = useState<Record<string, number>>({});
+  // بحث في سجل قوائم الشراء (B2B) — برقم القائمة أو اسم المورد
+  const [b2bOrderSearch, setB2bOrderSearch] = useState('');
 
   // --- STATEMENT VIEW (كشف الحساب) ---
   const [stmtSupplier, setStmtSupplier] = useState('');
@@ -4616,11 +4618,51 @@ export default function Dashboard() {
                           <span className="text-[10px] text-slate-400 font-bold">حالة تدفق الفواتير: موثقة بكامل القيود</span>
                         </div>
 
-                        {b2bOrders.length === 0 ? (
-                          <p className="p-8 text-center text-[11px] text-slate-400 font-bold">لا يوجد طلبيات شراء سابقة مسجلة حالياً.</p>
-                        ) : (
+                        {/* حقل البحث برقم القائمة أو اسم المورد */}
+                        <div className="relative">
+                          <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                          <input
+                            type="text"
+                            value={b2bOrderSearch}
+                            onChange={e => setB2bOrderSearch(e.target.value)}
+                            placeholder="ابحث برقم القائمة (مثال: CAP-28109) أو اسم المورد..."
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-8 pl-3 py-2 text-[11px] font-bold text-slate-700 placeholder:text-slate-400 placeholder:font-normal focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 transition"
+                          />
+                          {b2bOrderSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setB2bOrderSearch('')}
+                              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition bg-transparent border-none cursor-pointer p-0"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+
+                        {(() => {
+                          const q = b2bOrderSearch.trim().toLowerCase();
+                          const filtered = q
+                            ? b2bOrders.filter(o =>
+                                o.id.toLowerCase().includes(q) ||
+                                (o.warehouseName || '').toLowerCase().includes(q)
+                              )
+                            : b2bOrders;
+
+                          if (b2bOrders.length === 0) {
+                            return <p className="p-8 text-center text-[11px] text-slate-400 font-bold">لا يوجد طلبيات شراء سابقة مسجلة حالياً.</p>;
+                          }
+                          if (filtered.length === 0) {
+                            return (
+                              <div className="p-6 text-center space-y-1">
+                                <p className="text-[11px] text-slate-500 font-bold">لا توجد نتائج لـ «{b2bOrderSearch}»</p>
+                                <p className="text-[10px] text-slate-400 font-medium">تأكد من رقم القائمة أو اسم المورد</p>
+                              </div>
+                            );
+                          }
+
+                          return (
                           <div className="space-y-3.5">
-                            {b2bOrders.map((order) => (
+                            {filtered.map((order) => (
                               <div key={order.id} className="bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs transition">
                                 <div className="space-y-1 text-right">
                                   <div className="flex items-center gap-2">
@@ -4656,7 +4698,8 @@ export default function Dashboard() {
                               </div>
                             ))}
                           </div>
-                        )}
+                          );
+                        })()}
                       </div>
 
                     </div>
@@ -4665,7 +4708,7 @@ export default function Dashboard() {
                 </motion.div>
               )}
 
-              {/* 
+              {/*
                 =========================================================
                 VIEWPORT SECTION 5: FINANCIAL ANNOTATIONS & SUPP SETTLE
                 =========================================================
