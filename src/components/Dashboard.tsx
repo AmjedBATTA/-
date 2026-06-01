@@ -542,6 +542,16 @@ export default function Dashboard() {
   const [debtPayAmounts, setDebtPayAmounts] = useState<Record<string, number>>({});
   // بحث في سجل قوائم الشراء (B2B) — برقم القائمة أو اسم المورد
   const [b2bOrderSearch, setB2bOrderSearch] = useState('');
+  // --- FINANCIAL TAB PIN LOCK ---
+  const [financialPin, setFinancialPin] = useState<string>(() => localStorage.getItem('fin_pin') || '0000');
+  const [financialUnlocked, setFinancialUnlocked] = useState(false);
+  const [pinEntry, setPinEntry] = useState('');
+  const [pinError, setPinError] = useState(false);
+  // تغيير الباسوورد من داخل التبويب المالي
+  const [changePinOld, setChangePinOld] = useState('');
+  const [changePinNew, setChangePinNew] = useState('');
+  const [changePinConfirm, setChangePinConfirm] = useState('');
+  const [changePinMsg, setChangePinMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // --- STATEMENT VIEW (كشف الحساب) ---
   const [stmtSupplier, setStmtSupplier] = useState('');
@@ -896,6 +906,15 @@ export default function Dashboard() {
     };
     if (!allowed[currentRole].includes(activeTab)) setActiveTab('home');
   }, [currentRole]);
+
+  // قفل التبويب المالي عند مغادرته — يتطلب إدخال الباسوورد في كل مرة
+  useEffect(() => {
+    if (activeTab !== 'financial') {
+      setFinancialUnlocked(false);
+      setPinEntry('');
+      setPinError(false);
+    }
+  }, [activeTab]);
 
   // Web push notifications on load
   useEffect(() => {
@@ -4713,7 +4732,63 @@ export default function Dashboard() {
                 VIEWPORT SECTION 5: FINANCIAL ANNOTATIONS & SUPP SETTLE
                 =========================================================
               */}
-              {activeTab === 'financial' && (
+              {activeTab === 'financial' && !financialUnlocked && (
+                <motion.div
+                  key="financial-lock"
+                  initial={{ opacity: 0, scale: 0.97 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.97 }}
+                  className="flex items-center justify-center min-h-[60vh]"
+                >
+                  <div className="bg-white border border-slate-200 rounded-3xl shadow-lg p-8 w-full max-w-sm space-y-6 text-center">
+                    <div className="w-16 h-16 bg-violet-50 rounded-2xl flex items-center justify-center mx-auto">
+                      <ShieldCheck className="w-8 h-8 text-violet-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-black text-slate-800 text-base">الحسابات المالية</h3>
+                      <p className="text-[11px] text-slate-500 font-semibold mt-1">أدخل كلمة المرور للوصول إلى السجلات المالية</p>
+                    </div>
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (pinEntry === financialPin) {
+                          setFinancialUnlocked(true);
+                          setPinError(false);
+                          setPinEntry('');
+                        } else {
+                          setPinError(true);
+                          setPinEntry('');
+                        }
+                      }}
+                      className="space-y-4"
+                    >
+                      <div className="relative">
+                        <input
+                          type="password"
+                          inputMode="numeric"
+                          maxLength={20}
+                          value={pinEntry}
+                          onChange={(e) => { setPinEntry(e.target.value); setPinError(false); }}
+                          placeholder="••••"
+                          autoFocus
+                          className={`w-full text-center text-2xl font-mono tracking-[0.5em] bg-slate-50 border rounded-xl py-3 px-4 focus:outline-none focus:ring-2 transition ${pinError ? 'border-rose-400 focus:ring-rose-200 bg-rose-50' : 'border-slate-200 focus:ring-violet-200 focus:border-violet-400'}`}
+                        />
+                        {pinError && (
+                          <p className="text-[11px] text-rose-600 font-bold mt-1.5 text-center">كلمة المرور غير صحيحة</p>
+                        )}
+                      </div>
+                      <button
+                        type="submit"
+                        className="w-full bg-violet-600 hover:bg-violet-700 text-white font-black py-3 rounded-xl cursor-pointer transition border-none font-sans text-sm"
+                      >
+                        دخول
+                      </button>
+                    </form>
+                  </div>
+                </motion.div>
+              )}
+
+              {activeTab === 'financial' && financialUnlocked && (
                 <motion.div
                   key="financial"
                   initial={{ opacity: 0, y: 10 }}
@@ -6139,6 +6214,85 @@ export default function Dashboard() {
                       )}
                     </div>
                     <p className="text-[9px] text-slate-400 font-bold">* يُسجَّل كل بيع، شراء، مصروف، تسديد ذمّة، تحصيل، ومرتجع تلقائياً مع الوقت والمسؤول.</p>
+                  </div>
+
+                  {/* --- تغيير كلمة مرور التبويب المالي --- */}
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-violet-600" />
+                      <span className="text-[11px] text-slate-600 font-black">تغيير كلمة مرور الحسابات المالية</span>
+                    </div>
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (!changePinOld || !changePinNew || !changePinConfirm) {
+                          setChangePinMsg({ type: 'error', text: 'يرجى تعبئة جميع الحقول' });
+                          return;
+                        }
+                        if (changePinOld !== financialPin) {
+                          setChangePinMsg({ type: 'error', text: 'كلمة المرور الحالية غير صحيحة' });
+                          return;
+                        }
+                        if (changePinNew !== changePinConfirm) {
+                          setChangePinMsg({ type: 'error', text: 'كلمة المرور الجديدة وتأكيدها غير متطابقتين' });
+                          return;
+                        }
+                        if (changePinNew.length < 4) {
+                          setChangePinMsg({ type: 'error', text: 'كلمة المرور يجب أن تكون 4 أحرف على الأقل' });
+                          return;
+                        }
+                        setFinancialPin(changePinNew);
+                        try { localStorage.setItem('fin_pin', changePinNew); } catch {}
+                        setChangePinOld(''); setChangePinNew(''); setChangePinConfirm('');
+                        setChangePinMsg({ type: 'success', text: '✓ تم تغيير كلمة المرور بنجاح' });
+                        setTimeout(() => setChangePinMsg(null), 3000);
+                      }}
+                      className="grid grid-cols-1 sm:grid-cols-3 gap-3"
+                    >
+                      <div className="space-y-1">
+                        <label className="block text-[10px] text-slate-500 font-black">كلمة المرور الحالية</label>
+                        <input
+                          type="password"
+                          value={changePinOld}
+                          onChange={e => { setChangePinOld(e.target.value); setChangePinMsg(null); }}
+                          placeholder="••••"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center font-mono text-sm focus:outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-200 transition"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-[10px] text-slate-500 font-black">كلمة المرور الجديدة</label>
+                        <input
+                          type="password"
+                          value={changePinNew}
+                          onChange={e => { setChangePinNew(e.target.value); setChangePinMsg(null); }}
+                          placeholder="••••"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center font-mono text-sm focus:outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-200 transition"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-[10px] text-slate-500 font-black">تأكيد كلمة المرور</label>
+                        <input
+                          type="password"
+                          value={changePinConfirm}
+                          onChange={e => { setChangePinConfirm(e.target.value); setChangePinMsg(null); }}
+                          placeholder="••••"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center font-mono text-sm focus:outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-200 transition"
+                        />
+                      </div>
+                      <div className="sm:col-span-3 flex items-center gap-3">
+                        <button
+                          type="submit"
+                          className="bg-violet-600 hover:bg-violet-700 text-white font-black px-6 py-2.5 rounded-xl text-xs cursor-pointer transition border-none font-sans"
+                        >
+                          حفظ كلمة المرور الجديدة
+                        </button>
+                        {changePinMsg && (
+                          <span className={`text-[11px] font-black ${changePinMsg.type === 'success' ? 'text-emerald-700' : 'text-rose-600'}`}>
+                            {changePinMsg.text}
+                          </span>
+                        )}
+                      </div>
+                    </form>
                   </div>
 
                 </motion.div>
