@@ -7,7 +7,7 @@ import {
   TrendingUp, FileText, Ban, DollarSign, Calendar, RefreshCw, BarChart3, Pill, ClipboardList, ShieldAlert, Heart,
   Barcode, X, Volume2, VolumeX, Camera, Download, Bell, Moon, Sun
 } from 'lucide-react';
-import { Medicine, Order } from '../types';
+import { Medicine, Order, Supplier } from '../types';
 
 // Firebase Authentication & Remote Firestore Synchronizer hooks
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
@@ -51,7 +51,8 @@ interface Payable {
   dueDate?: string;       // تاريخ الاستحقاق (اختياري)
   status: 'open' | 'partial' | 'paid';
   description?: string;
-  relatedOrderId?: string; // فاتورة الشراء المرتبطة إن وُجدت
+  relatedOrderId?: string;
+  supplierId?: string;
 }
 
 interface Receivable {
@@ -252,6 +253,55 @@ function generateHistoricalSales(): SaleRecord[] {
   });
 }
 
+function generateSeedSuppliers(): Supplier[] {
+  return [
+    {
+      id: 'SUP-1001',
+      name: 'مذخر بغداد المركزي للأدوية',
+      phone: '07701234567',
+      address: 'بغداد — الكرخ، شارع الصناعة',
+      contactPerson: 'أبو سامر الجنابي',
+      creditLimit: 5000000,
+      paymentTerms: 30,
+      notes: 'مورّد رئيسي للأدوية المزمنة والمضادات الحيوية',
+      createdAt: '2025-01-15',
+    },
+    {
+      id: 'SUP-1002',
+      name: 'شركة الرافدين للتجهيزات الطبية',
+      phone: '07809876543',
+      address: 'بغداد — الرصافة، المنصور',
+      contactPerson: 'م. حيدر الموسوي',
+      creditLimit: 3000000,
+      paymentTerms: 45,
+      notes: 'مستلزمات طبية ومحاليل وريدية',
+      createdAt: '2025-03-01',
+    },
+    {
+      id: 'SUP-1003',
+      name: 'مذخر دجلة للمستلزمات الطبية',
+      phone: '07701122334',
+      address: 'بغداد — الكرادة',
+      contactPerson: 'علي عبد الكريم',
+      creditLimit: 2000000,
+      paymentTerms: 21,
+      notes: 'أدوية التبريد والمستحضرات الحساسة للحرارة',
+      createdAt: '2025-04-10',
+    },
+    {
+      id: 'SUP-1004',
+      name: 'مكتب دجلة العلمي للأدوية (بغداد)',
+      phone: '07711223344',
+      address: 'بغداد — المدينة الطبية',
+      contactPerson: 'د. لؤي السامرائي',
+      creditLimit: 8000000,
+      paymentTerms: 60,
+      notes: 'مكتب علمي — أدوية متخصصة وجديدة في السوق',
+      createdAt: '2024-12-01',
+    },
+  ];
+}
+
 export default function Dashboard() {
   // --- FIREBASE AUTH & SYNCHRONIZER METRIC REGISTERS ---
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -306,7 +356,7 @@ export default function Dashboard() {
       secondaryPrice: 20000,
       costPrice: 13300,
       lastCostPrice: 13300,
-      availableQuantity: 15,
+      availableQuantity: 1,
       status: 'low',
       barcode: '8699532095457'
     },
@@ -353,9 +403,9 @@ export default function Dashboard() {
       secondaryPrice: 10500,
       costPrice: 6850,
       lastCostPrice: 6850,
-      availableQuantity: 8,
+      availableQuantity: 0,
       warehouse: 'مذخر السلام الدولي (النجف)',
-      status: 'low',
+      status: 'unavailable',
       barcode: '5011327789311'
     },
     {
@@ -386,6 +436,8 @@ export default function Dashboard() {
     '6': '2026-06-02', // Near Expiry!
     '7': '2027-11-10'
   });
+
+  const [dismissedLowStock, setDismissedLowStock] = useState<Set<string>>(new Set());
 
   // B2B Supplier orders
   const [b2bOrders, setB2bOrders] = useState<Order[]>([
@@ -460,6 +512,8 @@ export default function Dashboard() {
   // --- SALES RETURNS (مرتجعات المبيعات) ---
   const [salesReturns, setSalesReturns] = useState<SalesReturn[]>(() => generateSeedReturns());
   const [showReturnModal, setShowReturnModal] = useState(false);
+  const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
+  const [editingItems, setEditingItems] = useState<{ name: string; quantity: number; price: number; costPrice?: number; lineProfit?: number }[]>([]);
 
   // --- AUDIT LOG (سجل التدقيق) ---
   const [auditLog, setAuditLog] = useState<AuditEntry[]>(() => generateSeedAuditLog());
@@ -469,6 +523,21 @@ export default function Dashboard() {
   const [returnRefundMethod, setReturnRefundMethod] = useState<'cash' | 'none'>('cash');
   const [returnSuccess, setReturnSuccess] = useState(false);
 
+  // --- SUPPLIERS (قائمة الموردين) ---
+  const [suppliers, setSuppliers] = useState<Supplier[]>(() => generateSeedSuppliers());
+  const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null);
+  const [supplierFormVisible, setSupplierFormVisible] = useState(false);
+  const [newSupName, setNewSupName] = useState('');
+  const [newSupPhone, setNewSupPhone] = useState('');
+  const [newSupContact, setNewSupContact] = useState('');
+  const [newSupAddress, setNewSupAddress] = useState('');
+  const [newSupCreditLimit, setNewSupCreditLimit] = useState<number>(0);
+  const [newSupPaymentTerms, setNewSupPaymentTerms] = useState<number>(30);
+  const [newSupNotes, setNewSupNotes] = useState('');
+  // state for supplier payment modal
+  const [supPayModalId, setSupPayModalId] = useState<string | null>(null);
+  const [supPayAmount, setSupPayAmount] = useState<number>(0);
+
   // --- STATEMENT VIEW (كشف الحساب) ---
   const [stmtSupplier, setStmtSupplier] = useState('');
   const [stmtCustomer, setStmtCustomer] = useState('');
@@ -477,18 +546,6 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState<'home' | 'pos' | 'inventory' | 'b2b' | 'financial' | 'team'>('home');
 
   // --- STOCK MOVEMENT LOG ---
-  interface StockMovement {
-    id: string;
-    medicineId: string;
-    medicineName: string;
-    type: 'purchase' | 'sale' | 'return' | 'adjustment';
-    quantity: number;
-    balanceAfter: number;
-    timestamp: string;
-    note?: string;
-  }
-  const [stockMovements, setStockMovements] = useState<StockMovement[]>([]);
-  const [showMovementLog, setShowMovementLog] = useState(false);
 
   // --- RBAC ---
   const [currentRole, setCurrentRole] = useState<'admin' | 'pharmacist' | 'cashier'>('admin');
@@ -561,6 +618,13 @@ export default function Dashboard() {
 
   // --- DYNAMIC INVENTORY ACTIONS ---
   const [searchInInventoryQuery, setSearchInInventoryQuery] = useState('');
+
+  // --- STOCK MOVEMENT VIEWER (حركة المادة: الوارد والصادر) ---
+  const [movementMedId, setMovementMedId] = useState<string>('');
+  const [movementFrom, setMovementFrom] = useState<string>('');
+  const [movementTo, setMovementTo] = useState<string>('');
+  const [movementSearch, setMovementSearch] = useState<string>(''); // بحث بالاسم أو الباركود
+  const [movementDropdownOpen, setMovementDropdownOpen] = useState<boolean>(false);
   const [newDrugAr, setNewDrugAr] = useState('');
   const [newDrugEn, setNewDrugEn] = useState('');
   const [newDrugSci, setNewDrugSci] = useState('');
@@ -602,6 +666,8 @@ export default function Dashboard() {
     }
   ]);
 
+  // المورّد النشط لمسودة الشراء الحالية — يُطبَّق على كل الأصناف ويُورَّث للأصناف الجديدة تلقائياً
+  const [purchaseSupplier, setPurchaseSupplier] = useState<string>('');
   const [purchaseSearchWord, setPurchaseSearchWord] = useState('');
   const [purchaseNewProdAr, setPurchaseNewProdAr] = useState('');
   const [purchaseNewProdEn, setPurchaseNewProdEn] = useState('');
@@ -623,7 +689,7 @@ export default function Dashboard() {
   const [scanSuccessFeedback, setScanSuccessFeedback] = useState<string | null>(null);
   const [scanStream, setScanStream] = useState<MediaStream | null>(null);
   const [isBeepEnabled, setIsBeepEnabled] = useState(true);
-  const [scanTarget, setScanTarget] = useState<'pos' | 'inventory' | 'add-drug' | 'purchase-order'>('pos');
+  const [scanTarget, setScanTarget] = useState<'pos' | 'inventory' | 'add-drug' | 'purchase-order' | 'movement'>('pos');
   const [newDrugBarcode, setNewDrugBarcode] = useState('');
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -649,7 +715,7 @@ export default function Dashboard() {
     }
   };
 
-  const startScanning = async (target: 'pos' | 'inventory' | 'add-drug' | 'purchase-order') => {
+  const startScanning = async (target: 'pos' | 'inventory' | 'add-drug' | 'purchase-order' | 'movement') => {
     setScanTarget(target);
     setIsScanning(true);
     setScanError(null);
@@ -768,6 +834,16 @@ export default function Dashboard() {
       setSearchInInventoryQuery(code);
     } else if (scanTarget === 'add-drug') {
       setNewDrugBarcode(code);
+    } else if (scanTarget === 'movement') {
+      // حركة المادة: اختيار الدواء مباشرةً من الباركود الممسوح
+      const match = inventory.find(m => m.barcode === code);
+      if (match) {
+        setMovementMedId(match.id);
+        setMovementSearch(`${match.nameAr} (${match.nameEn})`);
+      } else {
+        setMovementSearch(code);
+      }
+      setMovementDropdownOpen(false);
     } else if (scanTarget === 'purchase-order') {
       const match = inventory.find(m => m.barcode === code);
       if (match) {
@@ -783,9 +859,12 @@ export default function Dashboard() {
             scientificName: match.scientificName,
             category: match.category,
             price: Math.floor(match.price * 0.72) || 3000,
+            retailPrice: match.price || 0,
+            officialPrice: match.secondaryPrice || (match.price ? match.price + 500 : 0),
             qty: 50,
             expiryDate: expiryDates[match.id] || '2028-06-01',
-            barcode: code
+            barcode: code,
+            warehouse: purchaseSupplier || match.warehouse || '',
           };
           setPurchaseDraft(prev => [...prev, freshDraft]);
         }
@@ -846,6 +925,71 @@ export default function Dashboard() {
       const days = getDaysUntilExpiry(m.id);
       return days <= 30;
     });
+  };
+
+  // --- STOCK MOVEMENT HELPERS (حركة المادة) ---
+  // مطابقة اسم صنف في فاتورة (بيع/شراء) مع دواء في المخزون — الأسماء قد تحوي لاحقات مثل (Panadol Extra) أو (كرتون)
+  const itemMatchesMed = (itemName: string | undefined, med: Medicine): boolean => {
+    if (!itemName) return false;
+    const cleanItem = itemName.split('(')[0].trim();
+    const lower = itemName.toLowerCase();
+    return (
+      itemName.includes(med.nameAr) ||
+      (cleanItem.length >= 4 && med.nameAr.includes(cleanItem)) ||
+      (!!med.nameEn && med.nameEn.length >= 3 && lower.includes(med.nameEn.toLowerCase()))
+    );
+  };
+
+  interface StockMovement {
+    type: 'in' | 'out';
+    date: string;       // YYYY-MM-DD أو YYYY-MM-DD HH:mm
+    qty: number;
+    price: number;      // سعر الوحدة (د.ع)
+    ref: string;        // رقم الفاتورة / الطلبية
+    party: string;      // اسم الزبون / المورد
+  }
+
+  // يجمع كل حركات الوارد (شراء) والصادر (بيع) لدواء معيّن ضمن مدى زمني اختياري
+  const getStockMovements = (medId: string, from: string, to: string) => {
+    const med = inventory.find(m => m.id === medId);
+    if (!med) return { movements: [] as StockMovement[], totalIn: 0, totalOut: 0, valueIn: 0, valueOut: 0 };
+
+    const inRange = (dateStr: string): boolean => {
+      const d = (dateStr || '').substring(0, 10);
+      if (from && d < from) return false;
+      if (to && d > to) return false;
+      return true;
+    };
+
+    const movements: StockMovement[] = [];
+    let totalIn = 0, totalOut = 0, valueIn = 0, valueOut = 0;
+
+    // الصادر = المبيعات (من سجل الفواتير)
+    salesLedger.forEach(s => {
+      if (!inRange(s.timestamp)) return;
+      s.items.forEach(it => {
+        if (itemMatchesMed(it.name, med)) {
+          movements.push({ type: 'out', date: s.timestamp, qty: it.quantity, price: it.price, ref: s.invoiceId, party: s.customerName });
+          totalOut += it.quantity;
+          valueOut += it.quantity * it.price;
+        }
+      });
+    });
+
+    // الوارد = المشتريات (من طلبيات المذاخر)
+    b2bOrders.forEach(o => {
+      if (!inRange(o.date)) return;
+      (o.items || []).forEach((it: any) => {
+        if (itemMatchesMed(it.medicineName, med)) {
+          movements.push({ type: 'in', date: o.date, qty: it.quantity, price: it.price, ref: o.id, party: o.warehouseName });
+          totalIn += it.quantity;
+          valueIn += it.quantity * it.price;
+        }
+      });
+    });
+
+    movements.sort((a, b) => b.date.localeCompare(a.date));
+    return { movements, totalIn, totalOut, valueIn, valueOut };
   };
 
 
@@ -1231,15 +1375,6 @@ export default function Dashboard() {
       const med = inventory.find(m => m.nameAr === it.name || `${m.nameAr} (${m.nameEn})` === it.name);
       if (med) {
         const balAfter = med.availableQuantity + it.quantity;
-        setStockMovements(prev => [{
-          id: 'MOV-' + Date.now() + '-' + Math.floor(Math.random()*1000),
-          medicineId: med.id,
-          medicineName: med.nameAr,
-          type: 'return' as const,
-          quantity: it.quantity,
-          balanceAfter: balAfter,
-          timestamp: ts,
-        }, ...prev].slice(0, 200));
       }
     });
 
@@ -1258,6 +1393,31 @@ export default function Dashboard() {
     setReturnRefundMethod('cash');
     setReturnSuccess(true);
     setTimeout(() => setReturnSuccess(false), 3000);
+  };
+
+  // --- EDIT INVOICE ITEMS (تعديل أصناف فاتورة مبيعات موجودة) ---
+  const handleSaveInvoiceEdit = (invoiceId: string) => {
+    setSalesLedger(prev => prev.map(s => {
+      if (s.invoiceId !== invoiceId) return s;
+      const newTotal = editingItems.reduce((sum, it) => sum + it.quantity * it.price, 0);
+      const newTotalCost = editingItems.reduce((sum, it) => sum + it.quantity * (it.costPrice ?? 0), 0);
+      const newGrossProfit = newTotal - newTotalCost;
+      const diff = newTotal - s.total;
+      if (diff !== 0) setWalletBalance(w => w + diff);
+      return {
+        ...s,
+        items: editingItems.map(it => ({
+          ...it,
+          lineProfit: it.quantity * (it.price - (it.costPrice ?? 0)),
+        })),
+        subtotal: newTotal,
+        total: newTotal,
+        totalCost: newTotalCost,
+        grossProfit: newGrossProfit,
+        profitMargin: newTotal > 0 ? Math.round((newGrossProfit / newTotal) * 100) : 0,
+      };
+    }));
+    setExpandedInvoiceId(null);
   };
 
   // --- ADD EXPENSE (تسجيل مصروف وخصمه من السيولة) ---
@@ -1298,9 +1458,11 @@ export default function Dashboard() {
     e.preventDefault();
     if (!newPaySupplier.trim() || !newPayAmount || newPayAmount <= 0) return;
     const payId = `PAY-${Math.floor(Math.random() * 90000 + 10000)}`;
+    const matchedSup = suppliers.find(s => s.name === newPaySupplier.trim());
     const newPayable: Payable = {
       id: payId,
       supplierName: newPaySupplier.trim(),
+      supplierId: matchedSup?.id,
       amount: Math.round(newPayAmount),
       paidAmount: 0,
       date: new Date().toISOString().split('T')[0],
@@ -1764,15 +1926,6 @@ export default function Dashboard() {
         const med = inventory.find(m => m.id === item.medicine.id);
         if (med) {
           const balAfter = Math.max(0, med.availableQuantity - item.quantity);
-          setStockMovements(prev => [{
-            id: 'MOV-' + Date.now() + '-' + Math.floor(Math.random()*1000),
-            medicineId: med.id,
-            medicineName: med.nameAr,
-            type: 'sale' as const,
-            quantity: -item.quantity,
-            balanceAfter: balAfter,
-            timestamp: ts2,
-          }, ...prev].slice(0, 200));
         }
       });
 
@@ -1796,15 +1949,6 @@ export default function Dashboard() {
         const med = inventory.find(m => m.id === item.medicine.id);
         if (med) {
           const balAfter = Math.max(0, med.availableQuantity - item.quantity);
-          setStockMovements(prev => [{
-            id: 'MOV-' + Date.now() + '-' + Math.floor(Math.random()*1000),
-            medicineId: med.id,
-            medicineName: med.nameAr,
-            type: 'sale' as const,
-            quantity: -item.quantity,
-            balanceAfter: balAfter,
-            timestamp: ts3,
-          }, ...prev].slice(0, 200));
         }
       });
 
@@ -1896,10 +2040,10 @@ export default function Dashboard() {
   };
 
   // --- PURCHASE ORDERS (طلبيات الشراء) BUSINESS LOGIC ---
-  const addToPurchaseDraft = (med: any) => {
+  const addToPurchaseDraft = (med: any, overrideQty?: number) => {
     const exists = purchaseDraft.find(d => d.medicineId === med.id);
     if (exists) {
-      setPurchaseDraft(prev => prev.map(d => d.medicineId === med.id ? { ...d, qty: d.qty + 10 } : d));
+      setPurchaseDraft(prev => prev.map(d => d.medicineId === med.id ? { ...d, qty: d.qty + (overrideQty ?? 10) } : d));
     } else {
       const newItem = {
         id: 'draft-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
@@ -1909,9 +2053,12 @@ export default function Dashboard() {
         scientificName: med.scientificName || 'N/A',
         category: med.category || 'مسكنات الألم',
         price: Math.floor(med.price * 0.72) || 3000, // Wholesale discount!
-        qty: 50,
+        retailPrice: med.price || 0,
+        officialPrice: med.secondaryPrice || (med.price ? med.price + 500 : 0),
+        qty: overrideQty ?? 50,
         expiryDate: expiryDates[med.id] || '2028-12-01',
-        barcode: med.barcode || '62811' + Math.floor(Math.random() * 900000 + 100000)
+        barcode: med.barcode || '62811' + Math.floor(Math.random() * 900000 + 100000),
+        warehouse: purchaseSupplier || med.warehouse || '',
       };
       setPurchaseDraft(prev => [...prev, newItem]);
     }
@@ -2018,15 +2165,6 @@ export default function Dashboard() {
     purchaseDraft.forEach(draftItem => {
       const med = updatedInventory.find(m => m.id === draftItem.medicineId || m.nameAr === draftItem.nameAr);
       if (med) {
-        setStockMovements(prev => [{
-          id: 'MOV-' + Date.now() + '-' + Math.floor(Math.random()*1000),
-          medicineId: med.id,
-          medicineName: med.nameAr,
-          type: 'purchase' as const,
-          quantity: Number(draftItem.qty),
-          balanceAfter: med.availableQuantity,
-          timestamp: purchaseTsStr,
-        }, ...prev].slice(0, 200));
       }
     });
 
@@ -2039,9 +2177,11 @@ export default function Dashboard() {
 
     if (purchaseOnCredit) {
       // شراء بالآجل: تُسجَّل الفاتورة كذمّة على المذخر بدلاً من خصمها نقداً
+      const matchedSupplier = suppliers.find(s => s.name === creditSupplierName.trim());
       const creditPayable: Payable = {
         id: `PAY-${Math.floor(Math.random() * 90000 + 10000)}`,
         supplierName: creditSupplierName.trim() || 'مذخر التوريد',
+        supplierId: matchedSupplier?.id,
         amount: totalCost,
         paidAmount: 0,
         date: new Date().toISOString().split('T')[0],
@@ -2453,58 +2593,6 @@ export default function Dashboard() {
       */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         
-        {/* Real-time Counter Indicators */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          
-          <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[10px] text-slate-400 font-black tracking-wider block">السيولة في صندوق الكاش</span>
-              <span className="text-xl font-black text-slate-900 tracking-tight font-mono">
-                {walletBalance.toLocaleString()} <span className="text-xs text-slate-500 font-sans font-extrabold">د.ع</span>
-              </span>
-            </div>
-            <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
-              <Wallet className="w-5.5 h-5.5" />
-            </div>
-          </div>
-
-          <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[10px] text-slate-400 font-black tracking-wider block">أرباح ومبيعات اليوم</span>
-              <span className="text-xl font-black text-slate-900 tracking-tight font-mono">
-                {dailySalesRevenue.toLocaleString()} <span className="text-xs text-slate-500 font-sans font-extrabold">د.ع</span>
-              </span>
-            </div>
-            <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
-              <TrendingUp className="w-5.5 h-5.5" />
-            </div>
-          </div>
-
-          <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[10px] text-slate-400 font-black tracking-wider block">ذمم المذاخر المتبقية</span>
-              <span className="text-xl font-black text-rose-700 tracking-tight font-mono">
-                {totalDebts.toLocaleString()} <span className="text-xs text-slate-500 font-sans font-extrabold">د.ع</span>
-              </span>
-            </div>
-            <div className="w-10 h-10 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center">
-              <ClipboardList className="w-5.5 h-5.5" />
-            </div>
-          </div>
-
-          <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[10px] text-slate-400 font-black tracking-wider block">المخزون الدوائي النشط</span>
-              <span className="text-xl font-black text-slate-900 tracking-tight">
-                {inventory.reduce((sum, m) => sum + m.availableQuantity, 0)} <span className="text-xs text-slate-500 font-extrabold">علب</span>
-              </span>
-            </div>
-            <div className="w-10 h-10 bg-slate-50 text-slate-700 rounded-xl flex items-center justify-center">
-              <Pill className="w-5.5 h-5.5" />
-            </div>
-          </div>
-
-        </div>
 
         {/* 
           =========================================================
@@ -2968,6 +3056,65 @@ export default function Dashboard() {
                       })}
                     </div>
 
+                    {/* حركة مبيع اليوم — جميع المواد والأدوية المباعة اليوم بالوقت والكمية */}
+                    <div className="pt-4 border-t border-slate-100">
+                      <h4 className="font-extrabold text-slate-800 text-xs mb-3 flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4 text-blue-500" />
+                        <span>حركة مبيع اليوم</span>
+                        <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                          {salesLedger.filter(s => {
+                            const d = new Date(String(s.timestamp).replace(' ','T'));
+                            return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` === finTodayStr;
+                          }).reduce((sum, s) => sum + s.items.length, 0)} صنف
+                        </span>
+                      </h4>
+                      {(() => {
+                        const todayItems = salesLedger
+                          .filter(s => {
+                            const d = new Date(String(s.timestamp).replace(' ','T'));
+                            return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` === finTodayStr;
+                          })
+                          .flatMap(s =>
+                            s.items.map(it => ({
+                              name: it.name,
+                              qty: it.quantity,
+                              price: it.price,
+                              time: String(s.timestamp).slice(11, 16),
+                              invoiceId: s.invoiceId,
+                            }))
+                          );
+                        if (todayItems.length === 0) return (
+                          <p className="text-[10px] text-slate-400 font-bold text-center py-4">لا توجد مبيعات مسجّلة اليوم بعد</p>
+                        );
+                        return (
+                          <div className="overflow-x-auto rounded-xl border border-slate-100">
+                            <table className="w-full text-[10px] font-bold border-collapse">
+                              <thead>
+                                <tr className="bg-slate-50 text-slate-500 text-[9px] border-b border-slate-100">
+                                  <th className="text-right font-black py-2 px-3">الدواء / المادة</th>
+                                  <th className="text-center font-black py-2 px-3">الكمية</th>
+                                  <th className="text-center font-black py-2 px-3">الوقت</th>
+                                  <th className="text-center font-black py-2 px-3">الفاتورة</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {todayItems.map((row, i) => (
+                                  <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/60">
+                                    <td className="text-right py-2 px-3 text-slate-700">{row.name}</td>
+                                    <td className="text-center py-2 px-3">
+                                      <span className="bg-blue-50 text-blue-700 font-mono px-2 py-0.5 rounded-lg">{row.qty}</span>
+                                    </td>
+                                    <td className="text-center py-2 px-3 font-mono text-slate-500">{row.time}</td>
+                                    <td className="text-center py-2 px-3 font-mono text-slate-400 text-[9px]">{row.invoiceId}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
                     {/* Historical sales log list below the shelf to see how money accumulated */}
                     <div className="pt-4 border-t border-slate-100">
                       <h4 className="font-extrabold text-slate-800 text-xs mb-3 flex items-center space-x-reverse space-x-2">
@@ -2980,33 +3127,107 @@ export default function Dashboard() {
                             <CheckCircle2 className="w-3.5 h-3.5" /> تمّ تسجيل المرتجع وتحديث المخزون بنجاح
                           </div>
                         )}
-                        {salesLedger.map((s) => (
-                          <div key={s.invoiceId} className="p-3 bg-slate-50/50 rounded-xl flex items-center justify-between text-[11px] border border-slate-100">
-                            <div>
-                              <strong className="text-slate-900 font-bold font-mono text-[10px]">{s.invoiceId}</strong>
-                              <span className="text-slate-400 mx-2">•</span>
-                              <span className="text-slate-600 font-medium">العميل: {s.customerName}</span>
-                              {salesReturns.some(r => r.originalInvoiceId === s.invoiceId) && (
-                                <span className="text-[8px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded mr-2">مُرتجَع</span>
+                        {salesLedger.map((s) => {
+                          const isExpanded = expandedInvoiceId === s.invoiceId;
+                          return (
+                            <div key={s.invoiceId} className={`rounded-xl border text-[11px] transition-all ${isExpanded ? 'border-blue-200 bg-blue-50/30' : 'border-slate-100 bg-slate-50/50'}`}>
+                              {/* رأس الفاتورة — قابل للضغط للتوسيع */}
+                              <div
+                                className="p-3 flex items-center justify-between cursor-pointer select-none"
+                                onClick={() => {
+                                  if (isExpanded) {
+                                    setExpandedInvoiceId(null);
+                                  } else {
+                                    setExpandedInvoiceId(s.invoiceId);
+                                    setEditingItems(s.items.map(it => ({ ...it })));
+                                  }
+                                }}
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className={`text-[9px] transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
+                                  <strong className="text-slate-900 font-bold font-mono text-[10px]">{s.invoiceId}</strong>
+                                  <span className="text-slate-400">•</span>
+                                  <span className="text-slate-600 font-medium truncate">العميل: {s.customerName}</span>
+                                  {salesReturns.some(r => r.originalInvoiceId === s.invoiceId) && (
+                                    <span className="text-[8px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded shrink-0">مُرتجَع</span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="font-mono font-bold text-slate-700">{s.total.toLocaleString()} د.ع</span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setReturnTarget(s);
+                                      setReturnQtys({});
+                                      setReturnReason('');
+                                      setReturnRefundMethod('cash');
+                                      setShowReturnModal(true);
+                                    }}
+                                    className="text-[9px] font-black px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg transition cursor-pointer"
+                                  >
+                                    إرجاع
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* تفاصيل الأصناف — قابلة للتعديل */}
+                              {isExpanded && (
+                                <div className="px-3 pb-3 space-y-2 border-t border-blue-100">
+                                  <p className="text-[9px] text-blue-600 font-black pt-2">المواد المباعة — يمكنك تعديل الكمية أو السعر ثم حفظ التغييرات</p>
+                                  <div className="space-y-1.5">
+                                    {editingItems.map((it, idx) => (
+                                      <div key={idx} className="flex items-center gap-2 bg-white border border-slate-100 rounded-lg px-3 py-2">
+                                        <span className="flex-1 text-slate-700 font-bold text-[10px] truncate">{it.name}</span>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                          <span className="text-[9px] text-slate-400">كمية</span>
+                                          <input
+                                            type="number"
+                                            min={1}
+                                            value={it.quantity}
+                                            onChange={e => setEditingItems(prev => prev.map((x, i) => i === idx ? { ...x, quantity: Math.max(1, Number(e.target.value)) } : x))}
+                                            className="w-14 text-center border border-slate-200 rounded-lg px-1 py-0.5 font-mono text-[10px] font-bold bg-white"
+                                          />
+                                        </div>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                          <span className="text-[9px] text-slate-400">سعر</span>
+                                          <input
+                                            type="number"
+                                            min={0}
+                                            value={it.price}
+                                            onChange={e => setEditingItems(prev => prev.map((x, i) => i === idx ? { ...x, price: Math.max(0, Number(e.target.value)) } : x))}
+                                            className="w-24 text-center border border-slate-200 rounded-lg px-1 py-0.5 font-mono text-[10px] font-bold bg-white"
+                                          />
+                                        </div>
+                                        <span className="text-[9px] font-mono text-emerald-700 shrink-0">
+                                          = {(it.quantity * it.price).toLocaleString()}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <div className="flex items-center justify-between pt-1">
+                                    <span className="text-[10px] font-black text-slate-700">
+                                      الإجمالي الجديد: <span className="font-mono text-emerald-700">{editingItems.reduce((s, it) => s + it.quantity * it.price, 0).toLocaleString()} د.ع</span>
+                                    </span>
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={() => setExpandedInvoiceId(null)}
+                                        className="text-[9px] font-black px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition cursor-pointer border-none"
+                                      >
+                                        إلغاء
+                                      </button>
+                                      <button
+                                        onClick={() => handleSaveInvoiceEdit(s.invoiceId)}
+                                        className="text-[9px] font-black px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition cursor-pointer border-none"
+                                      >
+                                        حفظ التعديلات
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
                               )}
                             </div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono font-bold text-slate-700">{s.total.toLocaleString()} د.ع</span>
-                              <button
-                                onClick={() => {
-                                  setReturnTarget(s);
-                                  setReturnQtys({});
-                                  setReturnReason('');
-                                  setReturnRefundMethod('cash');
-                                  setShowReturnModal(true);
-                                }}
-                                className="text-[9px] font-black px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg transition cursor-pointer"
-                              >
-                                إرجاع
-                              </button>
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -3365,88 +3586,345 @@ export default function Dashboard() {
                       </table>
                     </div>
 
+                  {/* ===================================================== */}
+                  {/* حركة المادة — سجل الوارد (شراء) والصادر (بيع) لصنف معيّن */}
+                  {/* ===================================================== */}
+                  <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
+                    <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                      <div className="w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+                        <RefreshCw className="w-4 h-4 text-indigo-600" />
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-slate-900 text-sm">حركة المادة — سجل الوارد والصادر</h4>
+                        <p className="text-[10px] text-slate-400 font-bold mt-0.5">اختر صنفاً لعرض كميات الشراء والبيع وتواريخها ضمن مدة زمنية قابلة للتحديد</p>
+                      </div>
+                    </div>
+
+                    {/* أدوات التحكم: اختيار الصنف + المدى الزمني */}
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                      <div className="md:col-span-5 space-y-1 relative">
+                        <label className="block text-[10px] font-black text-slate-500">الصنف / الدواء (بحث بالاسم أو الباركود)</label>
+                        <div className="flex gap-1.5">
+                          <div className="relative flex-1">
+                            <Search className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            <input
+                              type="text"
+                              value={movementSearch}
+                              onChange={(e) => {
+                                setMovementSearch(e.target.value);
+                                setMovementDropdownOpen(true);
+                                if (!e.target.value.trim()) setMovementMedId('');
+                              }}
+                              onFocus={() => setMovementDropdownOpen(true)}
+                              onBlur={() => setTimeout(() => setMovementDropdownOpen(false), 150)}
+                              placeholder="اكتب اسم الدواء أو امسح الباركود..."
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-8 py-2.5 text-xs font-bold text-slate-700 focus:outline-indigo-400 placeholder:text-slate-400 placeholder:font-medium"
+                            />
+                            {movementSearch && (
+                              <button
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => { setMovementSearch(''); setMovementMedId(''); setMovementDropdownOpen(false); }}
+                                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer bg-transparent border-none p-0"
+                                title="مسح"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => startScanning('movement')}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl px-3 py-2 cursor-pointer transition flex items-center justify-center shrink-0 border-none"
+                            title="مسح الباركود بالكاميرا"
+                          >
+                            <Barcode className="w-4 h-4" />
+                          </button>
+                        </div>
+                        {/* قائمة النتائج المنسدلة */}
+                        {movementDropdownOpen && (() => {
+                          const q = movementSearch.toLowerCase().trim();
+                          const selectedMed = inventory.find(m => m.id === movementMedId);
+                          const isExactSelected = !!selectedMed && movementSearch === `${selectedMed.nameAr} (${selectedMed.nameEn})`;
+                          const filtered = [...inventory]
+                            .filter(m =>
+                              !q || isExactSelected ||
+                              m.nameAr.toLowerCase().includes(q) ||
+                              m.nameEn.toLowerCase().includes(q) ||
+                              (m.scientificName || '').toLowerCase().includes(q) ||
+                              (m.barcode || '').includes(q)
+                            )
+                            .sort((a, b) => a.nameAr.localeCompare(b.nameAr));
+                          return (
+                            <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                              {filtered.length === 0 ? (
+                                <p className="text-[10px] text-slate-400 font-bold text-center py-3">لا توجد نتائج مطابقة</p>
+                              ) : filtered.map(m => (
+                                <button
+                                  key={m.id}
+                                  type="button"
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={() => {
+                                    setMovementMedId(m.id);
+                                    setMovementSearch(`${m.nameAr} (${m.nameEn})`);
+                                    setMovementDropdownOpen(false);
+                                  }}
+                                  className={`w-full text-right px-3 py-2 hover:bg-indigo-50 cursor-pointer border-none flex items-center justify-between gap-2 transition ${m.id === movementMedId ? 'bg-indigo-50' : 'bg-transparent'}`}
+                                >
+                                  <div className="min-w-0">
+                                    <span className="block text-[11px] font-black text-slate-800 truncate">{m.nameAr} <span className="text-slate-400 font-mono text-[9px]">{m.nameEn}</span></span>
+                                    <span className="block text-[9px] text-slate-400 font-mono">{m.barcode || '—'} • {m.category}</span>
+                                  </div>
+                                  <span className="text-[9px] text-slate-400 font-bold shrink-0 whitespace-nowrap">{m.availableQuantity} علبة</span>
+                                </button>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                      <div className="md:col-span-3 space-y-1">
+                        <label className="block text-[10px] font-black text-slate-500">من تاريخ</label>
+                        <input
+                          type="date"
+                          value={movementFrom}
+                          onChange={(e) => setMovementFrom(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-700 font-mono focus:outline-indigo-400"
+                        />
+                      </div>
+                      <div className="md:col-span-3 space-y-1">
+                        <label className="block text-[10px] font-black text-slate-500">إلى تاريخ</label>
+                        <input
+                          type="date"
+                          value={movementTo}
+                          onChange={(e) => setMovementTo(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-700 font-mono focus:outline-indigo-400"
+                        />
+                      </div>
+                      <div className="md:col-span-1">
+                        <button
+                          type="button"
+                          onClick={() => { setMovementFrom(''); setMovementTo(''); }}
+                          className="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-black py-2.5 rounded-xl text-[10px] cursor-pointer transition border-none"
+                          title="مسح المدى الزمني"
+                        >
+                          مسح
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* النتائج */}
+                    {!movementMedId ? (
+                      <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl py-10 text-center">
+                        <Search className="w-6 h-6 text-slate-300 mx-auto mb-2" />
+                        <p className="text-[11px] text-slate-400 font-bold">اختر صنفاً من القائمة أعلاه لعرض سجل حركته (الوارد والصادر)</p>
+                      </div>
+                    ) : (() => {
+                      const med = inventory.find(m => m.id === movementMedId);
+                      const { movements, totalIn, totalOut, valueIn, valueOut } = getStockMovements(movementMedId, movementFrom, movementTo);
+                      const net = totalIn - totalOut;
+                      return (
+                        <div className="space-y-4">
+                          {/* بطاقات الملخص */}
+                          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                            <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
+                              <span className="text-[9px] text-emerald-700 font-black block mb-1">إجمالي الوارد (شراء)</span>
+                              <strong className="text-lg font-black text-emerald-700 font-mono block">{totalIn.toLocaleString()} <span className="text-[9px] font-bold">علبة</span></strong>
+                              <span className="text-[9px] text-emerald-600/70 font-bold font-mono">{valueIn.toLocaleString()} د.ع</span>
+                            </div>
+                            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
+                              <span className="text-[9px] text-blue-700 font-black block mb-1">إجمالي الصادر (بيع)</span>
+                              <strong className="text-lg font-black text-blue-700 font-mono block">{totalOut.toLocaleString()} <span className="text-[9px] font-bold">علبة</span></strong>
+                              <span className="text-[9px] text-blue-600/70 font-bold font-mono">{valueOut.toLocaleString()} د.ع</span>
+                            </div>
+                            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
+                              <span className="text-[9px] text-slate-500 font-black block mb-1">صافي الحركة</span>
+                              <strong className={`text-lg font-black font-mono block ${net >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>{net >= 0 ? '+' : ''}{net.toLocaleString()} <span className="text-[9px] font-bold">علبة</span></strong>
+                              <span className="text-[9px] text-slate-400 font-bold">وارد − صادر</span>
+                            </div>
+                            <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4">
+                              <span className="text-[9px] text-indigo-700 font-black block mb-1">الرصيد الحالي بالمخزن</span>
+                              <strong className="text-lg font-black text-indigo-700 font-mono block">{(med?.availableQuantity ?? 0).toLocaleString()} <span className="text-[9px] font-bold">علبة</span></strong>
+                              <span className="text-[9px] text-indigo-600/70 font-bold">{med?.nameAr}</span>
+                            </div>
+                          </div>
+
+                          {/* جدول الحركات الزمني */}
+                          {movements.length === 0 ? (
+                            <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl py-8 text-center">
+                              <p className="text-[11px] text-slate-400 font-bold">لا توجد حركات مسجّلة لهذا الصنف{(movementFrom || movementTo) ? ' ضمن المدى الزمني المحدد' : ''}</p>
+                            </div>
+                          ) : (
+                            <div className="overflow-x-auto border border-slate-100 rounded-2xl">
+                              <table className="w-full text-right text-[11px]">
+                                <thead>
+                                  <tr className="bg-slate-50 text-slate-500 border-b border-slate-100 font-bold">
+                                    <th className="py-2.5 px-3 rounded-r-xl">التاريخ</th>
+                                    <th className="py-2.5 px-3 text-center">نوع الحركة</th>
+                                    <th className="py-2.5 px-3 text-center">الكمية</th>
+                                    <th className="py-2.5 px-3 text-center">سعر الوحدة</th>
+                                    <th className="py-2.5 px-3 text-center">القيمة الإجمالية</th>
+                                    <th className="py-2.5 px-3">المرجع</th>
+                                    <th className="py-2.5 px-3 rounded-l-xl">الجهة</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {movements.map((mv, i) => (
+                                    <tr key={mv.ref + '-' + i} className="border-b border-slate-100/70 hover:bg-slate-50/50 transition">
+                                      <td className="py-2.5 px-3 font-mono text-slate-500 whitespace-nowrap">{mv.date}</td>
+                                      <td className="py-2.5 px-3 text-center">
+                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[9px] font-black ${mv.type === 'in' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>
+                                          {mv.type === 'in' ? '↓ وارد (شراء)' : '↑ صادر (بيع)'}
+                                        </span>
+                                      </td>
+                                      <td className={`py-2.5 px-3 text-center font-mono font-black ${mv.type === 'in' ? 'text-emerald-700' : 'text-blue-700'}`}>
+                                        {mv.type === 'in' ? '+' : '−'}{mv.qty.toLocaleString()}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-center font-mono text-slate-600">{mv.price.toLocaleString()} د.ع</td>
+                                      <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-700">{(mv.qty * mv.price).toLocaleString()} د.ع</td>
+                                      <td className="py-2.5 px-3 font-mono text-slate-400">{mv.ref}</td>
+                                      <td className="py-2.5 px-3 text-slate-600 font-semibold max-w-[160px] truncate" title={mv.party}>{mv.party}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                          <p className="text-[9px] text-slate-400 font-bold">* الوارد يُحتسب من طلبيات الشراء (المذاخر)، والصادر من سجل فواتير البيع (POS). عدد الحركات: {movements.length}</p>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
                   {/* Reorder point section */}
                   {(() => {
-                    const lowItems = inventory.filter(m => m.availableQuantity <= (m.minStock ?? 15));
+                    const lowItems = inventory.filter(m =>
+                      m.availableQuantity <= 1 && !dismissedLowStock.has(m.id)
+                    );
                     if (lowItems.length === 0) return null;
+
+                    // حساب أعلى كمية سبق شراؤها لكل دواء من سجل الطلبيات
+                    const getMaxPurchasedQty = (med: Medicine): number => {
+                      let max = 0;
+                      b2bOrders.forEach(order => {
+                        order.items?.forEach((it: any) => {
+                          if (
+                            it.medicineName?.includes(med.nameAr.substring(0, 6)) ||
+                            med.nameAr.includes((it.medicineName || '').substring(0, 6))
+                          ) {
+                            if ((it.quantity || 0) > max) max = it.quantity;
+                          }
+                        });
+                      });
+                      return max;
+                    };
+
+                    // اقتراح كمية الطلب بناءً على سلوك الشراء السابق
+                    const getSuggestedQty = (med: Medicine): number => {
+                      const maxQty = getMaxPurchasedQty(med);
+                      if (maxQty > 100) return 10;
+                      if (maxQty > 50)  return 5;
+                      if (maxQty > 10)  return 2;
+                      return 2;
+                    };
+
                     return (
                       <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">
+                        {/* رأس القسم */}
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
                             <AlertCircle className="w-4 h-4 text-amber-600" />
-                            <span className="text-xs font-black text-amber-900">أصناف تحت حد الطلب الأدنى</span>
+                            <span className="text-xs font-black text-amber-900">أصناف نفدت أو شارفت على النفاد</span>
+                            <span className="text-[10px] bg-amber-200 text-amber-900 font-extrabold px-2.5 py-0.5 rounded-full">{lowItems.length} صنف</span>
                           </div>
-                          <span className="text-[10px] bg-amber-200 text-amber-900 font-extrabold px-2.5 py-0.5 rounded-full">{lowItems.length} صنف</span>
+                          {/* زر الطباعة */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const win = window.open('', '_blank');
+                              if (!win) return;
+                              win.document.write(`
+                                <html dir="rtl"><head><title>قائمة الطلب العاجل</title>
+                                <style>body{font-family:Arial,sans-serif;padding:20px;direction:rtl}
+                                table{width:100%;border-collapse:collapse}
+                                th,td{border:1px solid #ccc;padding:8px 12px;text-align:right}
+                                th{background:#fef3c7;font-weight:bold}
+                                h2{color:#92400e}</style></head><body>
+                                <h2>قائمة الطلب العاجل — صيدلية انوار الحسن</h2>
+                                <p style="color:#666;font-size:12px">${new Date().toLocaleDateString('ar-IQ')}</p>
+                                <table><thead><tr><th>الدواء</th><th>الكمية الحالية</th><th>الكمية المقترحة للطلب</th></tr></thead>
+                                <tbody>${lowItems.map(m => `<tr><td>${m.nameAr}</td><td>${m.availableQuantity} علبة</td><td>${getSuggestedQty(m)} علبة</td></tr>`).join('')}
+                                </tbody></table></body></html>
+                              `);
+                              win.document.close();
+                              win.print();
+                            }}
+                            className="flex items-center gap-1.5 text-[10px] font-black bg-amber-200 hover:bg-amber-300 text-amber-900 px-3 py-1.5 rounded-xl transition cursor-pointer border-none"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            طباعة القائمة
+                          </button>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                          {lowItems.map(m => (
-                            <div key={m.id} className="bg-white border border-amber-100 rounded-xl px-3 py-2 flex items-center justify-between text-xs">
-                              <span className="font-bold text-slate-800">{m.nameAr}</span>
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono text-amber-700 font-bold">{m.availableQuantity} علبة</span>
-                                <span className="text-[9px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded font-bold">طلب عاجل</span>
+
+                        {/* قائمة الأصناف */}
+                        <div className="space-y-2">
+                          {lowItems.map(m => {
+                            const suggestedQty = getSuggestedQty(m);
+                            const maxPast = getMaxPurchasedQty(m);
+                            return (
+                              <div key={m.id} className="bg-white border border-amber-100 rounded-xl px-3 py-2.5 flex items-center justify-between text-xs gap-2">
+                                <div className="min-w-0 flex-1">
+                                  <span className="font-bold text-slate-800 block">{m.nameAr}</span>
+                                  <span className={`font-mono font-bold text-[10px] ${m.availableQuantity === 0 ? 'text-rose-600' : 'text-amber-600'}`}>
+                                    {m.availableQuantity === 0 ? 'نفد المخزون' : `${m.availableQuantity} علبة متبقية`}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {/* اقتراح الكمية */}
+                                  <div className="text-center">
+                                    <span className="text-[8px] text-slate-400 font-bold block">اقتراح الطلب</span>
+                                    <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg font-mono">
+                                      {suggestedQty} علبة
+                                    </span>
+                                    {maxPast > 0 && (
+                                      <span className="text-[8px] text-slate-400 block">بناءً على {maxPast} سابقاً</span>
+                                    )}
+                                  </div>
+                                  {/* زر إضافة للشراء */}
+                                  <button
+                                    type="button"
+                                    onClick={() => { addToPurchaseDraft(m, suggestedQty); setActiveTab('b2b'); }}
+                                    className="text-[9px] font-black px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition cursor-pointer border-none"
+                                  >
+                                    أضف للشراء
+                                  </button>
+                                  {/* زر الإخفاء */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setDismissedLowStock(prev => new Set([...prev, m.id]))}
+                                    className="text-[9px] font-black px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-lg transition cursor-pointer border-none"
+                                    title="إخفاء من القائمة"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
+                        {dismissedLowStock.size > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setDismissedLowStock(new Set())}
+                            className="text-[9px] text-amber-700 font-bold underline cursor-pointer bg-transparent border-none"
+                          >
+                            إعادة عرض الأصناف المخفية ({dismissedLowStock.size})
+                          </button>
+                        )}
                       </div>
                     );
                   })()}
 
                   {/* Stock Movement Log */}
-                  <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
-                    <button
-                      onClick={() => setShowMovementLog(prev => !prev)}
-                      className="w-full flex items-center justify-between text-xs font-black text-slate-800 cursor-pointer"
-                    >
-                      <span className="flex items-center gap-2">
-                        <RefreshCw className="w-4 h-4 text-slate-500" />
-                        سجل حركة المخزون (آخر {Math.min(stockMovements.length, 50)} حركة)
-                      </span>
-                      <span className="text-slate-400">{showMovementLog ? '▲' : '▼'}</span>
-                    </button>
-                    {showMovementLog && (
-                      <div className="mt-3 overflow-x-auto">
-                        {stockMovements.length === 0 ? (
-                          <p className="text-xs text-slate-400 text-center py-4">لا توجد حركات مخزون مسجّلة بعد.</p>
-                        ) : (
-                          <table className="w-full text-[10px] font-semibold">
-                            <thead>
-                              <tr className="border-b border-slate-100 text-slate-500">
-                                <th className="text-right p-2">الوقت</th>
-                                <th className="text-right p-2">الصنف</th>
-                                <th className="text-right p-2">النوع</th>
-                                <th className="text-right p-2 font-mono">الكمية</th>
-                                <th className="text-right p-2 font-mono">الرصيد</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {stockMovements.slice(0, 50).map(mv => (
-                                <tr key={mv.id} className="border-b border-slate-50 hover:bg-slate-50">
-                                  <td className="p-2 font-mono text-slate-500">{mv.timestamp}</td>
-                                  <td className="p-2 text-slate-800 font-bold">{mv.medicineName}</td>
-                                  <td className="p-2">
-                                    <span className={`px-2 py-0.5 rounded-full font-bold ${
-                                      mv.type === 'sale' ? 'bg-rose-100 text-rose-700' :
-                                      mv.type === 'purchase' ? 'bg-emerald-100 text-emerald-700' :
-                                      mv.type === 'return' ? 'bg-blue-100 text-blue-700' :
-                                      'bg-slate-100 text-slate-600'
-                                    }`}>
-                                      {mv.type === 'sale' ? 'بيع' : mv.type === 'purchase' ? 'شراء' : mv.type === 'return' ? 'مرتجع' : 'تعديل'}
-                                    </span>
-                                  </td>
-                                  <td className={`p-2 font-mono font-bold ${mv.quantity < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
-                                    {mv.quantity > 0 ? '+' : ''}{mv.quantity}
-                                  </td>
-                                  <td className="p-2 font-mono text-slate-700">{mv.balanceAfter}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        )}
-                      </div>
-                    )}
-                  </div>
 
                   </div>
                 </motion.div>
@@ -3523,20 +4001,32 @@ export default function Dashboard() {
                               type="text"
                               value={purchaseSearchWord}
                               onChange={(e) => setPurchaseSearchWord(e.target.value)}
-                              placeholder="ابحث بالاسم العربي، الإنكليزي أو المادة..."
-                              className="w-full bg-slate-50 hover:bg-slate-100/70 border border-slate-200 rounded-xl py-2.5 pr-9 pl-4 text-xs font-bold text-slate-850 placeholder:text-slate-400 transition focus:outline-emerald-500"
+                              placeholder="ابحث بالاسم أو الباركود..."
+                              className="w-full bg-slate-50 hover:bg-slate-100/70 border border-slate-200 rounded-xl py-2.5 pr-9 pl-10 text-xs font-bold text-slate-850 placeholder:text-slate-400 transition focus:outline-emerald-500"
                             />
+                            <button
+                              type="button"
+                              onClick={() => startScanning('purchase-order')}
+                              title="مسح باركود"
+                              className="absolute inset-y-0 left-2 flex items-center px-1 text-emerald-600 hover:text-emerald-700 transition cursor-pointer"
+                            >
+                              <Barcode className="w-4 h-4" />
+                            </button>
                           </div>
 
                           {/* Quick Suggestion List */}
                           {purchaseSearchWord.trim().length > 0 && (
                             <div className="bg-white border border-slate-150 rounded-2xl max-h-56 overflow-y-auto divide-y divide-slate-100 text-right shadow-md scrollbar-thin">
                               {inventory
-                                .filter(m => 
-                                  m.nameAr.toLowerCase().includes(purchaseSearchWord.toLowerCase()) || 
-                                  m.nameEn.toLowerCase().includes(purchaseSearchWord.toLowerCase()) ||
-                                  (m.scientificName && m.scientificName.toLowerCase().includes(purchaseSearchWord.toLowerCase()))
-                                )
+                                .filter(m => {
+                                  const q = purchaseSearchWord.toLowerCase();
+                                  return (
+                                    m.nameAr.toLowerCase().includes(q) ||
+                                    m.nameEn.toLowerCase().includes(q) ||
+                                    (m.scientificName && m.scientificName.toLowerCase().includes(q)) ||
+                                    (m.barcode && m.barcode.toLowerCase().includes(q))
+                                  );
+                                })
                                 .slice(0, 6)
                                 .map(med => (
                                   <button
@@ -3568,26 +4058,6 @@ export default function Dashboard() {
                         </div>
                       </div>
 
-                      {/* Barcode Quick Scan Section */}
-                      <div className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-xs space-y-4">
-                        <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-                          <Barcode className="w-5 h-5 text-emerald-600" />
-                          <h4 className="font-extrabold text-xs text-slate-900">إضافة فورية عبر كاميرا الباركود</h4>
-                        </div>
-                        
-                        <p className="text-[10px] text-slate-400 font-bold leading-relaxed">
-                          وجّه باركود علبة الدواء نحو الكاميرا ليقوم النظام بمطابقتها ذاتياً وإدراجها فورياً في جدول الشراء.
-                        </p>
-
-                        <button
-                          type="button"
-                          onClick={() => startScanning('purchase-order')}
-                          className="w-full bg-emerald-50 hover:bg-emerald-100/80 text-emerald-800 font-black py-3 px-4 rounded-2xl transition border border-emerald-100 cursor-pointer flex items-center justify-center gap-2 text-xs"
-                        >
-                          <Camera className="w-4 h-4 text-emerald-600 animate-pulse" />
-                          <span>تفعيل قارئ الكاميرا للمشتريات</span>
-                        </button>
-                      </div>
 
                       {/* Section: Dynamic form to add a completely custom brand new drug */}
                       <div className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-xs space-y-4">
@@ -3726,7 +4196,8 @@ export default function Dashboard() {
                                     price: purchaseNewProdPrice,
                                     qty: purchaseNewProdQty,
                                     expiryDate: purchaseNewProdExpiry,
-                                    barcode: purchaseNewProdBarcode || '628' + Math.floor(Math.random() * 90000000 + 10000000)
+                                    barcode: purchaseNewProdBarcode || '628' + Math.floor(Math.random() * 90000000 + 10000000),
+                                    warehouse: purchaseSupplier || '',
                                   };
                                   setPurchaseDraft(prev => [...prev, customItem]);
                                   setPurchaseNewProdAr('');
@@ -3793,8 +4264,11 @@ export default function Dashboard() {
                                   <tr className="bg-slate-50 text-slate-500 border-b border-slate-100 font-bold">
                                     <th className="py-2.5 px-3 rounded-r-xl">الدواء / المستحضر</th>
                                     <th className="py-2.5 px-3 text-center">الكمية المطلوبة (علبة)</th>
-                                    <th className="py-2.5 px-3 text-center">سعر جملة العلبة (د.ع)</th>
+                                    <th className="py-2.5 px-3 text-center">سعر جملة (د.ع)</th>
+                                    <th className="py-2.5 px-3 text-center text-blue-700">سعر البيع للجمهور (د.ع)</th>
+                                    <th className="py-2.5 px-3 text-center text-violet-700">سعر البيع الرسمي (د.ع)</th>
                                     <th className="py-2.5 px-3 text-center">انتهاء الصلاحية</th>
+                                    <th className="py-2.5 px-3 text-center text-indigo-700">المورد</th>
                                     <th className="py-2.5 px-3 text-center">الإجمالي الفرعي</th>
                                     <th className="py-2.5 px-3 text-center rounded-l-xl">تنظيف</th>
                                   </tr>
@@ -3881,17 +4355,79 @@ export default function Dashboard() {
                                           </div>
                                         </td>
 
-                                        {/* Expiry Date */}
+                                        {/* سعر البيع للجمهور — يُحدّث inventory.price مباشرة */}
+                                        <td className="py-3.5 px-3">
+                                          <div className="flex items-center justify-center gap-1 font-mono">
+                                            <input
+                                              type="number"
+                                              step="250"
+                                              value={item.retailPrice ?? ''}
+                                              onChange={(e) => {
+                                                const val = Number(e.target.value);
+                                                if (isNaN(val)) return;
+                                                setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, retailPrice: val } : d));
+                                                setInventory(prev => prev.map(m => m.id === item.medicineId ? { ...m, price: val } : m));
+                                              }}
+                                              className="w-16 bg-blue-50 rounded border border-blue-200 p-1 text-center text-blue-900 font-mono text-xs focus:outline-blue-400 focus:outline-none"
+                                            />
+                                            <span className="text-[10px] text-slate-400">عراقي</span>
+                                          </div>
+                                        </td>
+
+                                        {/* سعر البيع الرسمي — يُحدّث inventory.secondaryPrice مباشرة */}
+                                        <td className="py-3.5 px-3">
+                                          <div className="flex items-center justify-center gap-1 font-mono">
+                                            <input
+                                              type="number"
+                                              step="250"
+                                              value={item.officialPrice ?? ''}
+                                              onChange={(e) => {
+                                                const val = Number(e.target.value);
+                                                if (isNaN(val)) return;
+                                                setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, officialPrice: val } : d));
+                                                setInventory(prev => prev.map(m => m.id === item.medicineId ? { ...m, secondaryPrice: val } : m));
+                                              }}
+                                              className="w-16 bg-violet-50 rounded border border-violet-200 p-1 text-center text-violet-900 font-mono text-xs focus:outline-none"
+                                            />
+                                            <span className="text-[10px] text-slate-400">عراقي</span>
+                                          </div>
+                                        </td>
+
+                                        {/* Expiry Date — يعرض آخر تاريخ محفوظ ويحدّثه عند التعديل */}
                                         <td className="py-3.5 px-3">
                                           <input
                                             type="date"
-                                            value={item.expiryDate}
+                                            value={expiryDates[item.medicineId] || item.expiryDate || ''}
                                             onChange={(e) => {
                                               const val = e.target.value;
                                               setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, expiryDate: val } : d));
+                                              if (item.medicineId) setExpiryDates(prev => ({ ...prev, [item.medicineId]: val }));
                                             }}
                                             className="w-28 bg-slate-50 rounded border border-slate-200 p-1 font-mono text-center text-[10px] focus:outline-none"
                                           />
+                                        </td>
+
+                                        {/* Supplier — يُطبَّق على كل أصناف المسودة ويصبح المورّد الافتراضي للأصناف القادمة */}
+                                        <td className="py-3.5 px-3 text-center">
+                                          <select
+                                            value={item.warehouse || purchaseSupplier || ''}
+                                            onChange={(e) => {
+                                              const val = e.target.value;
+                                              // اعتماده مورّداً نشطاً للمسودة وتطبيقه على جميع الأصناف الحالية
+                                              setPurchaseSupplier(val);
+                                              setPurchaseDraft(prev => prev.map(d => ({ ...d, warehouse: val })));
+                                              if (val) setInventory(prev => prev.map(m => purchaseDraft.some(d => d.medicineId === m.id) ? { ...m, warehouse: val } : m));
+                                            }}
+                                            className="bg-indigo-50 border border-indigo-100 rounded-lg p-1.5 text-[10px] font-bold text-indigo-800 cursor-pointer focus:outline-indigo-400 max-w-[130px]"
+                                          >
+                                            <option value="">— اختر —</option>
+                                            {suppliers.map(s => (
+                                              <option key={s.id} value={s.name}>{s.name}</option>
+                                            ))}
+                                            {item.warehouse && !suppliers.find(s => s.name === item.warehouse) && (
+                                              <option value={item.warehouse}>{item.warehouse}</option>
+                                            )}
+                                          </select>
                                         </td>
 
                                         {/* Row Subtotal */}
@@ -3946,14 +4482,26 @@ export default function Dashboard() {
                                   </label>
                                   {purchaseOnCredit && (
                                     <div className="space-y-1">
-                                      <label className="block text-slate-500 text-[10px] font-bold">اسم المذخر / المورّد</label>
-                                      <input
-                                        type="text"
+                                      <label className="block text-slate-500 text-[10px] font-bold">المورّد</label>
+                                      <select
                                         value={creditSupplierName}
                                         onChange={(e) => setCreditSupplierName(e.target.value)}
-                                        className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold text-slate-700"
-                                        placeholder="مثال: مذخر بغداد المركزي للأدوية"
-                                      />
+                                        className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold text-slate-700 cursor-pointer"
+                                      >
+                                        <option value="">— اختر المورد —</option>
+                                        {suppliers.map(s => (
+                                          <option key={s.id} value={s.name}>{s.name}</option>
+                                        ))}
+                                        <option value="__manual__">إدخال يدوي...</option>
+                                      </select>
+                                      {creditSupplierName === '__manual__' && (
+                                        <input
+                                          type="text"
+                                          onChange={(e) => setCreditSupplierName(e.target.value)}
+                                          className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold text-slate-700 mt-1"
+                                          placeholder="اسم المورد..."
+                                        />
+                                      )}
                                       <p className="text-[9px] text-rose-500 font-bold leading-normal">* لن تُخصم القيمة من الصندوق، وستُسجَّل كذمّة مستحقة في دفتر ديون الموردين.</p>
                                     </div>
                                   )}
@@ -4108,6 +4656,54 @@ export default function Dashboard() {
                           <FileText className="w-4 h-4" />
                           <span>طباعة / PDF</span>
                         </button>
+                      </div>
+                    </div>
+
+                    {/* --- بطاقات المؤشرات السريعة --- */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center justify-between">
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-slate-400 font-black tracking-wider block">السيولة في صندوق الكاش</span>
+                          <span className="text-xl font-black text-slate-900 tracking-tight font-mono">
+                            {walletBalance.toLocaleString()} <span className="text-xs text-slate-500 font-sans font-extrabold">د.ع</span>
+                          </span>
+                        </div>
+                        <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
+                          <Wallet className="w-5 h-5" />
+                        </div>
+                      </div>
+                      <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center justify-between">
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-slate-400 font-black tracking-wider block">أرباح ومبيعات اليوم</span>
+                          <span className="text-xl font-black text-slate-900 tracking-tight font-mono">
+                            {dailySalesRevenue.toLocaleString()} <span className="text-xs text-slate-500 font-sans font-extrabold">د.ع</span>
+                          </span>
+                        </div>
+                        <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
+                          <TrendingUp className="w-5 h-5" />
+                        </div>
+                      </div>
+                      <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center justify-between">
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-slate-400 font-black tracking-wider block">ذمم المذاخر المتبقية</span>
+                          <span className="text-xl font-black text-rose-700 tracking-tight font-mono">
+                            {totalDebts.toLocaleString()} <span className="text-xs text-slate-500 font-sans font-extrabold">د.ع</span>
+                          </span>
+                        </div>
+                        <div className="w-10 h-10 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center">
+                          <ClipboardList className="w-5 h-5" />
+                        </div>
+                      </div>
+                      <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center justify-between">
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-slate-400 font-black tracking-wider block">المخزون الدوائي النشط</span>
+                          <span className="text-xl font-black text-slate-900 tracking-tight">
+                            {inventory.reduce((sum, m) => sum + m.availableQuantity, 0)} <span className="text-xs text-slate-500 font-extrabold">علب</span>
+                          </span>
+                        </div>
+                        <div className="w-10 h-10 bg-slate-50 text-slate-700 rounded-xl flex items-center justify-center">
+                          <Pill className="w-5 h-5" />
+                        </div>
                       </div>
                     </div>
 
@@ -4436,6 +5032,333 @@ export default function Dashboard() {
                       <p className="text-[9px] text-slate-400 font-bold">* تُحتسب القائمة آلياً من سجل المبيعات (الإيراد والتكلفة) ومرتجعات المبيعات والمصاريف التشغيلية ضمن {plIsMonth ? 'الشهر الحالي' : 'السنة المالية الحالية'}. صافي الربح = مجمل الربح − المصاريف التشغيلية.</p>
                     </div>
 
+                    {/* ======================================================= */}
+                    {/* --- قائمة الموردين ومصادر التجهيز --- */}
+                    {/* ======================================================= */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Truck className="w-4 h-4 text-indigo-600" />
+                          <span className="text-[11px] text-slate-600 font-black">قائمة الموردين ومصادر التجهيز</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => { setSupplierFormVisible(v => !v); setSelectedSupplierId(null); }}
+                          className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black px-3 py-1.5 rounded-xl transition cursor-pointer border-none"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          إضافة مورد جديد
+                        </button>
+                      </div>
+
+                      {/* نموذج إضافة مورد جديد */}
+                      <AnimatePresence>
+                        {supplierFormVisible && !selectedSupplierId && (
+                          <motion.form
+                            key="supplier-form"
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.2 }}
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              if (!newSupName.trim()) return;
+                              const newSup: Supplier = {
+                                id: `SUP-${Math.floor(Math.random() * 9000 + 1000)}`,
+                                name: newSupName.trim(),
+                                phone: newSupPhone.trim() || undefined,
+                                address: newSupAddress.trim() || undefined,
+                                contactPerson: newSupContact.trim() || undefined,
+                                creditLimit: newSupCreditLimit > 0 ? newSupCreditLimit : undefined,
+                                paymentTerms: newSupPaymentTerms > 0 ? newSupPaymentTerms : undefined,
+                                notes: newSupNotes.trim() || undefined,
+                                createdAt: new Date().toISOString().split('T')[0],
+                              };
+                              setSuppliers(prev => [...prev, newSup]);
+                              setNewSupName(''); setNewSupPhone(''); setNewSupContact('');
+                              setNewSupAddress(''); setNewSupCreditLimit(0); setNewSupPaymentTerms(30); setNewSupNotes('');
+                              setSupplierFormVisible(false);
+                            }}
+                            className="overflow-hidden"
+                          >
+                            <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 space-y-3 text-xs font-semibold">
+                              <span className="text-[10px] text-indigo-700 font-black block">بيانات المورد الجديد</span>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="space-y-1 sm:col-span-2">
+                                  <label className="block text-slate-500 text-[10px]">اسم المورد / المذخر *</label>
+                                  <input required type="text" value={newSupName} onChange={e => setNewSupName(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" placeholder="مذخر / شركة / مكتب علمي..." />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="block text-slate-500 text-[10px]">رقم الهاتف</label>
+                                  <input type="text" value={newSupPhone} onChange={e => setNewSupPhone(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" placeholder="07XXXXXXXXX" />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="block text-slate-500 text-[10px]">اسم المسؤول / المندوب</label>
+                                  <input type="text" value={newSupContact} onChange={e => setNewSupContact(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" placeholder="اسم المسؤول..." />
+                                </div>
+                                <div className="space-y-1 sm:col-span-2">
+                                  <label className="block text-slate-500 text-[10px]">العنوان</label>
+                                  <input type="text" value={newSupAddress} onChange={e => setNewSupAddress(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" placeholder="المحافظة — الحي..." />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="block text-slate-500 text-[10px]">سقف الائتمان (د.ع)</label>
+                                  <input type="number" min="0" value={newSupCreditLimit} onChange={e => setNewSupCreditLimit(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-mono text-center font-bold text-xs" />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="block text-slate-500 text-[10px]">مدة الآجل (أيام)</label>
+                                  <input type="number" min="0" value={newSupPaymentTerms} onChange={e => setNewSupPaymentTerms(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-mono text-center font-bold text-xs" />
+                                </div>
+                                <div className="space-y-1 sm:col-span-2">
+                                  <label className="block text-slate-500 text-[10px]">ملاحظات</label>
+                                  <input type="text" value={newSupNotes} onChange={e => setNewSupNotes(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" placeholder="تفاصيل إضافية..." />
+                                </div>
+                              </div>
+                              <div className="flex gap-2 pt-1">
+                                <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-black py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
+                                  حفظ المورد
+                                </button>
+                                <button type="button" onClick={() => setSupplierFormVisible(false)} className="px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
+                                  إلغاء
+                                </button>
+                              </div>
+                            </div>
+                          </motion.form>
+                        )}
+                      </AnimatePresence>
+
+                      {/* تفاصيل مورد مختار */}
+                      <AnimatePresence>
+                        {selectedSupplierId && (() => {
+                          const sup = suppliers.find(s => s.id === selectedSupplierId);
+                          if (!sup) return null;
+                          const supPayables = payables.filter(p => p.supplierId === sup.id || p.supplierName === sup.name);
+                          const supOrders = b2bOrders.filter(o => o.supplierId === sup.id || o.warehouseName === sup.name);
+                          const totalOwed = supPayables.reduce((s, p) => s + Math.max(0, p.amount - p.paidAmount), 0);
+                          const totalPaid = supPayables.reduce((s, p) => s + (p.paidAmount || 0), 0);
+                          const totalInvoiced = supPayables.reduce((s, p) => s + p.amount, 0);
+                          return (
+                            <motion.div
+                              key="supplier-detail"
+                              initial={{ opacity: 0, y: 8 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: 8 }}
+                              className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 space-y-4"
+                            >
+                              {/* Header */}
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center flex-shrink-0">
+                                      <Truck className="w-4 h-4 text-white" />
+                                    </div>
+                                    <h4 className="font-black text-sm text-slate-900">{sup.name}</h4>
+                                  </div>
+                                  <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[10px] text-slate-500 font-semibold pr-10">
+                                    {sup.phone && <span>📞 {sup.phone}</span>}
+                                    {sup.contactPerson && <span>👤 {sup.contactPerson}</span>}
+                                    {sup.address && <span>📍 {sup.address}</span>}
+                                    {sup.paymentTerms && <span>🗓 آجل {sup.paymentTerms} يوم</span>}
+                                    {sup.creditLimit && <span>💳 سقف {sup.creditLimit.toLocaleString()} د.ع</span>}
+                                  </div>
+                                  {sup.notes && <p className="text-[9px] text-slate-400 font-semibold pr-10">{sup.notes}</p>}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedSupplierId(null)}
+                                  className="p-1.5 text-slate-400 hover:text-slate-600 transition cursor-pointer bg-transparent border-none"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </div>
+
+                              {/* ملخص الحساب */}
+                              <div className="grid grid-cols-3 gap-2">
+                                <div className="bg-rose-50 border border-rose-100 rounded-xl p-3 text-center">
+                                  <span className="text-[9px] text-rose-600 font-black block mb-0.5">المتبقي للمورد</span>
+                                  <strong className="text-sm font-black text-rose-700 font-mono">{totalOwed.toLocaleString()}</strong>
+                                  <span className="text-[8px] text-rose-500 font-bold block">د.ع</span>
+                                </div>
+                                <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center">
+                                  <span className="text-[9px] text-emerald-600 font-black block mb-0.5">إجمالي المسدَّد</span>
+                                  <strong className="text-sm font-black text-emerald-700 font-mono">{totalPaid.toLocaleString()}</strong>
+                                  <span className="text-[8px] text-emerald-500 font-bold block">د.ع</span>
+                                </div>
+                                <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center">
+                                  <span className="text-[9px] text-blue-600 font-black block mb-0.5">إجمالي الفواتير</span>
+                                  <strong className="text-sm font-black text-blue-700 font-mono">{totalInvoiced.toLocaleString()}</strong>
+                                  <span className="text-[8px] text-blue-500 font-bold block">د.ع</span>
+                                </div>
+                              </div>
+
+                              {/* تسديد دفعة */}
+                              {totalOwed > 0 && (
+                                <div className="bg-white border border-slate-100 rounded-xl p-3 space-y-2">
+                                  <span className="text-[10px] text-slate-600 font-black">تسديد دفعة للمورد</span>
+                                  <div className="flex gap-2">
+                                    {supPayModalId === sup.id ? (
+                                      <>
+                                        <input
+                                          type="number"
+                                          min="1"
+                                          max={totalOwed}
+                                          value={supPayAmount || ''}
+                                          onChange={e => setSupPayAmount(Number(e.target.value))}
+                                          className="flex-1 bg-white border border-slate-200 rounded-lg p-2 font-mono text-center text-xs font-bold focus:outline-emerald-400"
+                                          placeholder={`أقصى ${totalOwed.toLocaleString()}`}
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (!supPayAmount || supPayAmount <= 0) return;
+                                            let remaining = supPayAmount;
+                                            const updated = payables.map(p => {
+                                              if ((p.supplierId === sup.id || p.supplierName === sup.name) && p.status !== 'paid' && remaining > 0) {
+                                                const canPay = Math.max(0, p.amount - p.paidAmount);
+                                                const pay = Math.min(canPay, remaining);
+                                                remaining -= pay;
+                                                const newPaid = p.paidAmount + pay;
+                                                return { ...p, paidAmount: newPaid, status: (newPaid >= p.amount ? 'paid' : newPaid > 0 ? 'partial' : 'open') as Payable['status'] };
+                                              }
+                                              return p;
+                                            });
+                                            setPayables(updated);
+                                            setWalletBalance(prev => Math.max(0, prev - supPayAmount));
+                                            addAuditEntry({ action: 'payable_settle', amount: supPayAmount, description: `تسديد دفعة لـ ${sup.name}` });
+                                            setSupPayModalId(null); setSupPayAmount(0);
+                                          }}
+                                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-4 py-2 rounded-xl text-xs cursor-pointer transition border-none"
+                                        >
+                                          تأكيد
+                                        </button>
+                                        <button type="button" onClick={() => setSupPayModalId(null)} className="bg-slate-100 text-slate-600 font-bold px-3 py-2 rounded-xl text-xs cursor-pointer transition border-none">
+                                          إلغاء
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => { setSupPayModalId(sup.id); setSupPayAmount(0); }}
+                                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2 rounded-xl text-xs cursor-pointer transition border-none"
+                                        >
+                                          تسديد جزئي
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const updated = payables.map(p =>
+                                              (p.supplierId === sup.id || p.supplierName === sup.name) && p.status !== 'paid'
+                                                ? { ...p, paidAmount: p.amount, status: 'paid' as Payable['status'] }
+                                                : p
+                                            );
+                                            setPayables(updated);
+                                            setWalletBalance(prev => Math.max(0, prev - totalOwed));
+                                            addAuditEntry({ action: 'payable_settle', amount: totalOwed, description: `تسديد كامل لـ ${sup.name}` });
+                                          }}
+                                          className="flex-1 bg-slate-700 hover:bg-slate-800 text-white font-black py-2 rounded-xl text-xs cursor-pointer transition border-none"
+                                        >
+                                          تسديد الكل ({totalOwed.toLocaleString()} د.ع)
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* سجل المعاملات — الذمم */}
+                              <div className="space-y-1.5">
+                                <span className="text-[10px] text-slate-500 font-black">سجل الفواتير والذمم</span>
+                                {supPayables.length === 0
+                                  ? <p className="text-[10px] text-slate-400 text-center py-3">لا توجد فواتير مسجّلة لهذا المورد</p>
+                                  : supPayables.map(p => {
+                                    const rem = Math.max(0, p.amount - p.paidAmount);
+                                    const stCls = p.status === 'paid' ? 'text-emerald-700 bg-emerald-50 border-emerald-100' : p.status === 'partial' ? 'text-amber-700 bg-amber-50 border-amber-100' : 'text-rose-700 bg-rose-50 border-rose-100';
+                                    const stLabel = p.status === 'paid' ? 'مسدّدة' : p.status === 'partial' ? 'جزئي' : 'مفتوحة';
+                                    return (
+                                      <div key={p.id} className="bg-white border border-slate-100 rounded-xl px-3 py-2 text-[10px] font-semibold flex items-center gap-2 justify-between">
+                                        <div className="min-w-0">
+                                          <span className="text-slate-500 font-bold block">{p.id}{p.relatedOrderId ? ` • ${p.relatedOrderId}` : ''}</span>
+                                          <span className="text-slate-400 text-[9px]">{p.date}{p.description ? ` — ${p.description}` : ''}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0 text-right">
+                                          <div>
+                                            <span className="font-mono text-slate-700 font-black block text-[11px]">{p.amount.toLocaleString()} د.ع</span>
+                                            {rem > 0 && <span className="font-mono text-rose-600 text-[9px] font-bold">متبقّي {rem.toLocaleString()}</span>}
+                                          </div>
+                                          <span className={`px-2 py-0.5 rounded-full border text-[9px] font-black ${stCls}`}>{stLabel}</span>
+                                        </div>
+                                      </div>
+                                    );
+                                  })
+                                }
+                              </div>
+
+                              {/* قوائم الشراء المرتبطة */}
+                              {supOrders.length > 0 && (
+                                <div className="space-y-1.5">
+                                  <span className="text-[10px] text-slate-500 font-black">قوائم الشراء المرتبطة</span>
+                                  {supOrders.map(o => (
+                                    <div key={o.id} className="bg-white border border-slate-100 rounded-xl px-3 py-2 text-[10px] font-semibold flex items-center justify-between gap-2">
+                                      <div>
+                                        <span className="text-slate-700 font-black">{o.id}</span>
+                                        <span className="text-slate-400 text-[9px] block">{o.date} • {o.itemsCount} أصناف</span>
+                                      </div>
+                                      <div className="text-right">
+                                        <span className="font-mono text-slate-700 font-black block">{o.totalAmount.toLocaleString()} د.ع</span>
+                                        <span className={`text-[9px] font-bold ${o.status === 'delivered' ? 'text-emerald-600' : o.status === 'cancelled' ? 'text-rose-500' : 'text-amber-600'}`}>
+                                          {o.status === 'delivered' ? 'مستلمة' : o.status === 'on_way' ? 'في الطريق' : o.status === 'preparing' ? 'تحضير' : o.status === 'cancelled' ? 'ملغاة' : 'معلّقة'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </motion.div>
+                          );
+                        })()}
+                      </AnimatePresence>
+
+                      {/* قائمة الموردين */}
+                      {!selectedSupplierId && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {suppliers.map(sup => {
+                            const supPayables = payables.filter(p => p.supplierId === sup.id || p.supplierName === sup.name);
+                            const totalOwed = supPayables.reduce((s, p) => s + Math.max(0, p.amount - p.paidAmount), 0);
+                            const openCount = supPayables.filter(p => p.status !== 'paid').length;
+                            return (
+                              <button
+                                key={sup.id}
+                                type="button"
+                                onClick={() => { setSelectedSupplierId(sup.id); setSupplierFormVisible(false); }}
+                                className="text-right bg-white border border-slate-100 hover:border-indigo-300 hover:bg-indigo-50 rounded-2xl p-4 transition cursor-pointer text-xs space-y-2 w-full"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="font-black text-slate-900 text-[11px] leading-snug truncate">{sup.name}</p>
+                                    {sup.contactPerson && <p className="text-[9px] text-slate-400 font-semibold mt-0.5">{sup.contactPerson}</p>}
+                                  </div>
+                                  <div className="shrink-0 text-left">
+                                    {totalOwed > 0
+                                      ? <span className="text-[10px] font-black text-rose-600 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full font-mono">{totalOwed.toLocaleString()} د.ع</span>
+                                      : <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">✓ مسوّى</span>
+                                    }
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3 text-[9px] text-slate-400 font-bold">
+                                  {sup.phone && <span>📞 {sup.phone}</span>}
+                                  {sup.paymentTerms && <span>🗓 {sup.paymentTerms} يوم آجل</span>}
+                                  {openCount > 0 && <span className="text-amber-600">⚠ {openCount} ذمّة مفتوحة</span>}
+                                </div>
+                              </button>
+                            );
+                          })}
+                          {suppliers.length === 0 && (
+                            <p className="text-[10px] text-slate-400 font-bold text-center py-6 col-span-2">لم يُضَف أي مورّد بعد — اضغط "إضافة مورد جديد"</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
                     {/* --- ديون الموردين والذمم الدائنة --- */}
                     <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
                       <div className="flex items-center gap-2">
@@ -4464,8 +5387,11 @@ export default function Dashboard() {
                         <form onSubmit={handleAddPayable} className="md:col-span-5 bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-3 text-xs font-semibold">
                           <span className="text-[10px] text-slate-400 font-black block">تسجيل ذمّة جديدة مستحقة لمذخر</span>
                           <div className="space-y-1">
-                            <label className="block text-slate-500 text-[10px]">اسم المذخر / المورّد</label>
-                            <input type="text" required value={newPaySupplier} onChange={(e) => setNewPaySupplier(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700" placeholder="مثال: مذخر بغداد المركزي للأدوية" />
+                            <label className="block text-slate-500 text-[10px]">المورّد</label>
+                            <select required value={newPaySupplier} onChange={(e) => setNewPaySupplier(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700 cursor-pointer text-xs">
+                              <option value="">— اختر المورد —</option>
+                              {suppliers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                            </select>
                           </div>
                           <div className="space-y-1">
                             <label className="block text-slate-500 text-[10px]">مبلغ الدين (د.ع)</label>

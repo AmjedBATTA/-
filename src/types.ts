@@ -30,10 +30,23 @@ export interface Order {
   id: string;
   date: string;
   warehouseName: string;
+  supplierId?: string;
   itemsCount: number;
   totalAmount: number; // IQD
   status: 'pending' | 'preparing' | 'on_way' | 'delivered' | 'cancelled';
   items: { medicineName: string; quantity: number; price: number }[];
+}
+
+export interface Supplier {
+  id: string;           // SUP-XXXX
+  name: string;
+  phone?: string;
+  address?: string;
+  contactPerson?: string;
+  creditLimit?: number; // IQD — سقف الائتمان
+  paymentTerms?: number; // أيام الآجل المسموح بها
+  notes?: string;
+  createdAt: string;    // YYYY-MM-DD
 }
 
 export interface FAQItem {
