@@ -2749,7 +2749,7 @@ export default function Dashboard() {
               )}
 
               {/* Financial */}
-              {(currentRole === 'admin' || currentRole === 'pharmacist') && (
+              {currentRole === 'admin' && (
                 <button
                   onClick={() => setActiveTab('financial')}
                   className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-violet-300 transition-all cursor-pointer text-right space-y-4 group"
