@@ -5,14 +5,14 @@ import {
   Truck, HelpCircle, PlusCircle, Search, Trash2, ArrowLeft, 
   MapPin, UserCheck, ShieldCheck, Users, Sparkles, Plus, Check,
   TrendingUp, FileText, Ban, DollarSign, Calendar, RefreshCw, BarChart3, Pill, ClipboardList, ShieldAlert, Heart,
-  Barcode, X, Volume2, VolumeX, Camera, Download, Bell, Moon, Sun
+  Barcode, X, Volume2, VolumeX, Camera, Download, Bell, Moon, Sun, Pencil
 } from 'lucide-react';
 import { Medicine, Order, Supplier } from '../types';
 
 // Firebase Authentication & Remote Firestore Synchronizer hooks
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { collection, doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, getDoc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
 
 // Let's declare our reactive state types inside the component
 interface POSItem {
@@ -534,6 +534,7 @@ export default function Dashboard() {
   const [newSupCreditLimit, setNewSupCreditLimit] = useState<number>(0);
   const [newSupPaymentTerms, setNewSupPaymentTerms] = useState<number>(30);
   const [newSupNotes, setNewSupNotes] = useState('');
+  const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null); // المورد قيد التعديل (داخل صفحة التفاصيل)
   // state for supplier payment modal
   const [supPayModalId, setSupPayModalId] = useState<string | null>(null);
   const [supPayAmount, setSupPayAmount] = useState<number>(0);
@@ -552,9 +553,6 @@ export default function Dashboard() {
 
   // --- NOTIFICATION CENTER ---
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
-
-  // --- PDF PRINT FINANCIAL ---
-  const [isPrintingFinancial, setIsPrintingFinancial] = useState(false);
 
   // --- POS CART STATES ---
   const [currentCart, setCurrentCart] = useState<POSItem[]>([]);
@@ -889,7 +887,7 @@ export default function Dashboard() {
   useEffect(() => {
     const allowed: Record<typeof currentRole, string[]> = {
       admin: ['home', 'pos', 'inventory', 'b2b', 'financial', 'team'],
-      pharmacist: ['home', 'pos', 'inventory', 'b2b', 'financial'],
+      pharmacist: ['home', 'pos', 'inventory', 'b2b'],
       cashier: ['home', 'pos', 'inventory'],
     };
     if (!allowed[currentRole].includes(activeTab)) setActiveTab('home');
@@ -914,10 +912,13 @@ export default function Dashboard() {
   const getDaysUntilExpiry = (id: string) => {
     const expDateStr = expiryDates[id];
     if (!expDateStr) return 9999;
-    const currentDate = new Date('2026-05-30');
+    // اليوم الفعلي من تاريخ الجهاز (بدل تاريخ ثابت). نوحّد الأساس: نأخذ التاريخ المحلي كـ YYYY-MM-DD
+    // ثم نعيد تحليله مثل تاريخ الصلاحية (منتصف ليل UTC) لحساب فرق أيام صحيح بلا انزياح المناطق الزمنية.
+    const todayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD بالتقويم المحلي
+    const currentDate = new Date(todayStr);
     const expiryDate = new Date(expDateStr);
     const diffTime = expiryDate.getTime() - currentDate.getTime();
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return Math.round(diffTime / (1000 * 60 * 60 * 24));
   };
 
   const getNearExpiryMeds = () => {
@@ -992,12 +993,6 @@ export default function Dashboard() {
     return { movements, totalIn, totalOut, valueIn, valueOut };
   };
 
-
-  // --- B2B ENHANCED PROCUREMENT WIZARD ---
-  const [b2bSelectedMedId, setB2bSelectedMedId] = useState('1');
-  const [b2bOrderQty, setB2bOrderQty] = useState<number>(50);
-  const [b2bOrderSuccess, setB2bOrderSuccess] = useState(false);
-  const [b2bNewOrderId, setB2bNewOrderId] = useState('');
 
   // --- TEAM MEMBER STATES ---
   const [teamMembers, setTeamMembers] = useState([
@@ -1286,6 +1281,39 @@ export default function Dashboard() {
       console.warn('[AuditLog] onSnapshot error:', error);
     });
 
+    // 11. Sync Suppliers Collection (قائمة الموردين ومصادر التجهيز)
+    const suppliersCol = collection(db, 'users', userId, 'suppliers');
+    const unsubSuppliers = onSnapshot(suppliersCol, (snapshot) => {
+      if (snapshot.empty) {
+        suppliers.forEach(async (s) => {
+          try {
+            const payload: any = {
+              id: s.id,
+              name: s.name,
+              createdAt: s.createdAt,
+              userId,
+            };
+            if (s.phone) payload.phone = s.phone;
+            if (s.address) payload.address = s.address;
+            if (s.contactPerson) payload.contactPerson = s.contactPerson;
+            if (s.creditLimit != null) payload.creditLimit = s.creditLimit;
+            if (s.paymentTerms != null) payload.paymentTerms = s.paymentTerms;
+            if (s.notes) payload.notes = s.notes;
+            await setDoc(doc(db, 'users', userId, 'suppliers', s.id), payload);
+          } catch (e) {
+            handleFirestoreError(e, OperationType.CREATE, `users/${userId}/suppliers/${s.id}`);
+          }
+        });
+      } else {
+        const loaded: Supplier[] = [];
+        snapshot.forEach((d) => loaded.push(d.data() as Supplier));
+        loaded.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+        setSuppliers(loaded);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `users/${userId}/suppliers`);
+    });
+
     setIsSyncing(false);
 
     return () => {
@@ -1298,6 +1326,7 @@ export default function Dashboard() {
       unsubReceivables();
       unsubReturns();
       unsubAuditLog();
+      unsubSuppliers();
     };
   }, [currentUser]);
 
@@ -1370,13 +1399,6 @@ export default function Dashboard() {
       relatedId: newReturn.returnId,
     });
 
-    // 3b. Record stock movements (return)
-    returnedItems.forEach(it => {
-      const med = inventory.find(m => m.nameAr === it.name || `${m.nameAr} (${m.nameEn})` === it.name);
-      if (med) {
-        const balAfter = med.availableQuantity + it.quantity;
-      }
-    });
 
     // 4. Firestore sync
     if (currentUser) {
@@ -1523,6 +1545,87 @@ export default function Dashboard() {
       description: `تسديد ذمّة ${p.supplierName} — المتبقي: ${(p.amount - newPaid).toLocaleString()} د.ع`,
       relatedId: p.id,
     });
+  };
+
+  // يبني حمولة Firestore للمورد بالحقول الموجودة فقط (Firestore يرفض undefined)
+  const buildSupplierPayload = (sup: Supplier, userId: string): any => {
+    const payload: any = { id: sup.id, name: sup.name, createdAt: sup.createdAt, userId };
+    if (sup.phone) payload.phone = sup.phone;
+    if (sup.address) payload.address = sup.address;
+    if (sup.contactPerson) payload.contactPerson = sup.contactPerson;
+    if (sup.creditLimit != null) payload.creditLimit = sup.creditLimit;
+    if (sup.paymentTerms != null) payload.paymentTerms = sup.paymentTerms;
+    if (sup.notes) payload.notes = sup.notes;
+    return payload;
+  };
+
+  // --- ADD SUPPLIER (إضافة مورد جديد — يُحفظ محلياً وفي Firestore) ---
+  const addSupplier = (sup: Supplier) => {
+    if (currentUser) {
+      const userId = currentUser.uid;
+      setDoc(doc(db, 'users', userId, 'suppliers', sup.id), buildSupplierPayload(sup, userId))
+        .catch(err => handleFirestoreError(err, OperationType.CREATE, `users/${userId}/suppliers/${sup.id}`));
+    } else {
+      setSuppliers(prev => [...prev, sup]);
+    }
+  };
+
+  // --- UPDATE SUPPLIER (تعديل بيانات مورد — محلياً وفي Firestore) ---
+  const updateSupplier = (sup: Supplier) => {
+    setSuppliers(prev => prev.map(s => s.id === sup.id ? sup : s));
+    if (currentUser) {
+      const userId = currentUser.uid;
+      setDoc(doc(db, 'users', userId, 'suppliers', sup.id), buildSupplierPayload(sup, userId))
+        .catch(err => handleFirestoreError(err, OperationType.WRITE, `users/${userId}/suppliers/${sup.id}`));
+    }
+  };
+
+  // --- DELETE SUPPLIER (حذف مورد — محلياً وفي Firestore) ---
+  const deleteSupplier = (sup: Supplier) => {
+    setSuppliers(prev => prev.filter(s => s.id !== sup.id));
+    if (selectedSupplierId === sup.id) setSelectedSupplierId(null);
+    if (currentUser) {
+      const userId = currentUser.uid;
+      deleteDoc(doc(db, 'users', userId, 'suppliers', sup.id))
+        .catch(err => handleFirestoreError(err, OperationType.DELETE, `users/${userId}/suppliers/${sup.id}`));
+    }
+  };
+
+  // --- PAY SUPPLIER DEBT (تسديد دفعة لمورد عبر ذممه المفتوحة — محلياً وفي Firestore) ---
+  // amount = null يعني تسديد كامل المتبقّي
+  const paySupplierDebt = (sup: Supplier, amount: number | null) => {
+    const supPayablesOpen = payables.filter(p => (p.supplierId === sup.id || p.supplierName === sup.name) && p.status !== 'paid');
+    const totalOwed = supPayablesOpen.reduce((s, p) => s + Math.max(0, p.amount - p.paidAmount), 0);
+    const payTotal = amount == null ? totalOwed : Math.min(Math.max(0, Math.round(amount)), totalOwed);
+    if (payTotal <= 0) return;
+
+    let remaining = payTotal;
+    const changedIds: string[] = [];
+    const updated = payables.map(p => {
+      if ((p.supplierId === sup.id || p.supplierName === sup.name) && p.status !== 'paid' && remaining > 0) {
+        const canPay = Math.max(0, p.amount - p.paidAmount);
+        const pay = Math.min(canPay, remaining);
+        remaining -= pay;
+        const newPaid = p.paidAmount + pay;
+        changedIds.push(p.id);
+        return { ...p, paidAmount: newPaid, status: (newPaid >= p.amount ? 'paid' : newPaid > 0 ? 'partial' : 'open') as Payable['status'] };
+      }
+      return p;
+    });
+
+    setPayables(updated);
+    setWalletBalance(prev => Math.max(0, prev - payTotal));
+    // حفظ الذمم المتغيّرة في Firestore حتى لا تُعكَس عند إعادة التحميل
+    if (currentUser) {
+      const userId = currentUser.uid;
+      updated.forEach(p => {
+        if (changedIds.includes(p.id)) {
+          setDoc(doc(db, 'users', userId, 'payables', p.id), { ...p, userId }, { merge: true })
+            .catch(err => handleFirestoreError(err, OperationType.WRITE, `users/${userId}/payables/${p.id}`));
+        }
+      });
+    }
+    addAuditEntry({ action: 'payable_settle', amount: payTotal, description: `تسديد ${amount == null ? 'كامل' : 'دفعة'} لـ ${sup.name}` });
   };
 
   // --- ADD RECEIVABLE (تسجيل ذمّة جديدة مستحقة لنا على زبون — لا يؤثر على السيولة) ---
@@ -1919,16 +2022,6 @@ export default function Dashboard() {
           .catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${userId}/receivables/${creditReceivable.id}`));
       }
 
-      // Record stock movements (sale)
-      const nowTs2 = new Date();
-      const ts2 = `${nowTs2.getFullYear()}-${String(nowTs2.getMonth()+1).padStart(2,'0')}-${String(nowTs2.getDate()).padStart(2,'0')} ${String(nowTs2.getHours()).padStart(2,'0')}:${String(nowTs2.getMinutes()).padStart(2,'0')}`;
-      currentCart.forEach(item => {
-        const med = inventory.find(m => m.id === item.medicine.id);
-        if (med) {
-          const balAfter = Math.max(0, med.availableQuantity - item.quantity);
-        }
-      });
-
       addAuditEntry({
         action: 'sale',
         amount: posTotal,
@@ -1942,16 +2035,6 @@ export default function Dashboard() {
       setPosDiscountPercent(0);
       setPosOnCredit(false);
     } else {
-      // Record stock movements (sale) for local state
-      const nowTs3 = new Date();
-      const ts3 = `${nowTs3.getFullYear()}-${String(nowTs3.getMonth()+1).padStart(2,'0')}-${String(nowTs3.getDate()).padStart(2,'0')} ${String(nowTs3.getHours()).padStart(2,'0')}:${String(nowTs3.getMinutes()).padStart(2,'0')}`;
-      currentCart.forEach(item => {
-        const med = inventory.find(m => m.id === item.medicine.id);
-        if (med) {
-          const balAfter = Math.max(0, med.availableQuantity - item.quantity);
-        }
-      });
-
       // Decrement state values in live inventory database!
       setInventory(prevInventory => {
         return prevInventory.map(med => {
@@ -2158,15 +2241,6 @@ export default function Dashboard() {
     setB2bOrders(prev => [archivedOrder, ...prev]);
     setInventory(updatedInventory);
     setExpiryDates(updatedExpiries);
-
-    // Record stock movements (purchase)
-    const purchaseTs = new Date();
-    const purchaseTsStr = `${purchaseTs.getFullYear()}-${String(purchaseTs.getMonth()+1).padStart(2,'0')}-${String(purchaseTs.getDate()).padStart(2,'0')} ${String(purchaseTs.getHours()).padStart(2,'0')}:${String(purchaseTs.getMinutes()).padStart(2,'0')}`;
-    purchaseDraft.forEach(draftItem => {
-      const med = updatedInventory.find(m => m.id === draftItem.medicineId || m.nameAr === draftItem.nameAr);
-      if (med) {
-      }
-    });
 
     addAuditEntry({
       action: 'purchase',
@@ -3334,7 +3408,7 @@ export default function Dashboard() {
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      setB2bSelectedMedId(med.id);
+                                      addToPurchaseDraft(med);
                                       setActiveTab('b2b');
                                     }}
                                     className="text-[9px] bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-850 font-black px-2.5 py-1 rounded-lg transition border border-emerald-150 cursor-pointer flex items-center gap-1"
@@ -5074,7 +5148,7 @@ export default function Dashboard() {
                                 notes: newSupNotes.trim() || undefined,
                                 createdAt: new Date().toISOString().split('T')[0],
                               };
-                              setSuppliers(prev => [...prev, newSup]);
+                              addSupplier(newSup);
                               setNewSupName(''); setNewSupPhone(''); setNewSupContact('');
                               setNewSupAddress(''); setNewSupCreditLimit(0); setNewSupPaymentTerms(30); setNewSupNotes('');
                               setSupplierFormVisible(false);
@@ -5162,14 +5236,109 @@ export default function Dashboard() {
                                   </div>
                                   {sup.notes && <p className="text-[9px] text-slate-400 font-semibold pr-10">{sup.notes}</p>}
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedSupplierId(null)}
-                                  className="p-1.5 text-slate-400 hover:text-slate-600 transition cursor-pointer bg-transparent border-none"
-                                >
-                                  <X className="w-4 h-4" />
-                                </button>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      // فتح نموذج التعديل بالبيانات الحالية
+                                      setEditingSupplierId(sup.id);
+                                      setNewSupName(sup.name);
+                                      setNewSupPhone(sup.phone || '');
+                                      setNewSupContact(sup.contactPerson || '');
+                                      setNewSupAddress(sup.address || '');
+                                      setNewSupCreditLimit(sup.creditLimit || 0);
+                                      setNewSupPaymentTerms(sup.paymentTerms || 30);
+                                      setNewSupNotes(sup.notes || '');
+                                    }}
+                                    className="p-1.5 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-100 rounded-lg transition cursor-pointer bg-transparent border-none"
+                                    title="تعديل بيانات المورد"
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (window.confirm(`حذف المورد "${sup.name}"؟ لن تتأثّر الذمم أو الفواتير المسجّلة سابقاً.`)) {
+                                        deleteSupplier(sup);
+                                      }
+                                    }}
+                                    className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-100 rounded-lg transition cursor-pointer bg-transparent border-none"
+                                    title="حذف المورد"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedSupplierId(null)}
+                                    className="p-1.5 text-slate-400 hover:text-slate-600 transition cursor-pointer bg-transparent border-none"
+                                    title="إغلاق"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </div>
                               </div>
+
+                              {/* نموذج تعديل بيانات المورد */}
+                              {editingSupplierId === sup.id && (
+                                <form
+                                  onSubmit={(e) => {
+                                    e.preventDefault();
+                                    if (!newSupName.trim()) return;
+                                    updateSupplier({
+                                      ...sup,
+                                      name: newSupName.trim(),
+                                      phone: newSupPhone.trim() || undefined,
+                                      address: newSupAddress.trim() || undefined,
+                                      contactPerson: newSupContact.trim() || undefined,
+                                      creditLimit: newSupCreditLimit > 0 ? newSupCreditLimit : undefined,
+                                      paymentTerms: newSupPaymentTerms > 0 ? newSupPaymentTerms : undefined,
+                                      notes: newSupNotes.trim() || undefined,
+                                    });
+                                    setEditingSupplierId(null);
+                                  }}
+                                  className="bg-white border border-indigo-200 rounded-2xl p-4 space-y-3 text-xs font-semibold"
+                                >
+                                  <span className="text-[10px] text-indigo-700 font-black block">تعديل بيانات المورد</span>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div className="space-y-1 sm:col-span-2">
+                                      <label className="block text-slate-500 text-[10px]">اسم المورد / المذخر *</label>
+                                      <input required type="text" value={newSupName} onChange={e => setNewSupName(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="block text-slate-500 text-[10px]">رقم الهاتف</label>
+                                      <input type="text" value={newSupPhone} onChange={e => setNewSupPhone(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" placeholder="07XXXXXXXXX" />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="block text-slate-500 text-[10px]">اسم المسؤول / المندوب</label>
+                                      <input type="text" value={newSupContact} onChange={e => setNewSupContact(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" />
+                                    </div>
+                                    <div className="space-y-1 sm:col-span-2">
+                                      <label className="block text-slate-500 text-[10px]">العنوان</label>
+                                      <input type="text" value={newSupAddress} onChange={e => setNewSupAddress(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="block text-slate-500 text-[10px]">سقف الائتمان (د.ع)</label>
+                                      <input type="number" min="0" value={newSupCreditLimit} onChange={e => setNewSupCreditLimit(Number(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-mono text-center font-bold text-xs" />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="block text-slate-500 text-[10px]">مدة الآجل (أيام)</label>
+                                      <input type="number" min="0" value={newSupPaymentTerms} onChange={e => setNewSupPaymentTerms(Number(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-mono text-center font-bold text-xs" />
+                                    </div>
+                                    <div className="space-y-1 sm:col-span-2">
+                                      <label className="block text-slate-500 text-[10px]">ملاحظات</label>
+                                      <input type="text" value={newSupNotes} onChange={e => setNewSupNotes(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" />
+                                    </div>
+                                  </div>
+                                  <div className="flex gap-2 pt-1">
+                                    <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-black py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
+                                      حفظ التعديلات
+                                    </button>
+                                    <button type="button" onClick={() => setEditingSupplierId(null)} className="px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
+                                      إلغاء
+                                    </button>
+                                  </div>
+                                </form>
+                              )}
 
                               {/* ملخص الحساب */}
                               <div className="grid grid-cols-3 gap-2">
@@ -5210,20 +5379,7 @@ export default function Dashboard() {
                                           type="button"
                                           onClick={() => {
                                             if (!supPayAmount || supPayAmount <= 0) return;
-                                            let remaining = supPayAmount;
-                                            const updated = payables.map(p => {
-                                              if ((p.supplierId === sup.id || p.supplierName === sup.name) && p.status !== 'paid' && remaining > 0) {
-                                                const canPay = Math.max(0, p.amount - p.paidAmount);
-                                                const pay = Math.min(canPay, remaining);
-                                                remaining -= pay;
-                                                const newPaid = p.paidAmount + pay;
-                                                return { ...p, paidAmount: newPaid, status: (newPaid >= p.amount ? 'paid' : newPaid > 0 ? 'partial' : 'open') as Payable['status'] };
-                                              }
-                                              return p;
-                                            });
-                                            setPayables(updated);
-                                            setWalletBalance(prev => Math.max(0, prev - supPayAmount));
-                                            addAuditEntry({ action: 'payable_settle', amount: supPayAmount, description: `تسديد دفعة لـ ${sup.name}` });
+                                            paySupplierDebt(sup, supPayAmount);
                                             setSupPayModalId(null); setSupPayAmount(0);
                                           }}
                                           className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-4 py-2 rounded-xl text-xs cursor-pointer transition border-none"
@@ -5245,16 +5401,7 @@ export default function Dashboard() {
                                         </button>
                                         <button
                                           type="button"
-                                          onClick={() => {
-                                            const updated = payables.map(p =>
-                                              (p.supplierId === sup.id || p.supplierName === sup.name) && p.status !== 'paid'
-                                                ? { ...p, paidAmount: p.amount, status: 'paid' as Payable['status'] }
-                                                : p
-                                            );
-                                            setPayables(updated);
-                                            setWalletBalance(prev => Math.max(0, prev - totalOwed));
-                                            addAuditEntry({ action: 'payable_settle', amount: totalOwed, description: `تسديد كامل لـ ${sup.name}` });
-                                          }}
+                                          onClick={() => paySupplierDebt(sup, null)}
                                           className="flex-1 bg-slate-700 hover:bg-slate-800 text-white font-black py-2 rounded-xl text-xs cursor-pointer transition border-none"
                                         >
                                           تسديد الكل ({totalOwed.toLocaleString()} د.ع)

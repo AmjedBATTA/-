@@ -1,10 +1,10 @@
 {
-  "projectId": "dazzling-container-jx6pd",
-  "appId": "1:362673608890:web:04f573776a6772a1774a83",
-  "apiKey": "AIzaSyDzPUcQSkFrf-j8Hay21axECU1BfIVhY0M",
-  "authDomain": "dazzling-container-jx6pd.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-e3fe30f5-c41f-4ed7-803d-da73e5835842",
-  "storageBucket": "dazzling-container-jx6pd.firebasestorage.app",
-  "messagingSenderId": "362673608890",
-  "measurementId": ""
+  "apiKey": "AIzaSyDcGT4voIp6zlJqnU9bNI4Bzl7Wvmvp7h0",
+  "authDomain": "anwar-alhasan.firebaseapp.com",
+  "projectId": "anwar-alhasan",
+  "storageBucket": "anwar-alhasan.firebasestorage.app",
+  "messagingSenderId": "118388597747",
+  "appId": "1:118388597747:web:deb149a16ba38fd3322886",
+  "measurementId": "G-43N0W6J3V1",
+  "firestoreDatabaseId": "(default)"
 }
