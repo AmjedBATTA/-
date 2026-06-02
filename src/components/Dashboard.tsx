@@ -5,14 +5,15 @@ import {
   Truck, HelpCircle, PlusCircle, Search, Trash2, ArrowLeft, 
   MapPin, UserCheck, ShieldCheck, Users, Sparkles, Plus, Check,
   TrendingUp, FileText, Ban, DollarSign, Calendar, RefreshCw, BarChart3, Pill, ClipboardList, ShieldAlert, Heart,
-  Barcode, X, Volume2, VolumeX, Camera, Download, Bell, Moon, Sun, Pencil
+  Barcode, X, Volume2, VolumeX, Camera, Download, Bell, Moon, Sun, Pencil, ScanLine, ChevronDown, CalendarClock
 } from 'lucide-react';
 import { Medicine, Order, Supplier } from '../types';
+import InvoiceImportModal from './InvoiceImportModal';
 
 // Firebase Authentication & Remote Firestore Synchronizer hooks
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { collection, doc, getDoc, setDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, setDoc, onSnapshot, deleteDoc, writeBatch } from 'firebase/firestore';
 
 // Let's declare our reactive state types inside the component
 interface POSItem {
@@ -81,7 +82,7 @@ interface SalesReturn {
 interface AuditEntry {
   id: string;              // AUD-xxxx
   timestamp: string;       // YYYY-MM-DD HH:mm
-  action: 'sale' | 'purchase' | 'expense' | 'payable_add' | 'payable_settle' | 'receivable_add' | 'receivable_collect' | 'return';
+  action: 'sale' | 'purchase' | 'expense' | 'payable_add' | 'payable_settle' | 'receivable_add' | 'receivable_collect' | 'return' | 'inventory_import';
   actor: string;           // currentUser.displayName || currentRole
   amount: number;          // المبلغ المالي (0 إذا لم ينطبق)
   description: string;     // وصف قصير بالعربي
@@ -647,8 +648,18 @@ export default function Dashboard() {
   const [newDrugExpiry, setNewDrugExpiry] = useState('2028-12-01');
   const [newDrugMinStock, setNewDrugMinStock] = useState<number>(15);
   const [isAddingDrug, setIsAddingDrug] = useState(false);
+  // --- لوحة الصلاحيات الموسّعة (أفق 6 أشهر) ---
+  const [showExpiryHorizon, setShowExpiryHorizon] = useState(false);
+  // الشهر المختار للتصفية بصيغة 'YYYY-MM'؛ null = عرض كل الأشهر ضمن الأفق
+  const [selectedExpiryMonth, setSelectedExpiryMonth] = useState<string | null>(null);
 
   // --- PURCHASE ORDERS (طلبيات الشراء) STATES ---
+  const [showInvoiceImport, setShowInvoiceImport] = useState(false);
+  // استيراد المخزون الكامل من ملف ES-PRO
+  const [bulkImportStatus, setBulkImportStatus] = useState<'idle' | 'loading' | 'writing' | 'done' | 'error'>('idle');
+  const [bulkImportProgress, setBulkImportProgress] = useState({ done: 0, total: 0 });
+  const [bulkImportMsg, setBulkImportMsg] = useState('');
+  const [showBulkImportConfirm, setShowBulkImportConfirm] = useState(false);
   const [purchaseDraft, setPurchaseDraft] = useState<any[]>([
     {
       id: 'draft-1',
@@ -949,6 +960,43 @@ export default function Dashboard() {
       const days = getDaysUntilExpiry(m.id);
       return days <= 30;
     });
+  };
+
+  // --- لوحة الصلاحيات الموسّعة (6 أشهر) ---
+  const EXPIRY_HORIZON_DAYS = 180; // أفق المراقبة: 6 أشهر
+
+  // تصنيف خطورة الصلاحية (للون والوسم وترتيب الأولوية)
+  const expirySeverity = (days: number): 'expired' | 'critical' | 'warning' | 'watch' => {
+    if (days < 0) return 'expired';   // منتهية فعلاً
+    if (days <= 30) return 'critical'; // ≤ شهر — حرج
+    if (days <= 90) return 'warning';  // ≤ 3 أشهر — تحذير
+    return 'watch';                    // ≤ 6 أشهر — مراقبة
+  };
+
+  // كل الأدوية التي لها تاريخ صلاحية ضمن أفق 6 أشهر (يشمل المنتهية)، مرتّبة بالأولوية: الأقرب انتهاءً أولاً
+  const getHorizonExpiryMeds = () => {
+    return inventory
+      .filter(m => {
+        if (!expiryDates[m.id]) return false;
+        const days = getDaysUntilExpiry(m.id);
+        return days <= EXPIRY_HORIZON_DAYS;
+      })
+      .sort((a, b) => getDaysUntilExpiry(a.id) - getDaysUntilExpiry(b.id));
+  };
+
+  // قائمة الأشهر الستة القادمة (تبدأ من الشهر الحالي) مع عدد المستحضرات المنتهية في كل شهر
+  const getExpiryMonths = () => {
+    const meds = getHorizonExpiryMeds();
+    const now = new Date();
+    const months: { key: string; label: string; count: number }[] = [];
+    const arMonths = ['كانون الثاني', 'شباط', 'آذار', 'نيسان', 'أيار', 'حزيران', 'تموز', 'آب', 'أيلول', 'تشرين الأول', 'تشرين الثاني', 'كانون الأول'];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const count = meds.filter(m => (expiryDates[m.id] || '').substring(0, 7) === key).length;
+      months.push({ key, label: `${arMonths[d.getMonth()]} ${d.getFullYear()}`, count });
+    }
+    return months;
   };
 
   // --- STOCK MOVEMENT HELPERS (حركة المادة) ---
@@ -2145,6 +2193,63 @@ export default function Dashboard() {
     setNewDrugMinStock(15);
   };
 
+  // --- BULK INVENTORY IMPORT (استيراد المخزون الكامل من ES-PRO) ---
+  const handleBulkImportInventory = async () => {
+    setShowBulkImportConfirm(false);
+    setBulkImportStatus('loading');
+    setBulkImportMsg('جارٍ تحميل ملف الأدوية...');
+    try {
+      const res = await fetch('/inventory-seed.json');
+      if (!res.ok) throw new Error('تعذّر تحميل ملف البيانات');
+      const meds: Medicine[] = await res.json();
+
+      // دمج في الحالة المحلية فوراً (نتجاوز التكرار حسب id)
+      setInventory(prev => {
+        const map = new Map(prev.map(m => [m.id, m]));
+        meds.forEach(m => map.set(m.id, m));
+        return Array.from(map.values());
+      });
+
+      if (!currentUser) {
+        // وضع تجريبي بدون تسجيل دخول — يُحفظ محلياً فقط
+        setBulkImportStatus('done');
+        setBulkImportMsg(`تم تحميل ${meds.length.toLocaleString()} دواء محلياً. سجّل الدخول لمزامنتها سحابياً.`);
+        setTimeout(() => setBulkImportStatus('idle'), 8000);
+        return;
+      }
+
+      // كتابة دفعية إلى Firestore (حد الدفعة 500 عملية)
+      setBulkImportStatus('writing');
+      const userId = currentUser.uid;
+      const CHUNK = 450;
+      setBulkImportProgress({ done: 0, total: meds.length });
+      for (let i = 0; i < meds.length; i += CHUNK) {
+        const slice = meds.slice(i, i + CHUNK);
+        const batch = writeBatch(db);
+        slice.forEach(m => {
+          batch.set(doc(db, 'users', userId, 'inventory', m.id), { ...m, userId });
+        });
+        await batch.commit();
+        setBulkImportProgress({ done: Math.min(i + CHUNK, meds.length), total: meds.length });
+      }
+
+      setBulkImportStatus('done');
+      setBulkImportMsg(`تم استيراد ${meds.length.toLocaleString()} دواء بنجاح إلى مخزونك السحابي!`);
+      addAuditEntry({
+        action: 'inventory_import',
+        amount: 0,
+        description: `استيراد المخزون الكامل (${meds.length} دواء) من ES-PRO`,
+        relatedId: 'bulk-import',
+      });
+      setTimeout(() => setBulkImportStatus('idle'), 10000);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'خطأ غير متوقع';
+      setBulkImportStatus('error');
+      setBulkImportMsg(`فشل الاستيراد: ${msg}`);
+      if (currentUser) handleFirestoreError(e, OperationType.WRITE, `users/${currentUser.uid}/inventory`);
+    }
+  };
+
   // --- PURCHASE ORDERS (طلبيات الشراء) BUSINESS LOGIC ---
   const addToPurchaseDraft = (med: any, overrideQty?: number) => {
     const exists = purchaseDraft.find(d => d.medicineId === med.id);
@@ -2212,7 +2317,13 @@ export default function Dashboard() {
               availableQuantity: newQty,
               costPrice: movingAvgCost,
               lastCostPrice: purchaseUnitCost,
-              price: Math.floor(draftItem.price * 1.25), // سعر البيع = التكلفة + هامش 25%
+              // سعر البيع: نحترم القيمة المعدّلة في الاستيراد إن وُجدت، وإلا التكلفة + هامش 25%
+              price: draftItem.retailPrice && Number(draftItem.retailPrice) > 0
+                ? Number(draftItem.retailPrice)
+                : Math.floor(draftItem.price * 1.25),
+              secondaryPrice: draftItem.officialPrice && Number(draftItem.officialPrice) > 0
+                ? Number(draftItem.officialPrice)
+                : med.secondaryPrice,
               barcode: draftItem.barcode || med.barcode,
               status: 'available' as const
             };
@@ -2233,8 +2344,12 @@ export default function Dashboard() {
           scientificName: draftItem.scientificName,
           category: draftItem.category,
           warehouse: 'مكتب علمي (توريد طلبيات الشراء)',
-          price: Math.floor(draftItem.price * 1.25),
-          secondaryPrice: Math.floor(draftItem.price * 1.35),
+          price: draftItem.retailPrice && Number(draftItem.retailPrice) > 0
+            ? Number(draftItem.retailPrice)
+            : Math.floor(draftItem.price * 1.25),
+          secondaryPrice: draftItem.officialPrice && Number(draftItem.officialPrice) > 0
+            ? Number(draftItem.officialPrice)
+            : Math.floor(draftItem.price * 1.35),
           costPrice: Number(draftItem.price),
           lastCostPrice: Number(draftItem.price),
           availableQuantity: Number(draftItem.qty),
@@ -3353,15 +3468,27 @@ export default function Dashboard() {
                         <p className="text-[10px] text-slate-400 font-bold mt-0.5">تحرير الأسعار ونسب المخزون وإدارة فترات انتهاء صلاحية الأدوية العضوية والمبردة</p>
                       </div>
 
-                      <div className="flex gap-2">
-                        <button 
+                      <div className="flex gap-2 flex-wrap">
+                        <button
                           onClick={() => setIsAddingDrug(!isAddingDrug)}
                           className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-4 py-2.5 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5"
                         >
                           <Plus className="w-4 h-4" />
                           <span>إضافة دواء جديد للمنظومة</span>
                         </button>
-                        
+
+                        {currentRole === 'admin' && (
+                          <button
+                            onClick={() => setShowBulkImportConfirm(true)}
+                            disabled={bulkImportStatus === 'loading' || bulkImportStatus === 'writing'}
+                            className="bg-slate-800 hover:bg-slate-900 text-white font-black text-xs px-4 py-2.5 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="استيراد المخزون الكامل من برنامج ES-PRO"
+                          >
+                            <Download className="w-4 h-4" />
+                            <span>استيراد المخزون الكامل</span>
+                          </button>
+                        )}
+
                         {/* Search in Inventory */}
                         <div className="flex items-center gap-2">
                           <div className="relative">
@@ -3385,6 +3512,37 @@ export default function Dashboard() {
                         </div>
                       </div>
                     </div>
+
+                    {/* Bulk import status banner */}
+                    {bulkImportStatus !== 'idle' && (
+                      <div className={`rounded-2xl p-4 text-right flex items-center gap-3 shadow-sm border ${
+                        bulkImportStatus === 'error' ? 'bg-red-50 border-red-200' :
+                        bulkImportStatus === 'done' ? 'bg-emerald-50 border-emerald-200' :
+                        'bg-slate-50 border-slate-200'
+                      }`}>
+                        {(bulkImportStatus === 'loading' || bulkImportStatus === 'writing') && (
+                          <RefreshCw className="w-5 h-5 text-slate-600 animate-spin shrink-0" />
+                        )}
+                        {bulkImportStatus === 'done' && <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />}
+                        {bulkImportStatus === 'error' && <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />}
+                        <div className="flex-1">
+                          <p className={`text-xs font-extrabold ${
+                            bulkImportStatus === 'error' ? 'text-red-800' :
+                            bulkImportStatus === 'done' ? 'text-emerald-800' : 'text-slate-800'
+                          }`}>
+                            {bulkImportStatus === 'writing'
+                              ? `جارٍ الرفع السحابي... ${bulkImportProgress.done.toLocaleString()} / ${bulkImportProgress.total.toLocaleString()}`
+                              : bulkImportMsg}
+                          </p>
+                          {bulkImportStatus === 'writing' && (
+                            <div className="mt-2 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                              <div className="h-full bg-emerald-500 transition-all duration-300"
+                                style={{ width: `${bulkImportProgress.total ? (bulkImportProgress.done / bulkImportProgress.total) * 100 : 0}%` }} />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Automatic Alert: Near Expiry Medicines (30 days) */}
                     {getNearExpiryMeds().length > 0 && (
@@ -3444,6 +3602,102 @@ export default function Dashboard() {
                             );
                           })}
                         </div>
+                      </div>
+                    )}
+
+                    {/* لوحة الصلاحيات الموسّعة: أفق 6 أشهر مع تصفية بالشهر وترتيب بالأولوية */}
+                    {getHorizonExpiryMeds().length > 0 && (
+                      <div className="bg-white border border-slate-200/70 rounded-2xl shadow-sm overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => setShowExpiryHorizon(!showExpiryHorizon)}
+                          className="w-full flex items-center justify-between p-5 text-right hover:bg-slate-50/60 transition cursor-pointer"
+                        >
+                          <div className="flex items-center space-x-reverse space-x-2.5">
+                            <span className="flex items-center justify-center w-8 h-8 rounded-xl bg-amber-50 border border-amber-150">
+                              <CalendarClock className="w-4 h-4 text-amber-600" />
+                            </span>
+                            <div>
+                              <h4 className="font-extrabold text-xs text-slate-900">سجلّ الصلاحيات الموسّع — أفق 6 أشهر</h4>
+                              <p className="text-[9px] text-slate-400 font-bold mt-0.5">اضغط شهراً لعرض كل المواد المنتهية فيه، مرتّبة بالأولوية (الأقرب انتهاءً أولاً)</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-reverse space-x-2">
+                            <span className="text-[10px] bg-amber-100 text-amber-800 font-extrabold px-3 py-0.5 rounded-full border border-amber-200/50">
+                              {getHorizonExpiryMeds().length} مستحضر
+                            </span>
+                            <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${showExpiryHorizon ? 'rotate-180' : ''}`} />
+                          </div>
+                        </button>
+
+                        {showExpiryHorizon && (
+                          <div className="px-5 pb-5 space-y-4 border-t border-slate-100 pt-4">
+                            {/* شرائح اختيار الشهر */}
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedExpiryMonth(null)}
+                                className={`text-[10px] font-extrabold px-3 py-1.5 rounded-lg border transition cursor-pointer ${selectedExpiryMonth === null ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'}`}
+                              >
+                                الكل ({getHorizonExpiryMeds().length})
+                              </button>
+                              {getExpiryMonths().map(mo => (
+                                <button
+                                  key={mo.key}
+                                  type="button"
+                                  disabled={mo.count === 0}
+                                  onClick={() => setSelectedExpiryMonth(mo.key)}
+                                  className={`text-[10px] font-extrabold px-3 py-1.5 rounded-lg border transition flex items-center gap-1.5 ${mo.count === 0 ? 'bg-slate-50/50 text-slate-300 border-slate-100 cursor-not-allowed' : selectedExpiryMonth === mo.key ? 'bg-amber-500 text-white border-amber-500 cursor-pointer' : 'bg-amber-50 text-amber-700 border-amber-200/60 hover:border-amber-300 cursor-pointer'}`}
+                                >
+                                  <span>{mo.label}</span>
+                                  {mo.count > 0 && (
+                                    <span className={`text-[8px] px-1.5 py-0.5 rounded-full ${selectedExpiryMonth === mo.key ? 'bg-white/25' : 'bg-amber-200/70'}`}>{mo.count}</span>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+
+                            {/* القائمة المرتّبة بالأولوية */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {getHorizonExpiryMeds()
+                                .filter(med => selectedExpiryMonth === null || (expiryDates[med.id] || '').substring(0, 7) === selectedExpiryMonth)
+                                .map(med => {
+                                  const days = getDaysUntilExpiry(med.id);
+                                  const sev = expirySeverity(days);
+                                  const tone = sev === 'expired' || sev === 'critical'
+                                    ? { card: 'border-rose-100/70 hover:border-rose-200', icon: 'text-rose-600', badge: 'bg-rose-50 text-rose-700 border-rose-200/50' }
+                                    : sev === 'warning'
+                                    ? { card: 'border-amber-100/70 hover:border-amber-200', icon: 'text-amber-600', badge: 'bg-amber-50 text-amber-700 border-amber-200/50' }
+                                    : { card: 'border-slate-200/70 hover:border-slate-300', icon: 'text-slate-500', badge: 'bg-slate-50 text-slate-600 border-slate-200/50' };
+                                  return (
+                                    <div key={med.id} className={`bg-white border ${tone.card} p-3.5 rounded-xl flex items-center justify-between text-xs transition hover:shadow-xs`}>
+                                      <div className="space-y-1">
+                                        <strong className="font-extrabold text-slate-950 block">{med.nameAr}</strong>
+                                        <span className="text-[10px] text-slate-500 font-mono block">{med.nameEn} • {med.scientificName}</span>
+                                        <div className="flex items-center space-x-reverse space-x-1.5 mt-1">
+                                          <Clock className={`w-3.5 h-3.5 ${tone.icon}`} />
+                                          <span className={`text-[10px] font-bold font-mono ${tone.icon}`}>انتهاء الصلاحية: {expiryDates[med.id]}</span>
+                                        </div>
+                                      </div>
+                                      <div className="flex flex-col items-end space-y-2.5">
+                                        <span className={`px-2.5 py-0.5 rounded-lg border font-extrabold text-[10px] tracking-wide ${tone.badge}`}>
+                                          {days < 0 ? `منتهية منذ ${Math.abs(days)} يوم` : days === 0 ? 'تنتهي اليوم!' : `متبقي ${days} يوم`}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => { addToPurchaseDraft(med); setActiveTab('b2b'); }}
+                                          className="text-[9px] bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-850 font-black px-2.5 py-1 rounded-lg transition border border-emerald-150 cursor-pointer flex items-center gap-1"
+                                        >
+                                          <Plus className="w-3 h-3" />
+                                          <span>طلب توريد B2B</span>
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -4077,7 +4331,22 @@ export default function Dashboard() {
                     
                     {/* RIGHT PANEL - QUICK ADDERS (4 Cols) */}
                     <div className="lg:col-span-4 space-y-6">
-                      
+
+                      {/* Import from Image Button */}
+                      <button
+                        type="button"
+                        onClick={() => setShowInvoiceImport(true)}
+                        className="w-full flex items-center gap-3 bg-gradient-to-l from-emerald-600 to-emerald-500 text-white rounded-2xl p-4 shadow-sm hover:from-emerald-700 hover:to-emerald-600 transition cursor-pointer"
+                      >
+                        <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
+                          <ScanLine className="w-5 h-5" />
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs font-extrabold">استيراد فاتورة من صورة</p>
+                          <p className="text-[10px] text-emerald-100 font-bold mt-0.5">ارفع صورة القائمة وسيُعبّأ المخزون تلقائياً</p>
+                        </div>
+                      </button>
+
                       {/* Interactive Section: Search and Add by Name */}
                       <div className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-xs space-y-4">
                         <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
@@ -6187,6 +6456,7 @@ export default function Dashboard() {
                           receivable_add:     { label: 'ذمّة زبون', color: 'text-violet-700', bg: 'bg-violet-50' },
                           receivable_collect: { label: 'تحصيل',     color: 'text-emerald-700',bg: 'bg-emerald-50'},
                           return:             { label: 'مرتجع',     color: 'text-rose-700',   bg: 'bg-rose-50'   },
+                          inventory_import:   { label: 'استيراد مخزون', color: 'text-slate-700', bg: 'bg-slate-100' },
                         };
                         const meta = actionMeta[entry.action];
                         return (
@@ -6765,6 +7035,87 @@ export default function Dashboard() {
 
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Bulk Inventory Import Confirmation */}
+      <AnimatePresence>
+        {showBulkImportConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={() => setShowBulkImportConfirm(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl text-right space-y-4"
+              dir="rtl"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 bg-slate-100 rounded-2xl flex items-center justify-center shrink-0">
+                  <Download className="w-5 h-5 text-slate-700" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900">استيراد المخزون الكامل</h3>
+                  <p className="text-[10px] text-slate-400 font-bold">من برنامج ES-PRO</p>
+                </div>
+              </div>
+              <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                سيُضاف <strong className="text-slate-900">6,964 دواء</strong> إلى مخزونك مع الأسعار والكميات.
+                الأدوية ذات الكود نفسه ستُحدَّث. {currentUser ? 'ستُرفع إلى حسابك السحابي.' : 'ستُحفظ محلياً (غير مسجّل الدخول).'}
+              </p>
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[10px] text-amber-800 font-bold">
+                ⚠️ قد تستغرق العملية دقيقة. لا تغلق الصفحة أثناء الرفع.
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setShowBulkImportConfirm(false)}
+                  className="flex-1 border border-slate-200 rounded-xl py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer">
+                  إلغاء
+                </button>
+                <button onClick={handleBulkImportInventory}
+                  className="flex-1 bg-slate-800 hover:bg-slate-900 text-white rounded-xl py-2.5 text-xs font-extrabold transition cursor-pointer">
+                  ابدأ الاستيراد
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Invoice Import Modal */}
+      <AnimatePresence>
+        {showInvoiceImport && (
+          <InvoiceImportModal
+            inventory={inventory}
+            onClose={() => setShowInvoiceImport(false)}
+            onConfirm={(draftItems, supplierName) => {
+              // Merge imported items into purchaseDraft
+              setPurchaseDraft(prev => {
+                const updated = [...prev];
+                draftItems.forEach(newItem => {
+                  const exists = newItem.medicineId
+                    ? updated.findIndex(d => d.medicineId === newItem.medicineId)
+                    : -1;
+                  if (exists >= 0) {
+                    updated[exists] = {
+                      ...updated[exists],
+                      qty: updated[exists].qty + newItem.qty,
+                      price: newItem.price,
+                      expiryDate: newItem.expiryDate,
+                    };
+                  } else {
+                    updated.push(newItem);
+                  }
+                });
+                return updated;
+              });
+              if (supplierName) setPurchaseSupplier(supplierName);
+              setShowInvoiceImport(false);
+              setPurchaseSuccessBanner(`تم استيراد ${draftItems.length} صنف من الفاتورة إلى مسودة الشراء`);
+              setTimeout(() => setPurchaseSuccessBanner(null), 5000);
+            }}
+          />
         )}
       </AnimatePresence>
 
