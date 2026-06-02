@@ -312,120 +312,8 @@ export default function Dashboard() {
   const [authInitFailed, setAuthInitFailed] = useState(false);
 
   // --- CORE LIVING STATE OF THE PHARMACY (Saves in session-state) ---
-  const [inventory, setInventory] = useState<Medicine[]>([
-    {
-      id: '1',
-      nameAr: 'بندول اكسترا',
-      nameEn: 'Panadol Extra',
-      scientificName: 'Paracetamol + Caffeine',
-      activeIngredient: 'باراسيتامول + كافيين',
-      category: 'مسكنات الألم',
-      warehouse: 'مكتب دجلة العلمي للأدوية (بغداد)',
-      price: 3500,
-      secondaryPrice: 3800,
-      costPrice: 2500,
-      lastCostPrice: 2500,
-      availableQuantity: 450,
-      status: 'available',
-      barcode: '6281100115598'
-    },
-    {
-      id: '2',
-      nameAr: 'اموكسيل 500 ملغ',
-      nameEn: 'Amoxil 500mg',
-      scientificName: 'Amoxicillin',
-      activeIngredient: 'أموكسيسيلين',
-      category: 'المضادات الحيوية',
-      warehouse: 'مذخر قصر الشفاء الحديث (أربيل)',
-      price: 7200,
-      secondaryPrice: 7900,
-      costPrice: 5200,
-      lastCostPrice: 5200,
-      availableQuantity: 120,
-      status: 'available',
-      barcode: '5011327110992'
-    },
-    {
-      id: '3',
-      nameAr: 'ليبيتور 20 ملغ',
-      nameEn: 'Lipitor 20mg',
-      scientificName: 'Atorvastatin',
-      activeIngredient: 'أتورفاستاتين',
-      category: 'أدوية الكولسترول والقلب',
-      warehouse: 'مذخر الرافدين للادوية (البصرة)',
-      price: 18500,
-      secondaryPrice: 20000,
-      costPrice: 13300,
-      lastCostPrice: 13300,
-      availableQuantity: 1,
-      status: 'low',
-      barcode: '8699532095457'
-    },
-    {
-      id: '4',
-      nameAr: 'فولتارين جيل 50 غرام',
-      nameEn: 'Voltaren Gel 50g',
-      scientificName: 'Diclofenac Diethylamine',
-      activeIngredient: 'ديكلوفيناك ثنائي إيثيل الأمين',
-      category: 'كريمات ومسكنات موضعية',
-      warehouse: 'مذخر النخبة العلمي (الموصل)',
-      price: 4800,
-      secondaryPrice: 5200,
-      costPrice: 3450,
-      lastCostPrice: 3450,
-      availableQuantity: 64,
-      status: 'available',
-      barcode: '7611327110931'
-    },
-    {
-      id: '5',
-      nameAr: 'كونكور 5 ملغ',
-      nameEn: 'Concor 5mg',
-      scientificName: 'Bisoprolol Fumarate',
-      activeIngredient: 'بيسوبرولول فومارات',
-      category: 'أدوية الضغط والقلب',
-      warehouse: 'مكتب دجلة العلمي للأدوية (بغداد)',
-      price: 11000,
-      secondaryPrice: 12000,
-      costPrice: 7900,
-      lastCostPrice: 7900,
-      availableQuantity: 300,
-      status: 'available',
-      barcode: '4004732101236'
-    },
-    {
-      id: '6',
-      nameAr: 'دياميكرون 60 ملغ',
-      nameEn: 'Diamicron 60mg MR',
-      scientificName: 'Gliclazide',
-      activeIngredient: 'غليكلازيد',
-      category: 'أدوية السكري',
-      price: 9500,
-      secondaryPrice: 10500,
-      costPrice: 6850,
-      lastCostPrice: 6850,
-      availableQuantity: 0,
-      warehouse: 'مذخر السلام الدولي (النجف)',
-      status: 'unavailable',
-      barcode: '5011327789311'
-    },
-    {
-      id: '7',
-      nameAr: 'زاناكس 0.5 ملغ (خاضع للمراقبة)',
-      nameEn: 'Xanax 0.5mg',
-      scientificName: 'Alprazolam',
-      activeIngredient: 'ألبرازولام',
-      category: 'مؤثرات عقلية مهدئة',
-      warehouse: 'مكتب دجلة العلمي للأدوية (بغداد)',
-      price: 22000,
-      secondaryPrice: 24000,
-      costPrice: 15800,
-      lastCostPrice: 15800,
-      availableQuantity: 42,
-      status: 'available',
-      barcode: '7611327114321'
-    }
-  ]);
+  // يبدأ المخزون فارغاً — لا مواد تجريبية. تُضاف المواد عبر الاستيراد أو الإدخال اليدوي.
+  const [inventory, setInventory] = useState<Medicine[]>([]);
 
   // Expiry states tracking
   const [expiryDates, setExpiryDates] = useState<Record<string, string>>({
@@ -673,34 +561,7 @@ export default function Dashboard() {
   const [bulkImportProgress, setBulkImportProgress] = useState({ done: 0, total: 0 });
   const [bulkImportMsg, setBulkImportMsg] = useState('');
   const [showBulkImportConfirm, setShowBulkImportConfirm] = useState(false);
-  const [purchaseDraft, setPurchaseDraft] = useState<any[]>([
-    {
-      id: 'draft-1',
-      medicineId: '1',
-      nameAr: 'بندول اكسترا (Panadol Extra)',
-      nameEn: 'Panadol Extra',
-      scientificName: 'Paracetamol + Caffeine',
-      category: 'مسكنات الألم',
-      price: 2500,
-      qty: 60,
-      expiryDate: '2028-06-15',
-      barcode: '6281100115598',
-      retailPrice: 3500
-    },
-    {
-      id: 'draft-2',
-      medicineId: '2',
-      nameAr: 'اموكسيل 500 ملغ (Amoxil)',
-      nameEn: 'Amoxil',
-      scientificName: 'Amoxicillin',
-      category: 'المضادات الحيوية',
-      price: 5200,
-      qty: 25,
-      expiryDate: '2027-11-01',
-      barcode: '5011327110992',
-      retailPrice: 7200
-    }
-  ]);
+  const [purchaseDraft, setPurchaseDraft] = useState<any[]>([]);
 
   // المورّد النشط لمسودة الشراء الحالية — يُطبَّق على كل الأصناف ويُورَّث للأصناف الجديدة تلقائياً
   const [purchaseSupplier, setPurchaseSupplier] = useState<string>('');
@@ -3327,10 +3188,11 @@ export default function Dashboard() {
                       <div className="flex items-center gap-2 w-full sm:w-auto">
                         <div className="relative flex-1 sm:flex-initial">
                           <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
-                          <input 
-                            type="text" 
+                          <input
+                            type="text"
                             value={searchPOSQuery}
                             onChange={(e) => setSearchPOSQuery(e.target.value)}
+                            onFocus={() => setSearchPOSQuery('')}
                             className="bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-emerald-500 w-full sm:w-52"
                             placeholder="ابحث بالاسم أو رمز الباركود..."
                           />
@@ -4305,6 +4167,7 @@ export default function Dashboard() {
                           type="text"
                           value={searchInInventoryQuery}
                           onChange={(e) => setSearchInInventoryQuery(e.target.value)}
+                          onFocus={() => setSearchInInventoryQuery('')}
                           className="w-full bg-white border border-slate-200 rounded-xl pr-9 pl-8 py-2 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-emerald-500 font-medium"
                           placeholder="بحث بالاسم أو الباركود أو الفئة..."
                         />
