@@ -655,6 +655,12 @@ export default function Dashboard() {
   // تعديل الكمية المباشر من جدول المخزون: الـ id قيد التحرير + القيمة المؤقتة
   const [editingQtyId, setEditingQtyId] = useState<string | null>(null);
   const [editingQtyValue, setEditingQtyValue] = useState<string>('');
+  // تعديل السعر المباشر من جدول المخزون: الـ id قيد التحرير + سعر الجمهور + السعر الرسمي
+  const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
+  const [editingPriceValue, setEditingPriceValue] = useState<string>('');
+  const [editingSecondaryPriceValue, setEditingSecondaryPriceValue] = useState<string>('');
+  // المادة المطلوب حذفها (يظهر نافذة تأكيد قبل الحذف النهائي)
+  const [deleteMedTarget, setDeleteMedTarget] = useState<Medicine | null>(null);
   // فلتر الفئة في جدول المخزون ('' = كل الفئات)
   const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState<string>('');
   // الشهر المختار للتصفية بصيغة 'YYYY-MM'؛ null = عرض كل الأشهر ضمن الأفق
@@ -1064,6 +1070,64 @@ export default function Dashboard() {
       setDoc(doc(db, 'users', currentUser.uid, 'inventory', medId), updatedMed)
         .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${currentUser.uid}/inventory/${medId}`));
     }
+  };
+
+  // فتح محرّر السعر المباشر لصف في جدول المخزون
+  const startEditingPrice = (med: Medicine) => {
+    setEditingPriceId(med.id);
+    setEditingPriceValue(String(med.price));
+    setEditingSecondaryPriceValue(String(med.secondaryPrice ?? med.price));
+  };
+
+  // حفظ السعر المعدّل يدوياً: تحديث الحالة + المزامنة مع Firestore إن وُجد مستخدم
+  const saveEditingPrice = (medId: string) => {
+    const parsedPrice = Math.max(0, Math.round(Number(editingPriceValue)));
+    const parsedSecondary = Math.max(0, Math.round(Number(editingSecondaryPriceValue)));
+    if (isNaN(parsedPrice) || isNaN(parsedSecondary)) { setEditingPriceId(null); return; }
+    let updatedMed: Medicine | null = null;
+    setInventory(prev => prev.map(m => {
+      if (m.id === medId) {
+        updatedMed = {
+          ...m,
+          price: parsedPrice,
+          secondaryPrice: parsedSecondary,
+          updatedAt: new Date().toISOString(),
+        } as Medicine;
+        return updatedMed;
+      }
+      return m;
+    }));
+    if (currentUser && updatedMed) {
+      setDoc(doc(db, 'users', currentUser.uid, 'inventory', medId), updatedMed)
+        .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${currentUser.uid}/inventory/${medId}`));
+    }
+    setEditingPriceId(null);
+    setEditingPriceValue('');
+    setEditingSecondaryPriceValue('');
+  };
+
+  // حذف مادة نهائياً من المخزون: محلياً + من Firestore
+  const confirmDeleteMedicine = () => {
+    const med = deleteMedTarget;
+    if (!med) return;
+    setInventory(prev => prev.filter(m => m.id !== med.id));
+    setExpiryDates(prev => {
+      const next = { ...prev };
+      delete next[med.id];
+      return next;
+    });
+    if (currentUser) {
+      const userId = currentUser.uid;
+      deleteDoc(doc(db, 'users', userId, 'inventory', med.id))
+        .catch(e => handleFirestoreError(e, OperationType.DELETE, `users/${userId}/inventory/${med.id}`));
+    }
+    addAuditEntry({
+      action: 'inventory_import',
+      amount: 0,
+      description: `حذف مادة من المخزون: ${med.nameAr}`,
+      relatedId: med.id,
+    });
+    setDeleteMedTarget(null);
   };
 
   // --- STOCK MOVEMENT HELPERS (حركة المادة) ---
@@ -1511,17 +1575,24 @@ export default function Dashboard() {
       customerName: returnTarget.customerName,
     };
 
-    // 1. أعِد الكمية إلى المخزون
-    returnedItems.forEach(it => {
-      setInventory(prev => prev.map(med => {
-        const fullName = `${med.nameAr} (${med.nameEn})`;
-        if (fullName === it.name || med.nameAr === it.name) {
-          const nextQty = med.availableQuantity + it.quantity;
-          return { ...med, availableQuantity: nextQty, status: nextQty > 15 ? 'available' : nextQty > 0 ? 'low' : 'unavailable' };
-        }
-        return med;
-      }));
+    // 1. أعِد الكمية إلى المخزون (محلياً + جمع المواد المتغيّرة لمزامنتها مع Firestore)
+    const restoredMeds: Medicine[] = [];
+    const invAfterReturn = inventory.map(med => {
+      const fullName = `${med.nameAr} (${med.nameEn})`;
+      const matched = returnedItems.find(it => fullName === it.name || med.nameAr === it.name);
+      if (matched) {
+        const nextQty = med.availableQuantity + matched.quantity;
+        const updated = {
+          ...med,
+          availableQuantity: nextQty,
+          status: (nextQty > 15 ? 'available' : nextQty > 0 ? 'low' : 'unavailable') as Medicine['status'],
+        } as Medicine;
+        restoredMeds.push(updated);
+        return updated;
+      }
+      return med;
     });
+    setInventory(invAfterReturn);
 
     // 2. إذا كان الاسترداد نقداً → اخصم من الصندوق
     if (returnRefundMethod === 'cash') {
@@ -1543,6 +1614,11 @@ export default function Dashboard() {
       const userId = currentUser.uid;
       setDoc(doc(db, 'users', userId, 'returns', newReturn.returnId), { ...newReturn, userId })
         .catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${userId}/returns/${newReturn.returnId}`));
+      // مزامنة كميات المخزون المُعادة حتى لا تُعكَس عند إعادة التحميل
+      restoredMeds.forEach(med => {
+        setDoc(doc(db, 'users', userId, 'inventory', med.id), { ...med, userId })
+          .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/inventory/${med.id}`));
+      });
     }
 
     // 5. إغلاق وتصفير
@@ -1557,6 +1633,7 @@ export default function Dashboard() {
 
   // --- EDIT INVOICE ITEMS (تعديل أصناف فاتورة مبيعات موجودة) ---
   const handleSaveInvoiceEdit = (invoiceId: string) => {
+    let updatedRecord: SaleRecord | null = null;
     setSalesLedger(prev => prev.map(s => {
       if (s.invoiceId !== invoiceId) return s;
       const newTotal = editingItems.reduce((sum, it) => sum + it.quantity * it.price, 0);
@@ -1564,7 +1641,7 @@ export default function Dashboard() {
       const newGrossProfit = newTotal - newTotalCost;
       const diff = newTotal - s.total;
       if (diff !== 0) setWalletBalance(w => w + diff);
-      return {
+      updatedRecord = {
         ...s,
         items: editingItems.map(it => ({
           ...it,
@@ -1576,7 +1653,14 @@ export default function Dashboard() {
         grossProfit: newGrossProfit,
         profitMargin: newTotal > 0 ? Math.round((newGrossProfit / newTotal) * 100) : 0,
       };
+      return updatedRecord;
     }));
+    // مزامنة الفاتورة المعدّلة مع Firestore حتى لا يُفقد التعديل عند إعادة التحميل
+    if (currentUser && updatedRecord) {
+      const userId = currentUser.uid;
+      setDoc(doc(db, 'users', userId, 'salesLedger', invoiceId), { ...(updatedRecord as SaleRecord), userId })
+        .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/salesLedger/${invoiceId}`));
+    }
     setExpandedInvoiceId(null);
   };
 
@@ -2217,7 +2301,16 @@ export default function Dashboard() {
     e.preventDefault();
     if (!newDrugAr || !newDrugEn) return;
 
-    const newId = String(inventory.length + 1);
+    // تحذير: إذا لم يكن المستخدم مسجّل دخوله، البيانات لن تُحفظ بعد إغلاق التطبيق
+    if (!currentUser) {
+      alert('⚠️ تنبيه: أنت غير مسجّل دخول!\n\nلحفظ المواد بشكل دائم، الرجاء الضغط على زر "ربط المزامنة السحابية (Google)" أعلى الصفحة أولاً.\n\nبدون تسجيل الدخول، ستختفي المادة عند إغلاق التطبيق أو تحديث الصفحة.');
+      return;
+    }
+
+    // إنشاء ID آمن بأخذ أعلى ID موجود + 1 لتجنّب التصادم عند الحذف
+    const maxExistingId = inventory.reduce((max, item) => Math.max(max, Number(item.id) || 0), 0);
+    const newId = String(maxExistingId + 1);
+
     const newMedItem: Medicine = {
       id: newId,
       nameAr: newDrugAr,
@@ -2236,15 +2329,11 @@ export default function Dashboard() {
       barcode: newDrugBarcode || '62811' + Math.floor(Math.random() * 90000000 + 10000000)
     };
 
-    if (currentUser) {
-      const userId = currentUser.uid;
-      setDoc(doc(db, 'users', userId, 'inventory', newId), {
-        ...newMedItem,
-        userId
-      }).catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${userId}/inventory/${newId}`));
-    } else {
-      setInventory([...inventory, newMedItem]);
-    }
+    const userId = currentUser.uid;
+    setDoc(doc(db, 'users', userId, 'inventory', newId), {
+      ...newMedItem,
+      userId
+    }).catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${userId}/inventory/${newId}`));
 
     setExpiryDates(prev => ({ ...prev, [newId]: newDrugExpiry }));
 
@@ -2305,7 +2394,7 @@ export default function Dashboard() {
       addAuditEntry({
         action: 'inventory_import',
         amount: 0,
-        description: `استيراد المخزون الكامل (${meds.length} دواء) من ES-PRO`,
+        description: `استيراد المخزون الكامل (${meds.length} دواء) من بيانات المخازن`,
         relatedId: 'bulk-import',
       });
       setTimeout(() => setBulkImportStatus('idle'), 10000);
@@ -4276,6 +4365,7 @@ export default function Dashboard() {
                             <th className="py-3 px-4">الكمية المتوفرة</th>
                             <th className="py-3 px-4">انتهاء الصلاحية</th>
                             <th className="py-3 px-4 text-center">تعديل المخزون</th>
+                            <th className="py-3 px-4 text-center">حذف</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
@@ -4307,8 +4397,42 @@ export default function Dashboard() {
                                     <span className="text-[10px] text-slate-400 font-mono block">{med.nameEn} • {med.scientificName}</span>
                                   </td>
                                   <td className="py-3 px-4 text-slate-500 font-semibold">{med.category}</td>
-                                  <td className="py-3 px-4 font-mono font-bold text-emerald-800">{med.price.toLocaleString()} د.ع</td>
-                                  <td className="py-3 px-4 font-mono font-bold text-slate-500/80">{(med.secondaryPrice || (med.price + 500)).toLocaleString()} د.ع</td>
+                                  {editingPriceId === med.id ? (
+                                    <>
+                                      <td className="py-3 px-4 font-mono">
+                                        <input
+                                          type="number" min={0} step={250} autoFocus
+                                          value={editingPriceValue}
+                                          onChange={(e) => setEditingPriceValue(e.target.value)}
+                                          onKeyDown={(e) => { if (e.key === 'Enter') saveEditingPrice(med.id); if (e.key === 'Escape') setEditingPriceId(null); }}
+                                          className="w-24 bg-white border border-emerald-300 rounded-lg px-2 py-1 text-xs text-emerald-900 font-mono font-bold text-center focus:outline-emerald-500"
+                                        />
+                                      </td>
+                                      <td className="py-3 px-4 font-mono">
+                                        <div className="flex items-center gap-1.5">
+                                          <input
+                                            type="number" min={0} step={250}
+                                            value={editingSecondaryPriceValue}
+                                            onChange={(e) => setEditingSecondaryPriceValue(e.target.value)}
+                                            onKeyDown={(e) => { if (e.key === 'Enter') saveEditingPrice(med.id); if (e.key === 'Escape') setEditingPriceId(null); }}
+                                            className="w-24 bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs text-slate-700 font-mono font-bold text-center focus:outline-slate-400"
+                                          />
+                                          <button type="button" onClick={() => saveEditingPrice(med.id)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded-lg transition cursor-pointer" title="حفظ السعر"><Check className="w-3.5 h-3.5" /></button>
+                                          <button type="button" onClick={() => setEditingPriceId(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded-lg transition cursor-pointer" title="إلغاء"><X className="w-3.5 h-3.5" /></button>
+                                        </div>
+                                      </td>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <td className="py-3 px-4 font-mono font-bold text-emerald-800">
+                                        <button type="button" onClick={() => startEditingPrice(med)} className="group flex items-center gap-1.5 hover:text-emerald-600 transition cursor-pointer" title="تعديل السعر">
+                                          <span>{med.price.toLocaleString()} د.ع</span>
+                                          <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-100 transition" />
+                                        </button>
+                                      </td>
+                                      <td className="py-3 px-4 font-mono font-bold text-slate-500/80">{(med.secondaryPrice || (med.price + 500)).toLocaleString()} د.ع</td>
+                                    </>
+                                  )}
                                   <td className="py-3 px-4 font-mono">
                                     <span className={`px-2 py-0.5 rounded-full font-bold ${med.availableQuantity <= 0 ? 'bg-rose-100 text-rose-800 font-sans text-[10px]' : med.availableQuantity < 15 ? 'bg-amber-100 text-amber-800 font-sans text-[10px]' : 'text-slate-800'}`}>
                                       {med.availableQuantity <= 0 ? 'نفذ بالكامل' : `${med.availableQuantity} علبة`}
@@ -4343,6 +4467,16 @@ export default function Dashboard() {
                                         <button onClick={() => adjustStockQty(med.id, -5)} className="bg-slate-150 hover:bg-rose-100 text-slate-600 hover:text-rose-800 px-2 py-1 rounded font-bold transition cursor-pointer text-[10px]" title="تخفيض 5 علب">-5</button>
                                       </div>
                                     )}
+                                  </td>
+                                  <td className="py-3 px-4 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => setDeleteMedTarget(med)}
+                                      className="text-slate-400 hover:text-white hover:bg-rose-600 p-1.5 rounded-lg transition cursor-pointer border border-transparent hover:border-rose-600"
+                                      title="حذف المادة نهائياً"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
                                   </td>
                                 </tr>
                               );
@@ -6788,8 +6922,8 @@ export default function Dashboard() {
                   <Check className="w-6 h-6 stroke-[3]" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-slate-950 text-base leading-none">صيدلية النور النموذجية</h3>
-                  <p className="text-[10px] text-slate-400 mt-1">العراق، بغداد • هاتف الصيدلية: +964 780 288 4040</p>
+                  <h3 className="font-extrabold text-slate-950 text-base leading-none">صيدلية انوار الحسن</h3>
+                  <p className="text-[10px] text-slate-400 mt-1">البصرة / شارع القائد</p>
                 </div>
               </div>
 
@@ -7133,12 +7267,12 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <h3 className="font-extrabold text-sm text-slate-900">استيراد المخزون الكامل</h3>
-                  <p className="text-[10px] text-slate-400 font-bold">من برنامج ES-PRO</p>
+                  <p className="text-[10px] text-slate-400 font-bold">من ملف بيانات المخازن</p>
                 </div>
               </div>
               <p className="text-xs text-slate-600 font-medium leading-relaxed">
-                سيُضاف <strong className="text-slate-900">6,964 دواء</strong> إلى مخزونك مع الأسعار والكميات.
-                الأدوية ذات الكود نفسه ستُحدَّث. {currentUser ? 'ستُرفع إلى حسابك السحابي.' : 'ستُحفظ محلياً (غير مسجّل الدخول).'}
+                سيُضاف <strong className="text-slate-900">6,978 صنف</strong> إلى مخزونك مع الباركود والأسعار (شراء وبيع) والكميات.
+                الكميات السالبة ستُحوَّل إلى صفر. {currentUser ? 'ستُرفع إلى حسابك السحابي.' : 'ستُحفظ محلياً (غير مسجّل الدخول).'}
               </p>
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[10px] text-amber-800 font-bold">
                 ⚠️ قد تستغرق العملية دقيقة. لا تغلق الصفحة أثناء الرفع.
@@ -7151,6 +7285,52 @@ export default function Dashboard() {
                 <button onClick={handleBulkImportInventory}
                   className="flex-1 bg-slate-800 hover:bg-slate-900 text-white rounded-xl py-2.5 text-xs font-extrabold transition cursor-pointer">
                   ابدأ الاستيراد
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Delete Medicine Confirmation Modal */}
+        {deleteMedTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={() => setDeleteMedTarget(null)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl text-right space-y-4"
+              dir="rtl"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 bg-rose-100 rounded-2xl flex items-center justify-center shrink-0">
+                  <Trash2 className="w-5 h-5 text-rose-600" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900">حذف مادة من المخزون</h3>
+                  <p className="text-[10px] text-slate-400 font-bold">هذا الإجراء لا يمكن التراجع عنه</p>
+                </div>
+              </div>
+              <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                هل أنت متأكد من حذف <strong className="text-slate-900">{deleteMedTarget.nameAr}</strong> نهائياً؟
+                {deleteMedTarget.availableQuantity > 0 && (
+                  <span className="text-rose-700 font-bold"> (يوجد {deleteMedTarget.availableQuantity} علبة في المخزون حالياً)</span>
+                )}
+                {' '}{currentUser ? 'سيُحذف من حسابك السحابي أيضاً.' : 'سيُحذف محلياً (غير مسجّل الدخول).'}
+              </p>
+              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-[10px] text-rose-800 font-bold">
+                ⚠️ لن تتأثّر الفواتير أو المبيعات السابقة المسجّلة لهذه المادة.
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setDeleteMedTarget(null)}
+                  className="flex-1 border border-slate-200 rounded-xl py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer">
+                  إلغاء
+                </button>
+                <button onClick={confirmDeleteMedicine}
+                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white rounded-xl py-2.5 text-xs font-extrabold transition cursor-pointer">
+                  نعم، احذف المادة
                 </button>
               </div>
             </motion.div>

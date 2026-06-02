@@ -1,10 +1,31 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  doc,
+  getDocFromServer,
+} from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json'; // Located in the root of the project folder
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
+
+/* CRITICAL: The app will break without passing the named database id.
+   نفعّل الكاش الدائم (IndexedDB) ليعمل التطبيق دون اتصال:
+   - كل عمليات الإضافة/الحذف/التعديل تُحفظ محلياً فوراً.
+   - عند انقطاع الإنترنت تبقى البيانات محفوظة وتُرفع تلقائياً عند عودة الاتصال.
+   - persistentMultipleTabManager يسمح بفتح التطبيق في أكثر من تبويب دون تعارض. */
+export const db = initializeFirestore(
+  app,
+  {
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager(),
+    }),
+  },
+  firebaseConfig.firestoreDatabaseId
+);
+
 export const auth = getAuth();
 
 // CRITICAL CONSTRAINT: Validate Connection to Firestore on boot

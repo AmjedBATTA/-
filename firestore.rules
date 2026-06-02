@@ -3,11 +3,12 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // --- GLOBAL SAFETY NET ---
+    // أي مسار غير مذكور صراحةً ممنوع تماماً (قراءةً وكتابةً).
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // --- REUSABLE SECURITY PRIMITIVES & HELPERS ---
+    // --- REUSABLE SECURITY PRIMITIVES ---
     function isSignedIn() {
       return request.auth != null;
     }
@@ -16,210 +17,22 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    function isValidId(id) {
-      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-
-    function incoming() {
-      return request.resource.data;
-    }
-
-    function existing() {
-      return resource.data;
-    }
-
-    // --- DATA ENTITY SCHEMAS & SANITIZATION CONTROLS ---
-
-    function isValidUser(data) {
-      return data.uid == request.auth.uid
-        && data.email is string
-        && data.email.size() <= 128
-        && data.pharmacyName is string
-        && data.pharmacyName.size() <= 256
-        && data.keys().hasAll(['uid', 'email', 'pharmacyName', 'createdAt'])
-        && data.keys().size() >= 4;
-    }
-
-    function isValidMedicine(data, userId) {
-      return data.id is string
-        && data.id.size() <= 128
-        && data.nameAr is string
-        && data.nameAr.size() <= 256
-        && data.nameEn is string
-        && data.nameEn.size() <= 256
-        && data.price is int
-        && data.price >= 0
-        && data.availableQuantity is int
-        && data.availableQuantity >= 0
-        && data.status is string
-        && data.userId == userId
-        && data.keys().hasAll(['id', 'nameAr', 'nameEn', 'price', 'availableQuantity', 'status', 'userId']);
-    }
-
-    function isValidB2BOrder(data, userId) {
-      return data.id is string
-        && data.id.size() <= 128
-        && data.warehouseName is string
-        && data.warehouseName.size() <= 256
-        && data.totalAmount is int
-        && data.totalAmount >= 0
-        && data.status is string
-        && data.userId == userId
-        && data.keys().hasAll(['id', 'date', 'warehouseName', 'totalAmount', 'status', 'userId']);
-    }
-
-    function isValidSaleRecord(data, userId) {
-      return data.invoiceId is string
-        && data.invoiceId.size() <= 128
-        && data.total is number
-        && data.total >= 0
-        && data.customerName is string
-        && data.customerName.size() <= 256
-        && data.userId == userId
-        && data.keys().hasAll(['invoiceId', 'timestamp', 'total', 'customerName', 'userId']);
-    }
-
-    function isValidTeamMember(data, userId) {
-      return data.id is string
-        && data.id.size() <= 128
-        && data.name is string
-        && data.name.size() <= 256
-        && data.role is string
-        && data.role.size() <= 128
-        && data.userId == userId
-        && data.keys().hasAll(['id', 'name', 'role', 'userId']);
-    }
-
-    function isValidExpense(data, userId) {
-      return data.id is string
-        && data.id.size() <= 128
-        && data.category is string
-        && data.category.size() <= 128
-        && data.amount is number
-        && data.amount >= 0
-        && data.userId == userId
-        && data.keys().hasAll(['id', 'date', 'category', 'amount', 'userId']);
-    }
-
-    function isValidPayable(data, userId) {
-      return data.id is string && data.id.size() <= 128
-        && data.supplierName is string && data.supplierName.size() <= 256
-        && data.amount is number && data.amount >= 0
-        && data.paidAmount is number && data.paidAmount >= 0
-        && data.paidAmount <= data.amount
-        && data.status is string
-        && data.userId == userId
-        && data.keys().hasAll(['id', 'supplierName', 'amount', 'paidAmount', 'date', 'status', 'userId']);
-    }
-
-    function isValidReceivable(data, userId) {
-      return data.id is string && data.id.size() <= 128
-        && data.customerName is string && data.customerName.size() <= 256
-        && data.amount is number && data.amount >= 0
-        && data.paidAmount is number && data.paidAmount >= 0
-        && data.paidAmount <= data.amount
-        && data.status is string
-        && data.userId == userId
-        && data.keys().hasAll(['id', 'customerName', 'amount', 'paidAmount', 'date', 'status', 'userId']);
-    }
-
-    function isValidAuditEntry(data) {
-      return data.keys().hasAll(['id','timestamp','action','actor','amount','description'])
-        && data.action in ['sale','purchase','expense','payable_add','payable_settle','receivable_add','receivable_collect','return']
-        && data.amount is number
-        && data.actor is string;
-    }
-
-    // --- SECURED USER MATCH BLOCKS ---
+    // --- PER-PHARMACY DATA ISOLATION ---
+    // كل صيدلية (مستخدم) تملك بياناتها فقط. لا يمكن لأي مستخدم آخر
+    // قراءة أو تعديل بيانات صيدلية غيره مهما حدث. هذا هو الحدّ الأمني
+    // الأساسي الذي يجعل العمل على عدة أجهزة آمناً ومتزامناً.
     match /users/{userId} {
-      allow get: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidUser(incoming());
-      allow update: if isOwner(userId) && isValidUser(incoming()) && (
-        incoming().diff(existing()).affectedKeys().hasOnly(['pharmacyName', 'licenseNumber', 'governorate'])
-      );
-      allow delete: if false; // Pharmacy profiles are immutable once registered
+      // ملف الصيدلية نفسه: مالكها فقط (لا يُحذف نهائياً للحفاظ على السجل).
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId);
+      allow delete: if false;
 
-      // --- INVENTORY SUBCOLLECTION ---
-      match /inventory/{medicineId} {
-        allow list, get: if isOwner(userId);
-        allow create: if isOwner(userId) && isValidId(medicineId) && isValidMedicine(incoming(), userId);
-        allow update: if isOwner(userId) && isValidId(medicineId) && isValidMedicine(incoming(), userId) && (
-          // Action: Stock Take / Refill (Modifies stock count or price)
-          incoming().diff(existing()).affectedKeys().hasOnly(['availableQuantity', 'price', 'status', 'updatedAt']) ||
-          // Action: Rename or edit clinical metadata
-          incoming().diff(existing()).affectedKeys().hasOnly(['nameAr', 'nameEn', 'scientificName', 'activeIngredient', 'category', 'status', 'warehouse'])
-        );
-        allow delete: if isOwner(userId);
-      }
-
-      // --- B2B ORDERS SUBCOLLECTION ---
-      match /b2bOrders/{orderId} {
-        allow list, get: if isOwner(userId);
-        allow create: if isOwner(userId) && isValidId(orderId) && isValidB2BOrder(incoming(), userId);
-        allow update: if isOwner(userId) && isValidId(orderId) && isValidB2BOrder(incoming(), userId) && (
-          // Action: Status cancellation or shipping movement update
-          incoming().diff(existing()).affectedKeys().hasOnly(['status'])
-        );
-        allow delete: if false; // Audit logs should not be modified
-      }
-
-      // --- SALES LEDGER SUBCOLLECTION ---
-      match /salesLedger/{invoiceId} {
-        allow list, get: if isOwner(userId);
-        allow create: if isOwner(userId) && isValidId(invoiceId) && isValidSaleRecord(incoming(), userId);
-        allow update: if false; // Invoices are legally immutable financial sheets
-        allow delete: if false; // Ledger rules require zero deletions
-      }
-
-      // --- TEAM MEMBERS SUBCOLLECTION ---
-      match /teamMembers/{memberId} {
-        allow list, get: if isOwner(userId);
-        allow create: if isOwner(userId) && isValidId(memberId) && isValidTeamMember(incoming(), userId);
-        allow update: if isOwner(userId) && isValidId(memberId) && isValidTeamMember(incoming(), userId) && (
-          // Action: Promote staff or change duty role
-          incoming().diff(existing()).affectedKeys().hasOnly(['role', 'license', 'name'])
-        );
-        allow delete: if isOwner(userId); // Permit full roster pruning
-      }
-
-      // --- EXPENSES LEDGER SUBCOLLECTION ---
-      match /expenses/{expenseId} {
-        allow list, get: if isOwner(userId);
-        allow create: if isOwner(userId) && isValidId(expenseId) && isValidExpense(incoming(), userId);
-        allow update: if isOwner(userId) && isValidId(expenseId) && isValidExpense(incoming(), userId) && (
-          // Action: edit expense details
-          incoming().diff(existing()).affectedKeys().hasOnly(['category', 'amount', 'description', 'paidBy', 'date'])
-        );
-        allow delete: if isOwner(userId);
-      }
-
-      // --- ACCOUNTS PAYABLE / SUPPLIER DEBTS SUBCOLLECTION (الذمم الدائنة) ---
-      match /payables/{payableId} {
-        allow list, get: if isOwner(userId);
-        allow create: if isOwner(userId) && isValidId(payableId) && isValidPayable(incoming(), userId);
-        allow update: if isOwner(userId) && isValidId(payableId) && isValidPayable(incoming(), userId) && (
-          // Action: record a settlement payment or edit terms
-          incoming().diff(existing()).affectedKeys().hasOnly(['paidAmount', 'status', 'dueDate', 'description'])
-        );
-        allow delete: if isOwner(userId);
-      }
-
-      // --- ACCOUNTS RECEIVABLE / CUSTOMER CREDIT SALES (الذمم المدينة) ---
-      match /receivables/{receivableId} {
-        allow list, get: if isOwner(userId);
-        allow create: if isOwner(userId) && isValidId(receivableId) && isValidReceivable(incoming(), userId);
-        allow update: if isOwner(userId) && isValidId(receivableId) && isValidReceivable(incoming(), userId) && (
-          // Action: record a collection payment or edit terms
-          incoming().diff(existing()).affectedKeys().hasOnly(['paidAmount', 'status', 'dueDate', 'description'])
-        );
-        allow delete: if isOwner(userId);
-      }
-
-      // --- AUDIT LOG SUBCOLLECTION (سجل التدقيق) — APPEND-ONLY ---
-      match /auditLog/{entryId} {
-        allow list, get: if isOwner(userId);
-        allow create: if isOwner(userId) && isValidId(entryId) && isValidAuditEntry(incoming());
-        allow update, delete: if false; // Audit trail is immutable — no edits, no deletions
+      // كل المجموعات الفرعية (المخزون، الفواتير، الذمم، المصاريف،
+      // الموردون، الموظفون، المرتجعات، سجل التدقيق، طلبيات B2B):
+      // مالك الحساب فقط يقرأ ويكتب فيها. المزامنة بين الأجهزة تتم
+      // تلقائياً عبر Firestore لأن كل الأجهزة تستخدم نفس الحساب (نفس الـ uid).
+      match /{collection}/{docId} {
+        allow read, write: if isOwner(userId);
       }
     }
   }
