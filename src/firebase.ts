@@ -4,8 +4,6 @@ import {
   initializeFirestore,
   persistentLocalCache,
   persistentMultipleTabManager,
-  doc,
-  getDocFromServer,
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json'; // Located in the root of the project folder
 
@@ -27,19 +25,9 @@ export const db = initializeFirestore(
 );
 
 export const auth = getAuth();
-
-// CRITICAL CONSTRAINT: Validate Connection to Firestore on boot
-async function validateConnectionOnBoot() {
-  try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
-    console.log("Firebase connection established successfully on boot.");
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.warn("Firebase client is detected offline. Double check configuration values.");
-    }
-  }
-}
-validateConnectionOnBoot();
+// ملاحظة: أُزيل فحص الإقلاع القديم الذي كان يقرأ المسار 'test/connection' —
+// ذلك المسار ممنوع بقواعد الأمان (كل البيانات تحت users/{uid} فقط)، فكان
+// يُسجّل خطأ صلاحيات في كل تشغيل. مستمعات onSnapshot تتكفّل بحالة الاتصال.
 
 export enum OperationType {
   CREATE = 'create',

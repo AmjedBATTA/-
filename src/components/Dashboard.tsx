@@ -888,7 +888,7 @@ export default function Dashboard() {
         setInventory(loadedInventory);
       }
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, `users/${userId}/inventory`);
+      console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/inventory`);
     });
 
     // 2. Sync B2B Orders Collection
@@ -915,7 +915,7 @@ export default function Dashboard() {
         setB2bOrders(loadedOrders);
       }
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, `users/${userId}/b2bOrders`);
+      console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/b2bOrders`);
     });
 
     // 3. Sync Sales Ledger Collection
@@ -945,7 +945,7 @@ export default function Dashboard() {
         setDailySalesRevenue(totalSalesSum);
       }
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, `users/${userId}/salesLedger`);
+      console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/salesLedger`);
     });
 
     // 5. Sync Team Members Collection
@@ -972,7 +972,7 @@ export default function Dashboard() {
         setTeamMembers(loadedTeam);
       }
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, `users/${userId}/teamMembers`);
+      console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/teamMembers`);
     });
 
     // 6. Sync Expenses Collection
@@ -995,7 +995,7 @@ export default function Dashboard() {
         setExpenses(loadedExpenses);
       }
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, `users/${userId}/expenses`);
+      console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/expenses`);
     });
 
     // 7. Sync Payables Collection (الذمم الدائنة / ديون الموردين)
@@ -1030,7 +1030,7 @@ export default function Dashboard() {
         setPayables(loaded);
       }
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, `users/${userId}/payables`);
+      console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/payables`);
     });
 
     // 8. Sync Receivables Collection (الذمم المدينة / البيع بالآجل للزبائن)
@@ -1065,7 +1065,7 @@ export default function Dashboard() {
         setReceivables(loaded);
       }
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, `users/${userId}/receivables`);
+      console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/receivables`);
     });
 
     // 9. Sync Returns Collection (مرتجعات المبيعات)
@@ -1124,7 +1124,7 @@ export default function Dashboard() {
         setSuppliers(loaded);
       }
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, `users/${userId}/suppliers`);
+      console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/suppliers`);
     });
 
     setIsSyncing(false);
