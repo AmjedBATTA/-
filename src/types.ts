@@ -7,7 +7,10 @@ export interface Medicine {
   warehouse: string;
   price: number; // IQD
   secondaryPrice?: number; // IQD - سعر البيع في قائمة المخزون (الرسمي)
+  costPrice?: number; // IQD - متوسط تكلفة الشراء (متوسط متحرك) — أساس حساب الربح
+  lastCostPrice?: number; // IQD - آخر سعر شراء فعلي من المذخر (للمقارنة)
   availableQuantity: number;
+  minStock?: number;
   status: 'available' | 'low' | 'unavailable';
   scientificName: string;
   barcode?: string;
@@ -27,10 +30,23 @@ export interface Order {
   id: string;
   date: string;
   warehouseName: string;
+  supplierId?: string;
   itemsCount: number;
   totalAmount: number; // IQD
   status: 'pending' | 'preparing' | 'on_way' | 'delivered' | 'cancelled';
   items: { medicineName: string; quantity: number; price: number }[];
+}
+
+export interface Supplier {
+  id: string;           // SUP-XXXX
+  name: string;
+  phone?: string;
+  address?: string;
+  contactPerson?: string;
+  creditLimit?: number; // IQD — سقف الائتمان
+  paymentTerms?: number; // أيام الآجل المسموح بها
+  notes?: string;
+  createdAt: string;    // YYYY-MM-DD
 }
 
 export interface FAQItem {

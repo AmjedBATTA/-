@@ -39,3 +39,102 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* Print styles - Receipt */
+@media print {
+  body > * { display: none !important; }
+  .print-receipt { display: block !important; }
+}
+
+/* Print styles - Financial report */
+@media print {
+  body.printing-financial > * { display: none !important; }
+  body.printing-financial .print-financial { display: block !important; }
+}
+.print-financial { display: none; }
+
+/* =====================================================
+   DARK MODE  — class-based (.dark on <html>)
+   Overrides Tailwind utilities without !important because
+   these selectors (2 classes) outrank utility layers.
+   ===================================================== */
+
+/* Base */
+.dark body { background-color: #0f172a; color: #e2e8f0; }
+
+/* Card & panel backgrounds */
+.dark .bg-white      { background-color: #1e293b; }
+.dark .bg-slate-50   { background-color: #0f172a; }
+.dark .bg-slate-100  { background-color: #1e293b; }
+.dark .bg-slate-200  { background-color: #334155; }
+
+/* Text — neutral */
+.dark .text-slate-900 { color: #f1f5f9; }
+.dark .text-slate-800 { color: #e2e8f0; }
+.dark .text-slate-700 { color: #cbd5e1; }
+.dark .text-slate-600 { color: #94a3b8; }
+.dark .text-slate-500 { color: #64748b; }
+.dark .text-slate-400 { color: #475569; }
+
+/* Text — accent colors (lighten for readability on dark backgrounds) */
+.dark .text-emerald-800 { color: #34d399; }
+.dark .text-emerald-700 { color: #10b981; }
+.dark .text-emerald-600 { color: #34d399; }
+.dark .text-rose-700    { color: #fb7185; }
+.dark .text-rose-600    { color: #f43f5e; }
+.dark .text-amber-800   { color: #fbbf24; }
+.dark .text-amber-700   { color: #f59e0b; }
+.dark .text-amber-600   { color: #fbbf24; }
+.dark .text-blue-700    { color: #60a5fa; }
+.dark .text-blue-600    { color: #93c5fd; }
+.dark .text-violet-700  { color: #a78bfa; }
+.dark .text-violet-600  { color: #c4b5fd; }
+
+/* Borders — neutral */
+.dark .border-slate-100  { border-color: #1e293b; }
+.dark .border-slate-200  { border-color: #334155; }
+.dark .border-slate-300  { border-color: #475569; }
+.dark header             { border-bottom-color: #334155; }
+
+/* Borders — accent tints */
+.dark .border-emerald-100 { border-color: rgba(16,185,129,.25); }
+.dark .border-emerald-200 { border-color: rgba(16,185,129,.35); }
+.dark .border-blue-100    { border-color: rgba(59,130,246,.25); }
+.dark .border-rose-100    { border-color: rgba(244,63,94,.25); }
+.dark .border-amber-100   { border-color: rgba(245,158,11,.25); }
+.dark .border-amber-200   { border-color: rgba(245,158,11,.35); }
+.dark .border-violet-100  { border-color: rgba(139,92,246,.25); }
+
+/* Background — accent tints (soft glow instead of pastel wash) */
+.dark .bg-emerald-50  { background-color: rgba(16,185,129,.1); }
+.dark .bg-blue-50     { background-color: rgba(59,130,246,.1); }
+.dark .bg-rose-50     { background-color: rgba(244,63,94,.1); }
+.dark .bg-amber-50    { background-color: rgba(245,158,11,.1); }
+.dark .bg-violet-50   { background-color: rgba(139,92,246,.1); }
+
+/* Hover */
+.dark .hover\:bg-slate-50:hover  { background-color: #1e293b; }
+.dark .hover\:bg-slate-100:hover { background-color: #334155; }
+.dark .hover\:bg-slate-200:hover { background-color: #475569; }
+.dark .hover\:bg-emerald-700:hover { background-color: #059669; }
+
+/* Table dividers */
+.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) { border-color: #1e293b; }
+.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-color: #334155; }
+
+/* Form elements */
+.dark input, .dark select, .dark textarea {
+  background-color: #0f172a;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+.dark input::placeholder,
+.dark textarea::placeholder { color: #4b5563; }
+
+/* Notification bell dot — keep border visible */
+.dark .border-white { border-color: #1e293b; }
+
+/* Scrollbar */
+.dark ::-webkit-scrollbar-track { background: #1e293b; }
+.dark ::-webkit-scrollbar-thumb { background: #475569; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #64748b; }

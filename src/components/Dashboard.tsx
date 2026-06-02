@@ -1,18 +1,19 @@
-import { useState, FormEvent, useEffect, useRef } from 'react';
+﻿import { useState, FormEvent, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ShoppingBag, Wallet, Info, CheckCircle2, AlertCircle, Clock, 
   Truck, HelpCircle, PlusCircle, Search, Trash2, ArrowLeft, 
   MapPin, UserCheck, ShieldCheck, Users, Sparkles, Plus, Check,
   TrendingUp, FileText, Ban, DollarSign, Calendar, RefreshCw, BarChart3, Pill, ClipboardList, ShieldAlert, Heart,
-  Barcode, X, Volume2, VolumeX, Camera, Download
+  Barcode, X, Volume2, VolumeX, Camera, Download, Bell, Moon, Sun, Pencil, ScanLine, ChevronDown, CalendarClock
 } from 'lucide-react';
-import { Medicine, Order } from '../types';
+import { Medicine, Order, Supplier } from '../types';
+import InvoiceImportModal from './InvoiceImportModal';
 
 // Firebase Authentication & Remote Firestore Synchronizer hooks
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { collection, doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, getDoc, setDoc, onSnapshot, deleteDoc, writeBatch } from 'firebase/firestore';
 
 // Let's declare our reactive state types inside the component
 interface POSItem {
@@ -23,22 +24,283 @@ interface POSItem {
 interface SaleRecord {
   invoiceId: string;
   timestamp: string;
-  items: { name: string; quantity: number; price: number }[];
+  items: { name: string; quantity: number; price: number; costPrice?: number; lineProfit?: number }[];
   subtotal: number;
   discount: number;
   total: number;
+  totalCost?: number;    // مجموع تكلفة الأصناف المباعة (IQD)
+  grossProfit?: number;  // الربح الإجمالي بعد الخصم (IQD)
+  profitMargin?: number; // هامش الربح % من إجمالي البيع
   customerName: string;
-  isControlled: boolean;
 }
 
-interface ControlledPrescription {
+interface Expense {
   id: string;
-  patientName: string;
-  doctorName: string;
-  prescriptionDate: string;
-  medicineName: string;
-  quantity: number;
-  pharmacistLicense: string;
+  date: string;       // YYYY-MM-DD
+  category: string;   // إيجار / رواتب / كهرباء ومولّدة ...
+  amount: number;     // IQD
+  description: string;
+  paidBy: string;     // نقد / تحويل / بطاقة
+}
+
+interface Payable {
+  id: string;
+  supplierName: string;   // اسم المذخر / المورّد
+  amount: number;         // أصل الدين (IQD)
+  paidAmount: number;     // المسدَّد حتى الآن (IQD)
+  date: string;           // YYYY-MM-DD تاريخ نشوء الدين
+  dueDate?: string;       // تاريخ الاستحقاق (اختياري)
+  status: 'open' | 'partial' | 'paid';
+  description?: string;
+  relatedOrderId?: string;
+  supplierId?: string;
+}
+
+interface Receivable {
+  id: string;
+  customerName: string;     // اسم الزبون / المريض
+  amount: number;           // أصل الدين على الزبون (IQD)
+  paidAmount: number;       // المُحصَّل حتى الآن (IQD)
+  date: string;             // YYYY-MM-DD تاريخ نشوء الدين
+  dueDate?: string;         // تاريخ الاستحقاق (اختياري)
+  status: 'open' | 'partial' | 'paid';
+  description?: string;
+  relatedInvoiceId?: string; // فاتورة البيع المرتبطة إن وُجدت
+}
+
+interface SalesReturn {
+  returnId: string;             // RET-xxxx
+  originalInvoiceId: string;    // رقم الفاتورة الأصلية
+  timestamp: string;            // YYYY-MM-DD HH:mm
+  items: { name: string; quantity: number; price: number; costPrice?: number }[];
+  total: number;                // إجمالي مبلغ الاسترداد (IQD)
+  reason: string;               // سبب الإرجاع
+  refundMethod: 'cash' | 'none'; // نقد (يُخصم من الصندوق) / بدون صرف نقدي
+  customerName: string;
+}
+
+interface AuditEntry {
+  id: string;              // AUD-xxxx
+  timestamp: string;       // YYYY-MM-DD HH:mm
+  action: 'sale' | 'purchase' | 'expense' | 'payable_add' | 'payable_settle' | 'receivable_add' | 'receivable_collect' | 'return' | 'inventory_import';
+  actor: string;           // currentUser.displayName || currentRole
+  amount: number;          // المبلغ المالي (0 إذا لم ينطبق)
+  description: string;     // وصف قصير بالعربي
+  relatedId?: string;      // INV-xxxx / EXP-xxxx / PAY-xxxx / REC-xxxx / RET-xxxx
+}
+
+// مولّد مصاريف تشغيلية مبدئية لهذا الشهر (لإظهار حساب الربح الصافي)
+function generateSeedExpenses(): Expense[] {
+  const specs = [
+    { daysAgo: 12, category: 'كهرباء ومولّدة', amount: 35000, desc: 'فاتورة الكهرباء الوطنية + حصة المولّدة', paidBy: 'نقد' },
+    { daysAgo: 9, category: 'صيانة وتنظيف', amount: 12000, desc: 'صيانة الثلاجة الدوائية المبرّدة', paidBy: 'نقد' },
+    { daysAgo: 6, category: 'نقل وتوصيل', amount: 15000, desc: 'أجور توصيل طلبيات المذاخر', paidBy: 'نقد' },
+    { daysAgo: 3, category: 'قرطاسية وأكياس', amount: 8000, desc: 'أكياس وأشرطة طباعة الفواتير', paidBy: 'نقد' },
+  ];
+  return specs.map((s, idx) => {
+    const d = new Date();
+    d.setDate(d.getDate() - s.daysAgo);
+    return {
+      id: `EXP-${9100 + idx}`,
+      date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+      category: s.category,
+      amount: s.amount,
+      description: s.desc,
+      paidBy: s.paidBy,
+    };
+  });
+}
+
+// مولّد ذمم دائنة مبدئية (ديون مستحقة للمذاخر والمكاتب العلمية) — المتبقّي يجمع إلى 1,850,000 د.ع
+function generateSeedPayables(): Payable[] {
+  const specs = [
+    { daysAgo: 18, supplierName: 'مذخر بغداد المركزي للأدوية', amount: 950000, paidAmount: 0, status: 'open' as const, description: 'فاتورة توريد أدوية مزمنة' },
+    { daysAgo: 11, supplierName: 'شركة الرافدين للتجهيزات الطبية', amount: 700000, paidAmount: 200000, status: 'partial' as const, description: 'مستلزمات ومحاليل' },
+    { daysAgo: 5, supplierName: 'مذخر دجلة للمستلزمات الطبية', amount: 400000, paidAmount: 0, status: 'open' as const, description: 'أدوية برّاد مبرّدة' },
+  ];
+  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return specs.map((s, idx) => {
+    const d = new Date();
+    d.setDate(d.getDate() - s.daysAgo);
+    const due = new Date(d);
+    due.setDate(due.getDate() + 30);
+    return {
+      id: `PAY-${9300 + idx}`,
+      supplierName: s.supplierName,
+      amount: s.amount,
+      paidAmount: s.paidAmount,
+      date: fmt(d),
+      dueDate: fmt(due),
+      status: s.status,
+      description: s.description,
+    };
+  });
+}
+
+// مولّد ذمم مدينة مبدئية (ديون مستحقة لنا على الزبائن والعيادات — البيع بالآجل)
+function generateSeedReceivables(): Receivable[] {
+  const specs = [
+    { daysAgo: 14, customerName: 'عيادة د. سرمد للأطفال', amount: 450000, paidAmount: 0, status: 'open' as const, description: 'أدوية ومستلزمات شهرية للعيادة' },
+    { daysAgo: 8, customerName: 'مختبر النور الطبي', amount: 300000, paidAmount: 100000, status: 'partial' as const, description: 'محاليل وكواشف مختبرية' },
+    { daysAgo: 4, customerName: 'الزبون أبو حيدر (آجل)', amount: 120000, paidAmount: 0, status: 'open' as const, description: 'علاج مزمن بالآجل' },
+  ];
+  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return specs.map((s, idx) => {
+    const d = new Date();
+    d.setDate(d.getDate() - s.daysAgo);
+    const due = new Date(d);
+    due.setDate(due.getDate() + 30);
+    return {
+      id: `REC-${9400 + idx}`,
+      customerName: s.customerName,
+      amount: s.amount,
+      paidAmount: s.paidAmount,
+      date: fmt(d),
+      dueDate: fmt(due),
+      status: s.status,
+      description: s.description,
+    };
+  });
+}
+
+// مولّد مرتجع تجريبي واحد (لإظهار قسم المرتجعات ممتلئاً عند أول تشغيل)
+function generateSeedReturns(): SalesReturn[] {
+  const d = new Date();
+  d.setDate(d.getDate() - 4);
+  const fmt = (dt: Date) =>
+    `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')} 11:30`;
+  return [{
+    returnId: 'RET-1001',
+    originalInvoiceId: 'INV-4820',
+    timestamp: fmt(d),
+    items: [{ name: 'بندول اكسترا (Panadol Extra)', quantity: 1, price: 3500, costPrice: 2500 }],
+    total: 3500,
+    reason: 'دواء منتهي الصلاحية',
+    refundMethod: 'cash',
+    customerName: 'أم سليم الكرخي',
+  }];
+}
+
+function generateSeedAuditLog(): AuditEntry[] {
+  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+  const now = new Date();
+  const ago = (days: number, h = 10, m = 0) => { const d = new Date(now); d.setDate(d.getDate()-days); d.setHours(h,m,0); return d; };
+  const entries: AuditEntry[] = [
+    { id:'AUD-1001', timestamp:fmt(ago(12,9,15)),  action:'purchase',          actor:'مدير', amount:950000, description:'فاتورة شراء آجلة من مذخر بغداد المركزي (4 أصناف)', relatedId:'ORD-9300' },
+    { id:'AUD-1002', timestamp:fmt(ago(9,11,30)),  action:'expense',           actor:'مدير', amount:35000,  description:'مصروف كهرباء ومولّدة — فاتورة شهر أيار',          relatedId:'EXP-9100' },
+    { id:'AUD-1003', timestamp:fmt(ago(6,14,20)),  action:'sale',              actor:'كاشير',amount:54000,  description:'فاتورة بيع نقدي (5 أصناف) — أبو ليلى الساعدي',   relatedId:'INV-4705' },
+    { id:'AUD-1004', timestamp:fmt(ago(5,10,0)),   action:'payable_settle',    actor:'مدير', amount:200000, description:'تسديد جزئي لذمة شركة الرافدين للتجهيزات الطبية', relatedId:'PAY-9301' },
+    { id:'AUD-1005', timestamp:fmt(ago(4,11,30)),  action:'return',            actor:'صيدلاني',amount:3500, description:'مرتجع بندول اكسترا — سبب: منتهي الصلاحية',       relatedId:'RET-1001' },
+    { id:'AUD-1006', timestamp:fmt(ago(3,15,45)),  action:'receivable_add',    actor:'مدير', amount:450000, description:'ذمّة جديدة على عيادة د. سرمد للأطفال',           relatedId:'REC-9400' },
+    { id:'AUD-1007', timestamp:fmt(ago(2,9,0)),    action:'sale',              actor:'كاشير',amount:65200,  description:'فاتورة بيع بالآجل — محمد التميمي',               relatedId:'INV-4713' },
+    { id:'AUD-1008', timestamp:fmt(ago(1,13,10)),  action:'receivable_collect',actor:'مدير', amount:100000, description:'تحصيل جزئي من مختبر النور الطبي',               relatedId:'REC-9401' },
+  ];
+  return entries.reverse(); // الأحدث أولاً
+}
+
+// مولّد مبيعات تاريخية تجريبية موزّعة على آخر ~80 يوماً (لإظهار تمايز الفترات والرسوم البيانية)
+function generateHistoricalSales(): SaleRecord[] {
+  const MED_REF: Record<string, { name: string; price: number; cost: number }> = {
+    '1': { name: 'بندول اكسترا (Panadol Extra)', price: 3500, cost: 2500 },
+    '2': { name: 'اموكسيل 500 ملغ (Amoxil 500mg)', price: 7200, cost: 5200 },
+    '3': { name: 'ليبيتور 20 ملغ (Lipitor 20mg)', price: 18500, cost: 13300 },
+    '4': { name: 'فولتارين جيل 50 غرام (Voltaren Gel 50g)', price: 4800, cost: 3450 },
+    '5': { name: 'كونكور 5 ملغ (Concor 5mg)', price: 11000, cost: 7900 },
+    '6': { name: 'دياميكرون 60 ملغ (Diamicron 60mg MR)', price: 9500, cost: 6850 },
+    '7': { name: 'زاناكس 0.5 ملغ (Xanax 0.5mg)', price: 22000, cost: 15800 },
+  };
+  const specs: { daysAgo: number; hm: string; items: [string, number][]; discountPct: number; customer: string }[] = [
+    { daysAgo: 1, hm: '10:15', items: [['1', 5], ['5', 1]], discountPct: 0, customer: 'أبو محمد الجنابي' },
+    { daysAgo: 2, hm: '13:40', items: [['2', 3], ['7', 1]], discountPct: 5, customer: 'أم زينب العبيدي' },
+    { daysAgo: 3, hm: '09:05', items: [['6', 2], ['3', 1]], discountPct: 0, customer: 'حيدر عبد الله' },
+    { daysAgo: 5, hm: '16:25', items: [['1', 8]], discountPct: 0, customer: 'سارة كريم' },
+    { daysAgo: 6, hm: '11:50', items: [['4', 4], ['2', 2]], discountPct: 10, customer: 'أبو أحمد الدليمي' },
+    { daysAgo: 9, hm: '12:30', items: [['5', 3], ['1', 6]], discountPct: 0, customer: 'نور الهدى حسن' },
+    { daysAgo: 12, hm: '14:10', items: [['3', 2]], discountPct: 0, customer: 'مصطفى العامري' },
+    { daysAgo: 16, hm: '10:40', items: [['2', 5], ['6', 3]], discountPct: 5, customer: 'أم فاطمة الزبيدي' },
+    { daysAgo: 20, hm: '15:55', items: [['1', 10], ['4', 5]], discountPct: 0, customer: 'علي الركابي' },
+    { daysAgo: 25, hm: '13:15', items: [['7', 2]], discountPct: 0, customer: 'كرار الموسوي' },
+    { daysAgo: 34, hm: '09:45', items: [['5', 4], ['2', 3]], discountPct: 0, customer: 'زينب قاسم' },
+    { daysAgo: 45, hm: '17:05', items: [['3', 3], ['6', 2]], discountPct: 8, customer: 'أبو ليلى الساعدي' },
+    { daysAgo: 60, hm: '11:25', items: [['1', 12]], discountPct: 0, customer: 'هدى صبري' },
+    { daysAgo: 80, hm: '14:50', items: [['2', 6], ['5', 2]], discountPct: 0, customer: 'محمد التميمي' },
+  ];
+  return specs.map((spec, idx) => {
+    const d = new Date();
+    d.setDate(d.getDate() - spec.daysAgo);
+    const ts = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${spec.hm}`;
+    const items = spec.items.map(([id, qty]) => {
+      const m = MED_REF[id];
+      return { name: m.name, quantity: qty, price: m.price, costPrice: m.cost, lineProfit: (m.price - m.cost) * qty };
+    });
+    const subtotal = items.reduce((s, it) => s + it.price * it.quantity, 0);
+    const discount = Math.round(subtotal * (spec.discountPct / 100));
+    const total = subtotal - discount;
+    const totalCost = items.reduce((s, it) => s + it.costPrice * it.quantity, 0);
+    const grossProfit = total - totalCost;
+    const profitMargin = total > 0 ? Math.round((grossProfit / total) * 100) : 0;
+    return {
+      invoiceId: `INV-${4700 + idx}`,
+      timestamp: ts,
+      items,
+      subtotal,
+      discount,
+      total,
+      totalCost,
+      grossProfit,
+      profitMargin,
+      customerName: spec.customer,
+    };
+  });
+}
+
+function generateSeedSuppliers(): Supplier[] {
+  return [
+    {
+      id: 'SUP-1001',
+      name: 'مذخر بغداد المركزي للأدوية',
+      phone: '07701234567',
+      address: 'بغداد — الكرخ، شارع الصناعة',
+      contactPerson: 'أبو سامر الجنابي',
+      creditLimit: 5000000,
+      paymentTerms: 30,
+      notes: 'مورّد رئيسي للأدوية المزمنة والمضادات الحيوية',
+      createdAt: '2025-01-15',
+    },
+    {
+      id: 'SUP-1002',
+      name: 'شركة الرافدين للتجهيزات الطبية',
+      phone: '07809876543',
+      address: 'بغداد — الرصافة، المنصور',
+      contactPerson: 'م. حيدر الموسوي',
+      creditLimit: 3000000,
+      paymentTerms: 45,
+      notes: 'مستلزمات طبية ومحاليل وريدية',
+      createdAt: '2025-03-01',
+    },
+    {
+      id: 'SUP-1003',
+      name: 'مذخر دجلة للمستلزمات الطبية',
+      phone: '07701122334',
+      address: 'بغداد — الكرادة',
+      contactPerson: 'علي عبد الكريم',
+      creditLimit: 2000000,
+      paymentTerms: 21,
+      notes: 'أدوية التبريد والمستحضرات الحساسة للحرارة',
+      createdAt: '2025-04-10',
+    },
+    {
+      id: 'SUP-1004',
+      name: 'مكتب دجلة العلمي للأدوية (بغداد)',
+      phone: '07711223344',
+      address: 'بغداد — المدينة الطبية',
+      contactPerson: 'د. لؤي السامرائي',
+      creditLimit: 8000000,
+      paymentTerms: 60,
+      notes: 'مكتب علمي — أدوية متخصصة وجديدة في السوق',
+      createdAt: '2024-12-01',
+    },
+  ];
 }
 
 export default function Dashboard() {
@@ -46,6 +308,8 @@ export default function Dashboard() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  // رُفع عند فشل تهيئة خدمة المصادقة (مفتاح API غير صالح أو انقطاع الشبكة) — يُظهر شريط تنبيه غير معطِّل
+  const [authInitFailed, setAuthInitFailed] = useState(false);
 
   // --- CORE LIVING STATE OF THE PHARMACY (Saves in session-state) ---
   const [inventory, setInventory] = useState<Medicine[]>([
@@ -59,6 +323,8 @@ export default function Dashboard() {
       warehouse: 'مكتب دجلة العلمي للأدوية (بغداد)',
       price: 3500,
       secondaryPrice: 3800,
+      costPrice: 2500,
+      lastCostPrice: 2500,
       availableQuantity: 450,
       status: 'available',
       barcode: '6281100115598'
@@ -73,6 +339,8 @@ export default function Dashboard() {
       warehouse: 'مذخر قصر الشفاء الحديث (أربيل)',
       price: 7200,
       secondaryPrice: 7900,
+      costPrice: 5200,
+      lastCostPrice: 5200,
       availableQuantity: 120,
       status: 'available',
       barcode: '5011327110992'
@@ -87,7 +355,9 @@ export default function Dashboard() {
       warehouse: 'مذخر الرافدين للادوية (البصرة)',
       price: 18500,
       secondaryPrice: 20000,
-      availableQuantity: 15,
+      costPrice: 13300,
+      lastCostPrice: 13300,
+      availableQuantity: 1,
       status: 'low',
       barcode: '8699532095457'
     },
@@ -101,6 +371,8 @@ export default function Dashboard() {
       warehouse: 'مذخر النخبة العلمي (الموصل)',
       price: 4800,
       secondaryPrice: 5200,
+      costPrice: 3450,
+      lastCostPrice: 3450,
       availableQuantity: 64,
       status: 'available',
       barcode: '7611327110931'
@@ -115,6 +387,8 @@ export default function Dashboard() {
       warehouse: 'مكتب دجلة العلمي للأدوية (بغداد)',
       price: 11000,
       secondaryPrice: 12000,
+      costPrice: 7900,
+      lastCostPrice: 7900,
       availableQuantity: 300,
       status: 'available',
       barcode: '4004732101236'
@@ -128,9 +402,11 @@ export default function Dashboard() {
       category: 'أدوية السكري',
       price: 9500,
       secondaryPrice: 10500,
-      availableQuantity: 8,
+      costPrice: 6850,
+      lastCostPrice: 6850,
+      availableQuantity: 0,
       warehouse: 'مذخر السلام الدولي (النجف)',
-      status: 'low',
+      status: 'unavailable',
       barcode: '5011327789311'
     },
     {
@@ -143,6 +419,8 @@ export default function Dashboard() {
       warehouse: 'مكتب دجلة العلمي للأدوية (بغداد)',
       price: 22000,
       secondaryPrice: 24000,
+      costPrice: 15800,
+      lastCostPrice: 15800,
       availableQuantity: 42,
       status: 'available',
       barcode: '7611327114321'
@@ -159,6 +437,8 @@ export default function Dashboard() {
     '6': '2026-06-02', // Near Expiry!
     '7': '2027-11-10'
   });
+
+  const [dismissedLowStock, setDismissedLowStock] = useState<Set<string>>(new Set());
 
   // B2B Supplier orders
   const [b2bOrders, setB2bOrders] = useState<Order[]>([
@@ -202,46 +482,138 @@ export default function Dashboard() {
 
   // Financial States
   const [walletBalance, setWalletBalance] = useState(3890000); // IQD cash in register
-  const [totalDebts, setTotalDebts] = useState(1850000); // IQD suppliers debts
   const [dailySalesRevenue, setDailySalesRevenue] = useState(729000); // Today's POS cash sum
 
+  // --- EXPENSES LEDGER STATES (دفتر المصاريف) ---
+  const [expenses, setExpenses] = useState<Expense[]>(() => generateSeedExpenses());
+  const [newExpCategory, setNewExpCategory] = useState('كهرباء ومولّدة');
+  const [newExpAmount, setNewExpAmount] = useState<number>(50000);
+  const [newExpDesc, setNewExpDesc] = useState('');
+  const [newExpPaidBy, setNewExpPaidBy] = useState('نقد');
+  const [expenseSuccess, setExpenseSuccess] = useState(false);
+
+  // --- ACCOUNTS PAYABLE / SUPPLIER DEBTS STATES (الذمم الدائنة / ديون الموردين) ---
+  const [payables, setPayables] = useState<Payable[]>(() => generateSeedPayables());
+  const [newPaySupplier, setNewPaySupplier] = useState('');
+  const [newPayAmount, setNewPayAmount] = useState<number>(500000);
+  const [newPayDueDate, setNewPayDueDate] = useState('');
+  const [newPayDesc, setNewPayDesc] = useState('');
+  const [payableSuccess, setPayableSuccess] = useState(false);
+  const [settleInputs, setSettleInputs] = useState<Record<string, number>>({}); // per-payable settle amount
+
+  // --- ACCOUNTS RECEIVABLE / CUSTOMER CREDIT SALES STATES (الذمم المدينة / البيع بالآجل للزبائن) ---
+  const [receivables, setReceivables] = useState<Receivable[]>(() => generateSeedReceivables());
+  const [newRecCustomer, setNewRecCustomer] = useState('');
+  const [newRecAmount, setNewRecAmount] = useState<number>(100000);
+  const [newRecDueDate, setNewRecDueDate] = useState('');
+  const [newRecDesc, setNewRecDesc] = useState('');
+  const [receivableSuccess, setReceivableSuccess] = useState(false);
+  const [collectInputs, setCollectInputs] = useState<Record<string, number>>({}); // per-receivable collect amount
+
+  // --- SALES RETURNS (مرتجعات المبيعات) ---
+  const [salesReturns, setSalesReturns] = useState<SalesReturn[]>(() => generateSeedReturns());
+  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [expandedInvoiceId, setExpandedInvoiceId] = useState<string | null>(null);
+  const [editingItems, setEditingItems] = useState<{ name: string; quantity: number; price: number; costPrice?: number; lineProfit?: number }[]>([]);
+
+  // --- AUDIT LOG (سجل التدقيق) ---
+  const [auditLog, setAuditLog] = useState<AuditEntry[]>(() => generateSeedAuditLog());
+  const [returnTarget, setReturnTarget] = useState<SaleRecord | null>(null);
+  const [returnQtys, setReturnQtys] = useState<Record<number, number>>({});
+  const [returnReason, setReturnReason] = useState('');
+  const [returnRefundMethod, setReturnRefundMethod] = useState<'cash' | 'none'>('cash');
+  const [returnSuccess, setReturnSuccess] = useState(false);
+
+  // --- SUPPLIERS (قائمة الموردين) ---
+  const [suppliers, setSuppliers] = useState<Supplier[]>(() => generateSeedSuppliers());
+  const [selectedSupplierId, setSelectedSupplierId] = useState<string | null>(null);
+  const [supplierFormVisible, setSupplierFormVisible] = useState(false);
+  const [newSupName, setNewSupName] = useState('');
+  const [newSupPhone, setNewSupPhone] = useState('');
+  const [newSupContact, setNewSupContact] = useState('');
+  const [newSupAddress, setNewSupAddress] = useState('');
+  const [newSupCreditLimit, setNewSupCreditLimit] = useState<number>(0);
+  const [newSupPaymentTerms, setNewSupPaymentTerms] = useState<number>(30);
+  const [newSupNotes, setNewSupNotes] = useState('');
+  const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null); // المورد قيد التعديل (داخل صفحة التفاصيل)
+  // state for supplier payment modal
+  const [supPayModalId, setSupPayModalId] = useState<string | null>(null);
+  const [supPayAmount, setSupPayAmount] = useState<number>(0);
+  // مبالغ تسديد الديون لكل مورد في قسم سداد الديون بالتبويب المالي (مفتاح = اسم المورد)
+  const [debtPayAmounts, setDebtPayAmounts] = useState<Record<string, number>>({});
+  // بحث في سجل قوائم الشراء (B2B) — برقم القائمة أو اسم المورد
+  const [b2bOrderSearch, setB2bOrderSearch] = useState('');
+  // --- FINANCIAL TAB PIN LOCK ---
+  const [financialPin, setFinancialPin] = useState<string>(() => localStorage.getItem('fin_pin') || '0000');
+  const [financialUnlocked, setFinancialUnlocked] = useState(false);
+  const [pinEntry, setPinEntry] = useState('');
+  const [pinError, setPinError] = useState(false);
+  // تغيير الباسوورد من داخل التبويب المالي
+  const [changePinOld, setChangePinOld] = useState('');
+  const [changePinNew, setChangePinNew] = useState('');
+  const [changePinConfirm, setChangePinConfirm] = useState('');
+  const [changePinMsg, setChangePinMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // --- STATEMENT VIEW (كشف الحساب) ---
+  const [stmtSupplier, setStmtSupplier] = useState('');
+  const [stmtCustomer, setStmtCustomer] = useState('');
+
   // App Section Select
-  const [activeTab, setActiveTab] = useState<'pos' | 'inventory' | 'b2b' | 'narcotics' | 'financial' | 'team'>('pos');
+  const [activeTab, setActiveTab] = useState<'home' | 'pos' | 'inventory' | 'b2b' | 'financial' | 'team'>('home');
+
+  // --- STOCK MOVEMENT LOG ---
+
+  // --- RBAC ---
+  const [currentRole, setCurrentRole] = useState<'admin' | 'pharmacist' | 'cashier'>('admin');
+
+  // --- NOTIFICATION CENTER ---
+  const [showNotifDropdown, setShowNotifDropdown] = useState(false);
 
   // --- POS CART STATES ---
   const [currentCart, setCurrentCart] = useState<POSItem[]>([]);
   const [posCustomerName, setPosCustomerName] = useState('زبون نقدي / خارجي');
   const [posDiscountPercent, setPosDiscountPercent] = useState<number>(0);
+  const [posOnCredit, setPosOnCredit] = useState(false); // بيع بالآجل: تسجيل ذمّة على الزبون بدل القبض النقدي
   const [searchPOSQuery, setSearchPOSQuery] = useState('');
   const [lastPrintedInvoice, setLastPrintedInvoice] = useState<SaleRecord | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [showVirtualPriceInPOS, setShowVirtualPriceInPOS] = useState(false);
+  const [chartRange, setChartRange] = useState<7 | 30 | 90>(30); // مدى الرسم البياني للمبيعات
+  const [darkMode, setDarkMode] = useState<boolean>(() => {
+    try { return localStorage.getItem('darkMode') === 'true'; } catch { return false; }
+  });
+  const [plPeriod, setPlPeriod] = useState<'month' | 'year'>('month'); // فترة قائمة الأرباح والخسائر
 
   // --- SALES HISTORY LEDGER ---
   const [salesLedger, setSalesLedger] = useState<SaleRecord[]>([
     {
       invoiceId: 'INV-4821',
       timestamp: '2026-05-30 09:12',
-      items: [{ name: 'اموكسيل 500 ملغ', quantity: 2, price: 7200 }],
+      items: [{ name: 'اموكسيل 500 ملغ', quantity: 2, price: 7200, costPrice: 5200, lineProfit: 4000 }],
       subtotal: 14400,
       discount: 0,
       total: 14400,
+      totalCost: 10400,
+      grossProfit: 4000,
+      profitMargin: 28,
       customerName: 'أبو سيف البغدادي',
-      isControlled: false
     },
     {
       invoiceId: 'INV-4820',
       timestamp: '2026-05-30 08:34',
       items: [
-        { name: 'بندول اكسترا', quantity: 3, price: 3500 },
-        { name: 'كونكور 5 ملغ', quantity: 1, price: 11000 }
+        { name: 'بندول اكسترا', quantity: 3, price: 3500, costPrice: 2500, lineProfit: 3000 },
+        { name: 'كونكور 5 ملغ', quantity: 1, price: 11000, costPrice: 7900, lineProfit: 3100 }
       ],
       subtotal: 21500,
       discount: 1500,
       total: 20000,
+      totalCost: 15400,
+      grossProfit: 4600,
+      profitMargin: 23,
       customerName: 'أم سليم الكرخي',
-      isControlled: false
-    }
+    },
+    ...generateHistoricalSales()
   ]);
 
   // --- CONTROL REFRIGERATOR TEMPERATURE SIMULATOR ---
@@ -257,29 +629,15 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  // --- MOH NARCOTICS REGISTRY PRESCRIPTIONS ---
-  const [narcoticPrescriptions, setNarcoticPrescriptions] = useState<ControlledPrescription[]>([
-    {
-      id: 'REC-2910',
-      patientName: 'عصام قاسم خضير',
-      doctorName: 'د. يوسف شريف الكعبي (أخصائي جملة عصبية)',
-      prescriptionDate: '2026-05-29',
-      medicineName: 'زاناكس 0.5 ملغ (خاضع للمراقبة)',
-      quantity: 1,
-      pharmacistLicense: 'MOH-78329'
-    }
-  ]);
-
-  // New controlled prescription form states
-  const [newPrescPatient, setNewPrescPatient] = useState('');
-  const [newPrescDoctor, setNewPrescDoctor] = useState('');
-  const [newPrescMedId, setNewPrescMedId] = useState('7'); // Xanax id
-  const [newPrescQty, setNewPrescQty] = useState(1);
-  const [newPrescLicense, setNewPrescLicense] = useState('MOH-78291');
-  const [prescriptionSuccess, setPrescriptionSuccess] = useState(false);
-
   // --- DYNAMIC INVENTORY ACTIONS ---
   const [searchInInventoryQuery, setSearchInInventoryQuery] = useState('');
+
+  // --- STOCK MOVEMENT VIEWER (حركة المادة: الوارد والصادر) ---
+  const [movementMedId, setMovementMedId] = useState<string>('');
+  const [movementFrom, setMovementFrom] = useState<string>('');
+  const [movementTo, setMovementTo] = useState<string>('');
+  const [movementSearch, setMovementSearch] = useState<string>(''); // بحث بالاسم أو الباركود
+  const [movementDropdownOpen, setMovementDropdownOpen] = useState<boolean>(false);
   const [newDrugAr, setNewDrugAr] = useState('');
   const [newDrugEn, setNewDrugEn] = useState('');
   const [newDrugSci, setNewDrugSci] = useState('');
@@ -288,9 +646,20 @@ export default function Dashboard() {
   const [newDrugSecondaryPrice, setNewDrugSecondaryPrice] = useState<number>(5500);
   const [newDrugQty, setNewDrugQty] = useState<number>(100);
   const [newDrugExpiry, setNewDrugExpiry] = useState('2028-12-01');
+  const [newDrugMinStock, setNewDrugMinStock] = useState<number>(15);
   const [isAddingDrug, setIsAddingDrug] = useState(false);
+  // --- لوحة الصلاحيات الموسّعة (أفق 6 أشهر) ---
+  const [showExpiryHorizon, setShowExpiryHorizon] = useState(false);
+  // الشهر المختار للتصفية بصيغة 'YYYY-MM'؛ null = عرض كل الأشهر ضمن الأفق
+  const [selectedExpiryMonth, setSelectedExpiryMonth] = useState<string | null>(null);
 
   // --- PURCHASE ORDERS (طلبيات الشراء) STATES ---
+  const [showInvoiceImport, setShowInvoiceImport] = useState(false);
+  // استيراد المخزون الكامل من ملف ES-PRO
+  const [bulkImportStatus, setBulkImportStatus] = useState<'idle' | 'loading' | 'writing' | 'done' | 'error'>('idle');
+  const [bulkImportProgress, setBulkImportProgress] = useState({ done: 0, total: 0 });
+  const [bulkImportMsg, setBulkImportMsg] = useState('');
+  const [showBulkImportConfirm, setShowBulkImportConfirm] = useState(false);
   const [purchaseDraft, setPurchaseDraft] = useState<any[]>([
     {
       id: 'draft-1',
@@ -320,6 +689,8 @@ export default function Dashboard() {
     }
   ]);
 
+  // المورّد النشط لمسودة الشراء الحالية — يُطبَّق على كل الأصناف ويُورَّث للأصناف الجديدة تلقائياً
+  const [purchaseSupplier, setPurchaseSupplier] = useState<string>('');
   const [purchaseSearchWord, setPurchaseSearchWord] = useState('');
   const [purchaseNewProdAr, setPurchaseNewProdAr] = useState('');
   const [purchaseNewProdEn, setPurchaseNewProdEn] = useState('');
@@ -331,6 +702,9 @@ export default function Dashboard() {
   const [purchaseNewProdBarcode, setPurchaseNewProdBarcode] = useState('');
   const [showPurchaseNewProdForm, setShowPurchaseNewProdForm] = useState(false);
   const [purchaseSuccessBanner, setPurchaseSuccessBanner] = useState<string | null>(null);
+  // شراء بالآجل: تسجيل فاتورة الشراء كذمّة على المذخر بدل خصمها نقداً من الصندوق
+  const [purchaseOnCredit, setPurchaseOnCredit] = useState(false);
+  const [creditSupplierName, setCreditSupplierName] = useState('مذخر التوريد اليومي');
 
   // --- CAMERA BARCODE SCANNER STATES & LOGIC FOR DASHBOARD ---
   const [isScanning, setIsScanning] = useState(false);
@@ -338,7 +712,7 @@ export default function Dashboard() {
   const [scanSuccessFeedback, setScanSuccessFeedback] = useState<string | null>(null);
   const [scanStream, setScanStream] = useState<MediaStream | null>(null);
   const [isBeepEnabled, setIsBeepEnabled] = useState(true);
-  const [scanTarget, setScanTarget] = useState<'pos' | 'inventory' | 'add-drug' | 'purchase-order'>('pos');
+  const [scanTarget, setScanTarget] = useState<'pos' | 'inventory' | 'add-drug' | 'purchase-order' | 'movement'>('pos');
   const [newDrugBarcode, setNewDrugBarcode] = useState('');
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -364,7 +738,7 @@ export default function Dashboard() {
     }
   };
 
-  const startScanning = async (target: 'pos' | 'inventory' | 'add-drug' | 'purchase-order') => {
+  const startScanning = async (target: 'pos' | 'inventory' | 'add-drug' | 'purchase-order' | 'movement') => {
     setScanTarget(target);
     setIsScanning(true);
     setScanError(null);
@@ -483,6 +857,16 @@ export default function Dashboard() {
       setSearchInInventoryQuery(code);
     } else if (scanTarget === 'add-drug') {
       setNewDrugBarcode(code);
+    } else if (scanTarget === 'movement') {
+      // حركة المادة: اختيار الدواء مباشرةً من الباركود الممسوح
+      const match = inventory.find(m => m.barcode === code);
+      if (match) {
+        setMovementMedId(match.id);
+        setMovementSearch(`${match.nameAr} (${match.nameEn})`);
+      } else {
+        setMovementSearch(code);
+      }
+      setMovementDropdownOpen(false);
     } else if (scanTarget === 'purchase-order') {
       const match = inventory.find(m => m.barcode === code);
       if (match) {
@@ -498,9 +882,12 @@ export default function Dashboard() {
             scientificName: match.scientificName,
             category: match.category,
             price: Math.floor(match.price * 0.72) || 3000,
+            retailPrice: match.price || 0,
+            officialPrice: match.secondaryPrice || (match.price ? match.price + 500 : 0),
             qty: 50,
             expiryDate: expiryDates[match.id] || '2028-06-01',
-            barcode: code
+            barcode: code,
+            warehouse: purchaseSupplier || match.warehouse || '',
           };
           setPurchaseDraft(prev => [...prev, freshDraft]);
         }
@@ -515,13 +902,57 @@ export default function Dashboard() {
     }, 1500);
   };
 
+  // Dark mode: sync .dark class on <html> + persist to localStorage
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', darkMode);
+    try { localStorage.setItem('darkMode', String(darkMode)); } catch {}
+  }, [darkMode]);
+
+  // RBAC: reset activeTab when role changes
+  useEffect(() => {
+    const allowed: Record<typeof currentRole, string[]> = {
+      admin: ['home', 'pos', 'inventory', 'b2b', 'financial', 'team'],
+      pharmacist: ['home', 'pos', 'inventory', 'b2b'],
+      cashier: ['home', 'pos', 'inventory'],
+    };
+    if (!allowed[currentRole].includes(activeTab)) setActiveTab('home');
+  }, [currentRole]);
+
+  // قفل التبويب المالي عند مغادرته — يتطلب إدخال الباسوورد في كل مرة
+  useEffect(() => {
+    if (activeTab !== 'financial') {
+      setFinancialUnlocked(false);
+      setPinEntry('');
+      setPinError(false);
+    }
+  }, [activeTab]);
+
+  // Web push notifications on load
+  useEffect(() => {
+    if (typeof Notification === 'undefined') return;
+    if (Notification.permission === 'granted') {
+      const today = new Date();
+      const expiredMeds = inventory.filter(m => expiryDates[m.id] && new Date(expiryDates[m.id]) < today);
+      if (expiredMeds.length > 0) {
+        new Notification('صيدلية انوار الحسن', { body: `${expiredMeds.length} أصناف منتهية الصلاحية!` });
+      }
+      const lowMeds = inventory.filter(m => m.availableQuantity <= (m.minStock ?? 15));
+      if (lowMeds.length > 0) {
+        new Notification('صيدلية انوار الحسن', { body: `${lowMeds.length} أصناف تحتاج طلب عاجل.` });
+      }
+    }
+  }, []);
+
   const getDaysUntilExpiry = (id: string) => {
     const expDateStr = expiryDates[id];
     if (!expDateStr) return 9999;
-    const currentDate = new Date('2026-05-30');
+    // اليوم الفعلي من تاريخ الجهاز (بدل تاريخ ثابت). نوحّد الأساس: نأخذ التاريخ المحلي كـ YYYY-MM-DD
+    // ثم نعيد تحليله مثل تاريخ الصلاحية (منتصف ليل UTC) لحساب فرق أيام صحيح بلا انزياح المناطق الزمنية.
+    const todayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD بالتقويم المحلي
+    const currentDate = new Date(todayStr);
     const expiryDate = new Date(expDateStr);
     const diffTime = expiryDate.getTime() - currentDate.getTime();
-    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return Math.round(diffTime / (1000 * 60 * 60 * 24));
   };
 
   const getNearExpiryMeds = () => {
@@ -531,18 +962,114 @@ export default function Dashboard() {
     });
   };
 
+  // --- لوحة الصلاحيات الموسّعة (6 أشهر) ---
+  const EXPIRY_HORIZON_DAYS = 180; // أفق المراقبة: 6 أشهر
 
-  // --- B2B ENHANCED PROCUREMENT WIZARD ---
-  const [b2bSelectedMedId, setB2bSelectedMedId] = useState('1');
-  const [b2bOrderQty, setB2bOrderQty] = useState<number>(50);
-  const [b2bOrderSuccess, setB2bOrderSuccess] = useState(false);
-  const [b2bNewOrderId, setB2bNewOrderId] = useState('');
+  // تصنيف خطورة الصلاحية (للون والوسم وترتيب الأولوية)
+  const expirySeverity = (days: number): 'expired' | 'critical' | 'warning' | 'watch' => {
+    if (days < 0) return 'expired';   // منتهية فعلاً
+    if (days <= 30) return 'critical'; // ≤ شهر — حرج
+    if (days <= 90) return 'warning';  // ≤ 3 أشهر — تحذير
+    return 'watch';                    // ≤ 6 أشهر — مراقبة
+  };
+
+  // كل الأدوية التي لها تاريخ صلاحية ضمن أفق 6 أشهر (يشمل المنتهية)، مرتّبة بالأولوية: الأقرب انتهاءً أولاً
+  const getHorizonExpiryMeds = () => {
+    return inventory
+      .filter(m => {
+        if (!expiryDates[m.id]) return false;
+        const days = getDaysUntilExpiry(m.id);
+        return days <= EXPIRY_HORIZON_DAYS;
+      })
+      .sort((a, b) => getDaysUntilExpiry(a.id) - getDaysUntilExpiry(b.id));
+  };
+
+  // قائمة الأشهر الستة القادمة (تبدأ من الشهر الحالي) مع عدد المستحضرات المنتهية في كل شهر
+  const getExpiryMonths = () => {
+    const meds = getHorizonExpiryMeds();
+    const now = new Date();
+    const months: { key: string; label: string; count: number }[] = [];
+    const arMonths = ['كانون الثاني', 'شباط', 'آذار', 'نيسان', 'أيار', 'حزيران', 'تموز', 'آب', 'أيلول', 'تشرين الأول', 'تشرين الثاني', 'كانون الأول'];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const count = meds.filter(m => (expiryDates[m.id] || '').substring(0, 7) === key).length;
+      months.push({ key, label: `${arMonths[d.getMonth()]} ${d.getFullYear()}`, count });
+    }
+    return months;
+  };
+
+  // --- STOCK MOVEMENT HELPERS (حركة المادة) ---
+  // مطابقة اسم صنف في فاتورة (بيع/شراء) مع دواء في المخزون — الأسماء قد تحوي لاحقات مثل (Panadol Extra) أو (كرتون)
+  const itemMatchesMed = (itemName: string | undefined, med: Medicine): boolean => {
+    if (!itemName) return false;
+    const cleanItem = itemName.split('(')[0].trim();
+    const lower = itemName.toLowerCase();
+    return (
+      itemName.includes(med.nameAr) ||
+      (cleanItem.length >= 4 && med.nameAr.includes(cleanItem)) ||
+      (!!med.nameEn && med.nameEn.length >= 3 && lower.includes(med.nameEn.toLowerCase()))
+    );
+  };
+
+  interface StockMovement {
+    type: 'in' | 'out';
+    date: string;       // YYYY-MM-DD أو YYYY-MM-DD HH:mm
+    qty: number;
+    price: number;      // سعر الوحدة (د.ع)
+    ref: string;        // رقم الفاتورة / الطلبية
+    party: string;      // اسم الزبون / المورد
+  }
+
+  // يجمع كل حركات الوارد (شراء) والصادر (بيع) لدواء معيّن ضمن مدى زمني اختياري
+  const getStockMovements = (medId: string, from: string, to: string) => {
+    const med = inventory.find(m => m.id === medId);
+    if (!med) return { movements: [] as StockMovement[], totalIn: 0, totalOut: 0, valueIn: 0, valueOut: 0 };
+
+    const inRange = (dateStr: string): boolean => {
+      const d = (dateStr || '').substring(0, 10);
+      if (from && d < from) return false;
+      if (to && d > to) return false;
+      return true;
+    };
+
+    const movements: StockMovement[] = [];
+    let totalIn = 0, totalOut = 0, valueIn = 0, valueOut = 0;
+
+    // الصادر = المبيعات (من سجل الفواتير)
+    salesLedger.forEach(s => {
+      if (!inRange(s.timestamp)) return;
+      s.items.forEach(it => {
+        if (itemMatchesMed(it.name, med)) {
+          movements.push({ type: 'out', date: s.timestamp, qty: it.quantity, price: it.price, ref: s.invoiceId, party: s.customerName });
+          totalOut += it.quantity;
+          valueOut += it.quantity * it.price;
+        }
+      });
+    });
+
+    // الوارد = المشتريات (من طلبيات المذاخر)
+    b2bOrders.forEach(o => {
+      if (!inRange(o.date)) return;
+      (o.items || []).forEach((it: any) => {
+        if (itemMatchesMed(it.medicineName, med)) {
+          movements.push({ type: 'in', date: o.date, qty: it.quantity, price: it.price, ref: o.id, party: o.warehouseName });
+          totalIn += it.quantity;
+          valueIn += it.quantity * it.price;
+        }
+      });
+    });
+
+    movements.sort((a, b) => b.date.localeCompare(a.date));
+    return { movements, totalIn, totalOut, valueIn, valueOut };
+  };
+
 
   // --- TEAM MEMBER STATES ---
   const [teamMembers, setTeamMembers] = useState([
-    { id: 1, name: 'د. أحمد الهاشمي', role: 'الصيدلاني المدير المسؤول', license: 'ص-94281', shift: 'مناوب نهاري', status: 'active' },
-    { id: 2, name: 'د. علي حسن الموسوي', role: 'صيدلاني مناوب', license: 'ص-78229', shift: 'مناوب مسائي', status: 'active' },
-    { id: 3, name: 'رنا جبار العقابي', role: 'مساعد صيدلي مرخص', license: 'ت-48220', shift: 'مناوب طوارئ', status: 'break' }
+    { id: '1', name: 'د. أحمد الهاشمي', role: 'الصيدلاني المدير المسؤول', license: 'ص-94281', shift: 'مناوب نهاري', status: 'active' },
+    { id: '2', name: 'د. علي حسن الموسوي', role: 'صيدلاني مناوب', license: 'ص-78229', shift: 'مناوب مسائي', status: 'active' },
+    { id: '3', name: 'رنا جبار العقابي', role: 'مساعد صيدلي مرخص', license: 'ت-48220', shift: 'مناوب طوارئ', status: 'break' }
   ]);
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffRole, setNewStaffRole] = useState('صيدلاني مناوب');
@@ -550,11 +1077,21 @@ export default function Dashboard() {
 
   // --- REMOTE CLOUD FIREBASE SYNC OBSERVERS & TRIGGERS ---
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user);
+    let unsubscribe: (() => void) | undefined;
+    try {
+      unsubscribe = onAuthStateChanged(auth, (user) => {
+        setCurrentUser(user);
+        setIsAuthLoading(false);
+      });
+    } catch (err) {
+      // يحدث عند غياب مفتاح API أو انقطاع الشبكة قبل اكتمال التهيئة
+      // نعامل المستخدم كغير مسجّل حتى لا تتوقف الواجهة
+      console.error('[Auth] فشل تسجيل onAuthStateChanged:', err);
+      setAuthInitFailed(true);
       setIsAuthLoading(false);
-    });
-    return unsubscribe;
+      setCurrentUser(null);
+    }
+    return () => { if (unsubscribe) unsubscribe(); };
   }, []);
 
   useEffect(() => {
@@ -669,32 +1206,6 @@ export default function Dashboard() {
       handleFirestoreError(error, OperationType.LIST, `users/${userId}/salesLedger`);
     });
 
-    // 4. Sync Narcotics Collection
-    const narcoticsCol = collection(db, 'users', userId, 'narcoticPrescriptions');
-    const unsubNarcotics = onSnapshot(narcoticsCol, (snapshot) => {
-      if (snapshot.empty) {
-        narcoticPrescriptions.forEach(async (presc) => {
-          try {
-            await setDoc(doc(db, 'users', userId, 'narcoticPrescriptions', presc.id), {
-              ...presc,
-              userId
-            });
-          } catch (e) {
-            handleFirestoreError(e, OperationType.CREATE, `users/${userId}/narcoticPrescriptions/${presc.id}`);
-          }
-        });
-      } else {
-        const loadedPrescs: ControlledPrescription[] = [];
-        snapshot.forEach((doc) => {
-          loadedPrescs.push(doc.data() as ControlledPrescription);
-        });
-        loadedPrescs.sort((a, b) => new Date(b.prescriptionDate).getTime() - new Date(a.prescriptionDate).getTime());
-        setNarcoticPrescriptions(loadedPrescs);
-      }
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, `users/${userId}/narcoticPrescriptions`);
-    });
-
     // 5. Sync Team Members Collection
     const teamCol = collection(db, 'users', userId, 'teamMembers');
     const unsubTeam = onSnapshot(teamCol, (snapshot) => {
@@ -722,16 +1233,541 @@ export default function Dashboard() {
       handleFirestoreError(error, OperationType.LIST, `users/${userId}/teamMembers`);
     });
 
+    // 6. Sync Expenses Collection
+    const expensesCol = collection(db, 'users', userId, 'expenses');
+    const unsubExpenses = onSnapshot(expensesCol, (snapshot) => {
+      if (snapshot.empty) {
+        expenses.forEach(async (exp) => {
+          try {
+            await setDoc(doc(db, 'users', userId, 'expenses', exp.id), { ...exp, userId });
+          } catch (e) {
+            handleFirestoreError(e, OperationType.CREATE, `users/${userId}/expenses/${exp.id}`);
+          }
+        });
+      } else {
+        const loadedExpenses: Expense[] = [];
+        snapshot.forEach((doc) => {
+          loadedExpenses.push(doc.data() as Expense);
+        });
+        loadedExpenses.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        setExpenses(loadedExpenses);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `users/${userId}/expenses`);
+    });
+
+    // 7. Sync Payables Collection (الذمم الدائنة / ديون الموردين)
+    const payablesCol = collection(db, 'users', userId, 'payables');
+    const unsubPayables = onSnapshot(payablesCol, (snapshot) => {
+      if (snapshot.empty) {
+        payables.forEach(async (p) => {
+          try {
+            const payload: any = {
+              id: p.id,
+              supplierName: p.supplierName,
+              amount: p.amount,
+              paidAmount: p.paidAmount,
+              date: p.date,
+              status: p.status,
+              userId,
+            };
+            if (p.dueDate) payload.dueDate = p.dueDate;
+            if (p.description) payload.description = p.description;
+            if (p.relatedOrderId) payload.relatedOrderId = p.relatedOrderId;
+            await setDoc(doc(db, 'users', userId, 'payables', p.id), payload);
+          } catch (e) {
+            handleFirestoreError(e, OperationType.CREATE, `users/${userId}/payables/${p.id}`);
+          }
+        });
+      } else {
+        const loaded: Payable[] = [];
+        snapshot.forEach((d) => {
+          loaded.push(d.data() as Payable);
+        });
+        loaded.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        setPayables(loaded);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `users/${userId}/payables`);
+    });
+
+    // 8. Sync Receivables Collection (الذمم المدينة / البيع بالآجل للزبائن)
+    const receivablesCol = collection(db, 'users', userId, 'receivables');
+    const unsubReceivables = onSnapshot(receivablesCol, (snapshot) => {
+      if (snapshot.empty) {
+        receivables.forEach(async (r) => {
+          try {
+            const payload: any = {
+              id: r.id,
+              customerName: r.customerName,
+              amount: r.amount,
+              paidAmount: r.paidAmount,
+              date: r.date,
+              status: r.status,
+              userId,
+            };
+            if (r.dueDate) payload.dueDate = r.dueDate;
+            if (r.description) payload.description = r.description;
+            if (r.relatedInvoiceId) payload.relatedInvoiceId = r.relatedInvoiceId;
+            await setDoc(doc(db, 'users', userId, 'receivables', r.id), payload);
+          } catch (e) {
+            handleFirestoreError(e, OperationType.CREATE, `users/${userId}/receivables/${r.id}`);
+          }
+        });
+      } else {
+        const loaded: Receivable[] = [];
+        snapshot.forEach((d) => {
+          loaded.push(d.data() as Receivable);
+        });
+        loaded.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        setReceivables(loaded);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `users/${userId}/receivables`);
+    });
+
+    // 9. Sync Returns Collection (مرتجعات المبيعات)
+    const returnsCol = collection(db, 'users', userId, 'returns');
+    const unsubReturns = onSnapshot(returnsCol, (snapshot) => {
+      if (!snapshot.empty) {
+        const loaded: SalesReturn[] = [];
+        snapshot.forEach(d => loaded.push(d.data() as SalesReturn));
+        loaded.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+        setSalesReturns(loaded);
+      }
+    }, (error) => {
+      console.warn('[Returns] onSnapshot error:', error);
+    });
+
+    // 10. Sync Audit Log Collection (سجل التدقيق)
+    const auditLogCol = collection(db, 'users', userId, 'auditLog');
+    const unsubAuditLog = onSnapshot(auditLogCol, (snapshot) => {
+      if (!snapshot.empty) {
+        const loaded: AuditEntry[] = [];
+        snapshot.forEach(d => loaded.push(d.data() as AuditEntry));
+        loaded.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+        setAuditLog(loaded.slice(0, 300));
+      }
+    }, (error) => {
+      console.warn('[AuditLog] onSnapshot error:', error);
+    });
+
+    // 11. Sync Suppliers Collection (قائمة الموردين ومصادر التجهيز)
+    const suppliersCol = collection(db, 'users', userId, 'suppliers');
+    const unsubSuppliers = onSnapshot(suppliersCol, (snapshot) => {
+      if (snapshot.empty) {
+        suppliers.forEach(async (s) => {
+          try {
+            const payload: any = {
+              id: s.id,
+              name: s.name,
+              createdAt: s.createdAt,
+              userId,
+            };
+            if (s.phone) payload.phone = s.phone;
+            if (s.address) payload.address = s.address;
+            if (s.contactPerson) payload.contactPerson = s.contactPerson;
+            if (s.creditLimit != null) payload.creditLimit = s.creditLimit;
+            if (s.paymentTerms != null) payload.paymentTerms = s.paymentTerms;
+            if (s.notes) payload.notes = s.notes;
+            await setDoc(doc(db, 'users', userId, 'suppliers', s.id), payload);
+          } catch (e) {
+            handleFirestoreError(e, OperationType.CREATE, `users/${userId}/suppliers/${s.id}`);
+          }
+        });
+      } else {
+        const loaded: Supplier[] = [];
+        snapshot.forEach((d) => loaded.push(d.data() as Supplier));
+        loaded.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+        setSuppliers(loaded);
+      }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `users/${userId}/suppliers`);
+    });
+
     setIsSyncing(false);
 
     return () => {
       unsubInventory();
       unsubB2bOrders();
       unsubSalesLedger();
-      unsubNarcotics();
       unsubTeam();
+      unsubExpenses();
+      unsubPayables();
+      unsubReceivables();
+      unsubReturns();
+      unsubAuditLog();
+      unsubSuppliers();
     };
   }, [currentUser]);
+
+  // --- AUDIT LOG HELPER (يُضيف إدخالاً جديداً لسجل التدقيق محلياً وفي Firestore) ---
+  const addAuditEntry = (entry: Omit<AuditEntry, 'id' | 'timestamp' | 'actor'>) => {
+    const now = new Date();
+    const ts = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    const full: AuditEntry = {
+      id: `AUD-${Math.floor(Math.random()*90000+10000)}`,
+      timestamp: ts,
+      actor: currentUser?.displayName || currentRole,
+      ...entry,
+    };
+    setAuditLog(prev => [full, ...prev].slice(0, 300));
+    if (currentUser) {
+      const userId = currentUser.uid;
+      setDoc(doc(db, 'users', userId, 'auditLog', full.id), { ...full, userId })
+        .catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${userId}/auditLog/${full.id}`));
+    }
+  };
+
+  // --- PROCESS SALES RETURN (تسجيل مرتجع مبيعات وعكس تأثيره على المخزون والسيولة) ---
+  const handleProcessReturn = (e: FormEvent) => {
+    e.preventDefault();
+    if (!returnTarget || !returnReason.trim()) return;
+
+    const returnedItems = returnTarget.items
+      .map((it, idx) => ({ ...it, quantity: returnQtys[idx] ?? 0 }))
+      .filter(it => it.quantity > 0);
+    if (returnedItems.length === 0) return;
+
+    const returnTotal = returnedItems.reduce((s, it) => s + it.price * it.quantity, 0);
+    const now = new Date();
+    const ts = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+    const newReturn: SalesReturn = {
+      returnId: `RET-${Math.floor(Math.random() * 9000 + 1000)}`,
+      originalInvoiceId: returnTarget.invoiceId,
+      timestamp: ts,
+      items: returnedItems,
+      total: returnTotal,
+      reason: returnReason.trim(),
+      refundMethod: returnRefundMethod,
+      customerName: returnTarget.customerName,
+    };
+
+    // 1. أعِد الكمية إلى المخزون
+    returnedItems.forEach(it => {
+      setInventory(prev => prev.map(med => {
+        const fullName = `${med.nameAr} (${med.nameEn})`;
+        if (fullName === it.name || med.nameAr === it.name) {
+          const nextQty = med.availableQuantity + it.quantity;
+          return { ...med, availableQuantity: nextQty, status: nextQty > 15 ? 'available' : nextQty > 0 ? 'low' : 'unavailable' };
+        }
+        return med;
+      }));
+    });
+
+    // 2. إذا كان الاسترداد نقداً → اخصم من الصندوق
+    if (returnRefundMethod === 'cash') {
+      setWalletBalance(prev => Math.max(0, prev - returnTotal));
+    }
+
+    // 3. سجّل المرتجع
+    setSalesReturns(prev => [newReturn, ...prev]);
+    addAuditEntry({
+      action: 'return',
+      amount: returnTotal,
+      description: `مرتجع (${returnedItems.length} صنف) — ${newReturn.reason}`,
+      relatedId: newReturn.returnId,
+    });
+
+
+    // 4. Firestore sync
+    if (currentUser) {
+      const userId = currentUser.uid;
+      setDoc(doc(db, 'users', userId, 'returns', newReturn.returnId), { ...newReturn, userId })
+        .catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${userId}/returns/${newReturn.returnId}`));
+    }
+
+    // 5. إغلاق وتصفير
+    setShowReturnModal(false);
+    setReturnTarget(null);
+    setReturnQtys({});
+    setReturnReason('');
+    setReturnRefundMethod('cash');
+    setReturnSuccess(true);
+    setTimeout(() => setReturnSuccess(false), 3000);
+  };
+
+  // --- EDIT INVOICE ITEMS (تعديل أصناف فاتورة مبيعات موجودة) ---
+  const handleSaveInvoiceEdit = (invoiceId: string) => {
+    setSalesLedger(prev => prev.map(s => {
+      if (s.invoiceId !== invoiceId) return s;
+      const newTotal = editingItems.reduce((sum, it) => sum + it.quantity * it.price, 0);
+      const newTotalCost = editingItems.reduce((sum, it) => sum + it.quantity * (it.costPrice ?? 0), 0);
+      const newGrossProfit = newTotal - newTotalCost;
+      const diff = newTotal - s.total;
+      if (diff !== 0) setWalletBalance(w => w + diff);
+      return {
+        ...s,
+        items: editingItems.map(it => ({
+          ...it,
+          lineProfit: it.quantity * (it.price - (it.costPrice ?? 0)),
+        })),
+        subtotal: newTotal,
+        total: newTotal,
+        totalCost: newTotalCost,
+        grossProfit: newGrossProfit,
+        profitMargin: newTotal > 0 ? Math.round((newGrossProfit / newTotal) * 100) : 0,
+      };
+    }));
+    setExpandedInvoiceId(null);
+  };
+
+  // --- ADD EXPENSE (تسجيل مصروف وخصمه من السيولة) ---
+  const handleAddExpense = (e: FormEvent) => {
+    e.preventDefault();
+    if (!newExpAmount || newExpAmount <= 0) return;
+    const expId = `EXP-${Math.floor(Math.random() * 90000 + 10000)}`;
+    const newExpense: Expense = {
+      id: expId,
+      date: new Date().toISOString().split('T')[0],
+      category: newExpCategory,
+      amount: Math.round(newExpAmount),
+      description: newExpDesc,
+      paidBy: newExpPaidBy,
+    };
+    if (currentUser) {
+      const userId = currentUser.uid;
+      setDoc(doc(db, 'users', userId, 'expenses', expId), { ...newExpense, userId })
+        .catch(err => handleFirestoreError(err, OperationType.CREATE, `users/${userId}/expenses/${expId}`));
+    } else {
+      setExpenses(prev => [newExpense, ...prev]);
+    }
+    // المصروف يُخصم من السيولة المتاحة بالصندوق
+    setWalletBalance(prev => Math.max(0, prev - newExpense.amount));
+    addAuditEntry({
+      action: 'expense',
+      amount: newExpense.amount,
+      description: `مصروف ${newExpense.category}${newExpense.description ? ' — ' + newExpense.description : ''}`,
+      relatedId: expId,
+    });
+    setExpenseSuccess(true);
+    setNewExpDesc('');
+    setTimeout(() => setExpenseSuccess(false), 2200);
+  };
+
+  // --- ADD PAYABLE (تسجيل ذمّة جديدة مستحقة لمذخر — لا يؤثر على السيولة) ---
+  const handleAddPayable = (e: FormEvent) => {
+    e.preventDefault();
+    if (!newPaySupplier.trim() || !newPayAmount || newPayAmount <= 0) return;
+    const payId = `PAY-${Math.floor(Math.random() * 90000 + 10000)}`;
+    const matchedSup = suppliers.find(s => s.name === newPaySupplier.trim());
+    const newPayable: Payable = {
+      id: payId,
+      supplierName: newPaySupplier.trim(),
+      supplierId: matchedSup?.id,
+      amount: Math.round(newPayAmount),
+      paidAmount: 0,
+      date: new Date().toISOString().split('T')[0],
+      status: 'open',
+      ...(newPayDueDate ? { dueDate: newPayDueDate } : {}),
+      ...(newPayDesc ? { description: newPayDesc } : {}),
+    };
+    if (currentUser) {
+      const userId = currentUser.uid;
+      // Firestore يرفض القيم undefined — نبني الحمولة بالحقول الموجودة فقط
+      const payload: any = {
+        id: newPayable.id,
+        supplierName: newPayable.supplierName,
+        amount: newPayable.amount,
+        paidAmount: newPayable.paidAmount,
+        date: newPayable.date,
+        status: newPayable.status,
+        userId,
+      };
+      if (newPayable.dueDate) payload.dueDate = newPayable.dueDate;
+      if (newPayable.description) payload.description = newPayable.description;
+      setDoc(doc(db, 'users', userId, 'payables', payId), payload)
+        .catch(err => handleFirestoreError(err, OperationType.CREATE, `users/${userId}/payables/${payId}`));
+    } else {
+      setPayables(prev => [newPayable, ...prev]);
+    }
+    // تسجيل الذمّة لا يُحرّك السيولة (نشوء دين وليس صرفاً نقدياً)
+    setPayableSuccess(true);
+    addAuditEntry({
+      action: 'payable_add',
+      amount: newPayable.amount,
+      description: `ذمّة جديدة للمورّد: ${newPayable.supplierName}`,
+      relatedId: payId,
+    });
+    setNewPaySupplier('');
+    setNewPayDesc('');
+    setTimeout(() => setPayableSuccess(false), 2200);
+  };
+
+  // --- SETTLE PAYABLE (تسديد دفعة على ذمّة مذخر وخصمها من السيولة) ---
+  const handleSettlePayable = (p: Payable, rawAmount: number) => {
+    const remaining = Math.max(0, p.amount - p.paidAmount);
+    const pay = Math.min(Math.max(0, Math.round(rawAmount || 0)), remaining);
+    if (pay <= 0) return;
+    const newPaid = p.paidAmount + pay;
+    const newStatus: Payable['status'] = newPaid >= p.amount ? 'paid' : 'partial';
+    setWalletBalance(prev => Math.max(0, prev - pay));
+    setPayables(prev => prev.map(x => x.id === p.id ? { ...x, paidAmount: newPaid, status: newStatus } : x));
+    if (currentUser) {
+      const userId = currentUser.uid;
+      setDoc(doc(db, 'users', userId, 'payables', p.id), { ...p, paidAmount: newPaid, status: newStatus, userId }, { merge: true })
+        .catch(err => handleFirestoreError(err, OperationType.WRITE, `users/${userId}/payables/${p.id}`));
+    }
+    setSettleInputs(prev => ({ ...prev, [p.id]: 0 }));
+    addAuditEntry({
+      action: 'payable_settle',
+      amount: pay,
+      description: `تسديد ذمّة ${p.supplierName} — المتبقي: ${(p.amount - newPaid).toLocaleString()} د.ع`,
+      relatedId: p.id,
+    });
+  };
+
+  // يبني حمولة Firestore للمورد بالحقول الموجودة فقط (Firestore يرفض undefined)
+  const buildSupplierPayload = (sup: Supplier, userId: string): any => {
+    const payload: any = { id: sup.id, name: sup.name, createdAt: sup.createdAt, userId };
+    if (sup.phone) payload.phone = sup.phone;
+    if (sup.address) payload.address = sup.address;
+    if (sup.contactPerson) payload.contactPerson = sup.contactPerson;
+    if (sup.creditLimit != null) payload.creditLimit = sup.creditLimit;
+    if (sup.paymentTerms != null) payload.paymentTerms = sup.paymentTerms;
+    if (sup.notes) payload.notes = sup.notes;
+    return payload;
+  };
+
+  // --- ADD SUPPLIER (إضافة مورد جديد — يُحفظ محلياً وفي Firestore) ---
+  const addSupplier = (sup: Supplier) => {
+    if (currentUser) {
+      const userId = currentUser.uid;
+      setDoc(doc(db, 'users', userId, 'suppliers', sup.id), buildSupplierPayload(sup, userId))
+        .catch(err => handleFirestoreError(err, OperationType.CREATE, `users/${userId}/suppliers/${sup.id}`));
+    } else {
+      setSuppliers(prev => [...prev, sup]);
+    }
+  };
+
+  // --- UPDATE SUPPLIER (تعديل بيانات مورد — محلياً وفي Firestore) ---
+  const updateSupplier = (sup: Supplier) => {
+    setSuppliers(prev => prev.map(s => s.id === sup.id ? sup : s));
+    if (currentUser) {
+      const userId = currentUser.uid;
+      setDoc(doc(db, 'users', userId, 'suppliers', sup.id), buildSupplierPayload(sup, userId))
+        .catch(err => handleFirestoreError(err, OperationType.WRITE, `users/${userId}/suppliers/${sup.id}`));
+    }
+  };
+
+  // --- DELETE SUPPLIER (حذف مورد — محلياً وفي Firestore) ---
+  const deleteSupplier = (sup: Supplier) => {
+    setSuppliers(prev => prev.filter(s => s.id !== sup.id));
+    if (selectedSupplierId === sup.id) setSelectedSupplierId(null);
+    if (currentUser) {
+      const userId = currentUser.uid;
+      deleteDoc(doc(db, 'users', userId, 'suppliers', sup.id))
+        .catch(err => handleFirestoreError(err, OperationType.DELETE, `users/${userId}/suppliers/${sup.id}`));
+    }
+  };
+
+  // --- PAY SUPPLIER DEBT (تسديد دفعة لمورد عبر ذممه المفتوحة — محلياً وفي Firestore) ---
+  // amount = null يعني تسديد كامل المتبقّي
+  const paySupplierDebt = (sup: Supplier, amount: number | null) => {
+    const supPayablesOpen = payables.filter(p => (p.supplierId === sup.id || p.supplierName === sup.name) && p.status !== 'paid');
+    const totalOwed = supPayablesOpen.reduce((s, p) => s + Math.max(0, p.amount - p.paidAmount), 0);
+    const payTotal = amount == null ? totalOwed : Math.min(Math.max(0, Math.round(amount)), totalOwed);
+    if (payTotal <= 0) return;
+
+    let remaining = payTotal;
+    const changedIds: string[] = [];
+    const updated = payables.map(p => {
+      if ((p.supplierId === sup.id || p.supplierName === sup.name) && p.status !== 'paid' && remaining > 0) {
+        const canPay = Math.max(0, p.amount - p.paidAmount);
+        const pay = Math.min(canPay, remaining);
+        remaining -= pay;
+        const newPaid = p.paidAmount + pay;
+        changedIds.push(p.id);
+        return { ...p, paidAmount: newPaid, status: (newPaid >= p.amount ? 'paid' : newPaid > 0 ? 'partial' : 'open') as Payable['status'] };
+      }
+      return p;
+    });
+
+    setPayables(updated);
+    setWalletBalance(prev => Math.max(0, prev - payTotal));
+    // حفظ الذمم المتغيّرة في Firestore حتى لا تُعكَس عند إعادة التحميل
+    if (currentUser) {
+      const userId = currentUser.uid;
+      updated.forEach(p => {
+        if (changedIds.includes(p.id)) {
+          setDoc(doc(db, 'users', userId, 'payables', p.id), { ...p, userId }, { merge: true })
+            .catch(err => handleFirestoreError(err, OperationType.WRITE, `users/${userId}/payables/${p.id}`));
+        }
+      });
+    }
+    addAuditEntry({ action: 'payable_settle', amount: payTotal, description: `تسديد ${amount == null ? 'كامل' : 'دفعة'} لـ ${sup.name}` });
+  };
+
+  // --- ADD RECEIVABLE (تسجيل ذمّة جديدة مستحقة لنا على زبون — لا يؤثر على السيولة) ---
+  const handleAddReceivable = (e: FormEvent) => {
+    e.preventDefault();
+    if (!newRecCustomer.trim() || !newRecAmount || newRecAmount <= 0) return;
+    const recId = `REC-${Math.floor(Math.random() * 90000 + 10000)}`;
+    const newReceivable: Receivable = {
+      id: recId,
+      customerName: newRecCustomer.trim(),
+      amount: Math.round(newRecAmount),
+      paidAmount: 0,
+      date: new Date().toISOString().split('T')[0],
+      status: 'open',
+      ...(newRecDueDate ? { dueDate: newRecDueDate } : {}),
+      ...(newRecDesc ? { description: newRecDesc } : {}),
+    };
+    if (currentUser) {
+      const userId = currentUser.uid;
+      // Firestore يرفض القيم undefined — نبني الحمولة بالحقول الموجودة فقط
+      const payload: any = {
+        id: newReceivable.id,
+        customerName: newReceivable.customerName,
+        amount: newReceivable.amount,
+        paidAmount: newReceivable.paidAmount,
+        date: newReceivable.date,
+        status: newReceivable.status,
+        userId,
+      };
+      if (newReceivable.dueDate) payload.dueDate = newReceivable.dueDate;
+      if (newReceivable.description) payload.description = newReceivable.description;
+      setDoc(doc(db, 'users', userId, 'receivables', recId), payload)
+        .catch(err => handleFirestoreError(err, OperationType.CREATE, `users/${userId}/receivables/${recId}`));
+    } else {
+      setReceivables(prev => [newReceivable, ...prev]);
+    }
+    // تسجيل الذمّة لا يُحرّك السيولة (الزبون مدين لنا، وليس نقداً في الصندوق)
+    setReceivableSuccess(true);
+    addAuditEntry({
+      action: 'receivable_add',
+      amount: newReceivable.amount,
+      description: `ذمّة جديدة على الزبون: ${newReceivable.customerName}`,
+      relatedId: recId,
+    });
+    setNewRecCustomer('');
+    setNewRecDesc('');
+    setTimeout(() => setReceivableSuccess(false), 2200);
+  };
+
+  // --- COLLECT RECEIVABLE (تحصيل دفعة من ذمّة زبون وإضافتها للسيولة — عكس تسديد الموردين) ---
+  const handleCollectReceivable = (r: Receivable, rawAmount: number) => {
+    const remaining = Math.max(0, r.amount - r.paidAmount);
+    const collect = Math.min(Math.max(0, Math.round(rawAmount || 0)), remaining);
+    if (collect <= 0) return;
+    const newPaid = r.paidAmount + collect;
+    const newStatus: Receivable['status'] = newPaid >= r.amount ? 'paid' : 'partial';
+    setWalletBalance(prev => prev + collect); // CASH IN — إضافة للسيولة، عكس الذمم الدائنة
+    setReceivables(prev => prev.map(x => x.id === r.id ? { ...x, paidAmount: newPaid, status: newStatus } : x));
+    if (currentUser) {
+      const userId = currentUser.uid;
+      setDoc(doc(db, 'users', userId, 'receivables', r.id), { ...r, paidAmount: newPaid, status: newStatus, userId }, { merge: true })
+        .catch(err => handleFirestoreError(err, OperationType.WRITE, `users/${userId}/receivables/${r.id}`));
+    }
+    setCollectInputs(prev => ({ ...prev, [r.id]: 0 }));
+    addAuditEntry({
+      action: 'receivable_collect',
+      amount: collect,
+      description: `تحصيل من ${r.customerName} — المتبقي: ${(r.amount - newPaid).toLocaleString()} د.ع`,
+      relatedId: r.id,
+    });
+  };
 
   // Handle Google OAuth Action
   const handleGoogleSignIn = async () => {
@@ -755,6 +1791,159 @@ export default function Dashboard() {
   const posSubtotal = currentCart.reduce((sum, item) => sum + (item.medicine.price * item.quantity), 0);
   const posDiscountAmount = Math.round(posSubtotal * (posDiscountPercent / 100));
   const posTotal = posSubtotal - posDiscountAmount;
+
+  // --- FINANCIAL PERIOD ANALYTICS (يومي / أسبوعي / شهري / سنوي) ---
+  // يجمّع سجل المبيعات حسب الفترة الزمنية ويحسب: المبيعات، الربح، الهامش، عدد الفواتير، متوسط الفاتورة
+  const computePeriodStats = (predicate: (saleDate: Date) => boolean) => {
+    const rows = salesLedger.filter(s => {
+      const d = new Date(String(s.timestamp).replace(' ', 'T'));
+      return !isNaN(d.getTime()) && predicate(d);
+    });
+    const sales = rows.reduce((sum, r) => sum + (r.total || 0), 0);
+    const profit = rows.reduce((sum, r) => sum + (r.grossProfit ?? 0), 0);
+    const count = rows.length;
+    const margin = sales > 0 ? Math.round((profit / sales) * 100) : 0;
+    const avg = count > 0 ? Math.round(sales / count) : 0;
+    return { sales, profit, margin, count, avg };
+  };
+
+  const finNow = new Date();
+  const finTodayStr = `${finNow.getFullYear()}-${String(finNow.getMonth() + 1).padStart(2, '0')}-${String(finNow.getDate()).padStart(2, '0')}`;
+  const finWeekAgo = new Date(finNow.getFullYear(), finNow.getMonth(), finNow.getDate() - 6); // آخر 7 أيام شاملة اليوم
+
+  const statsToday = computePeriodStats(d => {
+    const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return ds === finTodayStr;
+  });
+  const statsWeek = computePeriodStats(d => d >= finWeekAgo);
+  const statsMonth = computePeriodStats(d => d.getFullYear() === finNow.getFullYear() && d.getMonth() === finNow.getMonth());
+  const statsYear = computePeriodStats(d => d.getFullYear() === finNow.getFullYear());
+
+  // خرائط ألوان ثابتة (Tailwind يحتاج أسماء أصناف كاملة وليست مركّبة ديناميكياً)
+  const finAccent: Record<string, { badge: string; icon: string; profit: string; ring: string }> = {
+    emerald: { badge: 'bg-emerald-50 text-emerald-700', icon: 'text-emerald-600', profit: 'text-emerald-700', ring: 'border-emerald-100' },
+    blue: { badge: 'bg-blue-50 text-blue-700', icon: 'text-blue-600', profit: 'text-blue-700', ring: 'border-blue-100' },
+    violet: { badge: 'bg-violet-50 text-violet-700', icon: 'text-violet-600', profit: 'text-violet-700', ring: 'border-violet-100' },
+    amber: { badge: 'bg-amber-50 text-amber-700', icon: 'text-amber-600', profit: 'text-amber-700', ring: 'border-amber-100' },
+  };
+  const financialPeriods = [
+    { key: 'today', label: 'اليوم', sub: 'مبيعات هذا اليوم', stats: statsToday, accent: 'emerald' },
+    { key: 'week', label: 'آخر 7 أيام', sub: 'الأسبوع الجاري', stats: statsWeek, accent: 'blue' },
+    { key: 'month', label: 'هذا الشهر', sub: 'الشهر الحالي', stats: statsMonth, accent: 'violet' },
+    { key: 'year', label: 'هذا العام', sub: 'السنة المالية', stats: statsYear, accent: 'amber' },
+  ];
+
+  // --- SALES/PROFIT TREND CHART SERIES (تجميع يومي أو أسبوعي حسب المدى) ---
+  const buildChartSeries = (rangeDays: number) => {
+    const today = new Date();
+    const startDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (rangeDays - 1));
+    const byWeek = rangeDays > 30; // المدى 90 يوماً يُجمّع أسبوعياً لتجنب أعمدة كثيرة
+    const buckets: { label: string; sales: number; profit: number; from: Date; to: Date }[] = [];
+    if (byWeek) {
+      const numWeeks = Math.ceil(rangeDays / 7);
+      for (let w = numWeeks - 1; w >= 0; w--) {
+        const to = new Date(today.getFullYear(), today.getMonth(), today.getDate() - w * 7);
+        const from = new Date(today.getFullYear(), today.getMonth(), today.getDate() - w * 7 - 6);
+        buckets.push({ label: `${from.getDate()}/${from.getMonth() + 1}`, sales: 0, profit: 0, from, to });
+      }
+    } else {
+      for (let i = rangeDays - 1; i >= 0; i--) {
+        const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+        buckets.push({ label: `${d.getDate()}/${d.getMonth() + 1}`, sales: 0, profit: 0, from: d, to: d });
+      }
+    }
+    salesLedger.forEach(s => {
+      const sd = new Date(String(s.timestamp).replace(' ', 'T'));
+      if (isNaN(sd.getTime())) return;
+      const sDay = new Date(sd.getFullYear(), sd.getMonth(), sd.getDate());
+      if (sDay < startDay || sDay > today) return;
+      const b = buckets.find(bk => sDay >= bk.from && sDay <= bk.to);
+      if (b) { b.sales += s.total || 0; b.profit += s.grossProfit ?? 0; }
+    });
+    return buckets;
+  };
+  const chartSeries = buildChartSeries(chartRange);
+  const chartMax = Math.max(1, ...chartSeries.map(b => b.sales));
+
+  // --- PRODUCT-LEVEL ANALYTICS (تجميع من سجل المبيعات مع توحيد الأسماء) ---
+  // توحيد الاسم: إزالة الجزء بين قوسين (الاسم الإنجليزي/الوصف) لدمج السجلات القديمة والجديدة
+  const normalizeName = (n: string) => String(n).split(' (')[0].trim();
+  const productAgg: Record<string, { name: string; qty: number; revenue: number; profit: number }> = {};
+  salesLedger.forEach(s => {
+    s.items.forEach(it => {
+      const key = normalizeName(it.name);
+      if (!productAgg[key]) productAgg[key] = { name: key, qty: 0, revenue: 0, profit: 0 };
+      productAgg[key].qty += it.quantity || 0;
+      productAgg[key].revenue += (it.price || 0) * (it.quantity || 0);
+      productAgg[key].profit += it.lineProfit ?? 0;
+    });
+  });
+  const productList = Object.values(productAgg);
+  const topProfitable = [...productList].sort((a, b) => b.profit - a.profit).slice(0, 5);
+  const topSelling = [...productList].sort((a, b) => b.qty - a.qty).slice(0, 5);
+  const slowestMoving = [...inventory]
+    .map(m => {
+      const sold = productAgg[normalizeName(m.nameAr)]?.qty ?? 0;
+      const unitCost = m.costPrice ?? Math.round(m.price * 0.72);
+      return { name: m.nameAr, sold, stock: m.availableQuantity, value: unitCost * m.availableQuantity };
+    })
+    .sort((a, b) => a.sold - b.sold || b.value - a.value)
+    .slice(0, 5);
+
+  // --- NET PROFIT (الربح الصافي = الربح الإجمالي − المصاريف) ---
+  const sumExpenses = (predicate: (d: Date) => boolean) =>
+    expenses.filter(e => { const d = new Date(e.date); return !isNaN(d.getTime()) && predicate(d); })
+      .reduce((sum, e) => sum + (e.amount || 0), 0);
+  const expMonth = sumExpenses(d => d.getFullYear() === finNow.getFullYear() && d.getMonth() === finNow.getMonth());
+  const expYear = sumExpenses(d => d.getFullYear() === finNow.getFullYear());
+  const netProfitMonth = statsMonth.profit - expMonth;
+  const netProfitYear = statsYear.profit - expYear;
+
+  // --- قائمة الأرباح والخسائر (P&L / income statement) — تجمع الإيراد والتكلفة والمرتجعات والمصاريف لفترة واحدة ---
+  // مرتجعات الفترة: value = قيمة البيع المُرتجَع (تُخصم من الإيراد)، cost = تكلفة البضاعة العائدة للمخزون (تُخصم من COGS)
+  const sumReturns = (predicate: (d: Date) => boolean) => {
+    let value = 0, cost = 0, count = 0;
+    salesReturns.forEach(r => {
+      const d = new Date(String(r.timestamp).replace(' ', 'T'));
+      if (isNaN(d.getTime()) || !predicate(d)) return;
+      count++;
+      value += r.total || 0;
+      cost += r.items.reduce((s, it) => s + (it.costPrice ?? 0) * (it.quantity || 0), 0);
+    });
+    return { value, cost, count };
+  };
+  // تجميع المصاريف حسب النوع لفترة واحدة (لعرضها مفصّلة داخل القائمة)
+  const expensesByCategory = (predicate: (d: Date) => boolean) => {
+    const map: Record<string, number> = {};
+    expenses.forEach(e => {
+      const d = new Date(e.date);
+      if (isNaN(d.getTime()) || !predicate(d)) return;
+      map[e.category] = (map[e.category] || 0) + (e.amount || 0);
+    });
+    return Object.entries(map).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
+  };
+  const plIsMonth = plPeriod === 'month';
+  const plPredicate = plIsMonth
+    ? (d: Date) => d.getFullYear() === finNow.getFullYear() && d.getMonth() === finNow.getMonth()
+    : (d: Date) => d.getFullYear() === finNow.getFullYear();
+  const plStats = plIsMonth ? statsMonth : statsYear;
+  const plReturns = sumReturns(plPredicate);
+  const plExpenseRows = expensesByCategory(plPredicate);
+  const plGrossSales = plStats.sales;                  // إجمالي المبيعات (الإيراد)
+  const plCogs = plStats.sales - plStats.profit;       // تكلفة البضاعة المباعة = المبيعات − الربح الإجمالي
+  const plNetSales = plGrossSales - plReturns.value;   // صافي المبيعات بعد خصم المرتجعات
+  const plNetCogs = plCogs - plReturns.cost;           // التكلفة بعد إرجاع بضاعة المرتجعات للمخزون
+  const plGrossProfit = plNetSales - plNetCogs;        // مجمل الربح = صافي المبيعات − التكلفة
+  const plTotalExpenses = plExpenseRows.reduce((s, r) => s + r.amount, 0);
+  const plNetProfit = plGrossProfit - plTotalExpenses; // صافي الربح = مجمل الربح − المصاريف التشغيلية
+  const plGrossMargin = plNetSales > 0 ? Math.round((plGrossProfit / plNetSales) * 100) : 0;
+  const plNetMargin = plNetSales > 0 ? Math.round((plNetProfit / plNetSales) * 100) : 0;
+
+  // --- إجمالي الذمم الدائنة المستحقة (مشتقّ من دفتر ديون الموردين) ---
+  const totalDebts = payables.reduce((sum, p) => sum + Math.max(0, (p.amount || 0) - (p.paidAmount || 0)), 0);
+
+  // --- إجمالي الذمم المدينة المستحقة لنا (مشتقّ من دفتر ذمم الزبائن / البيع بالآجل) ---
+  const totalReceivables = receivables.reduce((sum, r) => sum + Math.max(0, (r.amount || 0) - (r.paidAmount || 0)), 0);
 
   // Search filter for POS select
   const filteredPOSMeds = inventory.filter(m => {
@@ -814,23 +2003,50 @@ export default function Dashboard() {
       String(now.getHours()).padStart(2, '0') + ':' + 
       String(now.getMinutes()).padStart(2, '0');
 
-    // Check if cartoon contains controlled substance
-    const containsControlled = currentCart.some(item => item.medicine.category.includes('مؤثرات') || item.medicine.id === '7');
+    // --- COST & PROFIT COMPUTATION ---
+    // Cost basis per line (fallback to ~72% of sale price for legacy items without costPrice)
+    const itemsWithCost = currentCart.map(item => {
+      const unitCost = item.medicine.costPrice ?? Math.round(item.medicine.price * 0.72);
+      return {
+        name: `${item.medicine.nameAr} (${item.medicine.nameEn})`,
+        quantity: item.quantity,
+        price: item.medicine.price,
+        costPrice: unitCost,
+        lineProfit: (item.medicine.price - unitCost) * item.quantity // ربح السطر قبل خصم الفاتورة
+      };
+    });
+    const posTotalCost = itemsWithCost.reduce((sum, it) => sum + (it.costPrice * it.quantity), 0);
+    const posGrossProfit = posTotal - posTotalCost; // الربح الإجمالي بعد خصم الفاتورة
+    const posProfitMargin = posTotal > 0 ? Math.round((posGrossProfit / posTotal) * 100) : 0;
 
     const newSaleRecord: SaleRecord = {
       invoiceId,
       timestamp: formattedTimestamp,
-      items: currentCart.map(item => ({
-        name: `${item.medicine.nameAr} (${item.medicine.nameEn})`,
-        quantity: item.quantity,
-        price: item.medicine.price
-      })),
+      items: itemsWithCost,
       subtotal: posSubtotal,
       discount: posDiscountAmount,
       total: posTotal,
+      totalCost: posTotalCost,
+      grossProfit: posGrossProfit,
+      profitMargin: posProfitMargin,
       customerName: posCustomerName,
-      isControlled: containsControlled
     };
+
+    // بيع بالآجل: أنشئ ذمّة على الزبون بدلاً من قبض نقدي فوري (الإيراد يُعترف به، لكن النقد لاحقاً)
+    let creditReceivable: Receivable | null = null;
+    if (posOnCredit) {
+      creditReceivable = {
+        id: `REC-${Math.floor(Math.random() * 90000 + 10000)}`,
+        customerName: posCustomerName,
+        amount: posTotal,
+        paidAmount: 0,
+        date: new Date().toISOString().split('T')[0],
+        status: 'open',
+        relatedInvoiceId: invoiceId,
+        description: `بيع آجل (${currentCart.length} صنف)`,
+      };
+      setReceivables(prev => [creditReceivable!, ...prev]);
+    }
 
     // 1. Decrement state values or persist directly to Firestore
     if (currentUser) {
@@ -859,12 +2075,36 @@ export default function Dashboard() {
       };
       setDoc(doc(db, 'users', userId, 'salesLedger', invoiceId), finalSaleRecord)
         .catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${userId}/salesLedger/${invoiceId}`));
-      
+
+      // بيع بالآجل: سجّل الذمّة المدينة على الزبون في Firestore (بدون قبض نقدي)
+      if (creditReceivable) {
+        const payload: any = {
+          id: creditReceivable.id,
+          customerName: creditReceivable.customerName,
+          amount: creditReceivable.amount,
+          paidAmount: creditReceivable.paidAmount,
+          date: creditReceivable.date,
+          status: creditReceivable.status,
+          relatedInvoiceId: creditReceivable.relatedInvoiceId,
+          userId,
+        };
+        if (creditReceivable.description) payload.description = creditReceivable.description;
+        setDoc(doc(db, 'users', userId, 'receivables', creditReceivable.id), payload)
+          .catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${userId}/receivables/${creditReceivable.id}`));
+      }
+
+      addAuditEntry({
+        action: 'sale',
+        amount: posTotal,
+        description: `فاتورة بيع ${posOnCredit ? 'آجل' : 'نقدي'} (${currentCart.length} صنف) — ${posCustomerName}`,
+        relatedId: invoiceId,
+      });
       setLastPrintedInvoice(newSaleRecord);
       setShowReceiptModal(true);
       setCurrentCart([]);
       setPosCustomerName('زبون نقدي / خارجي');
       setPosDiscountPercent(0);
+      setPosOnCredit(false);
     } else {
       // Decrement state values in live inventory database!
       setInventory(prevInventory => {
@@ -882,12 +2122,18 @@ export default function Dashboard() {
         });
       });
 
-      // Adjust financial counters
-      setWalletBalance(prev => prev + posTotal);
+      // Adjust financial counters — الإيراد يُعترف به دائماً، لكن النقد لا يُضاف عند البيع بالآجل
       setDailySalesRevenue(prev => prev + posTotal);
+      if (!posOnCredit) setWalletBalance(prev => prev + posTotal);
 
       // Store sales record local fallback
       setSalesLedger([newSaleRecord, ...salesLedger]);
+      addAuditEntry({
+        action: 'sale',
+        amount: posTotal,
+        description: `فاتورة بيع ${posOnCredit ? 'آجل' : 'نقدي'} (${currentCart.length} صنف) — ${posCustomerName}`,
+        relatedId: invoiceId,
+      });
       setLastPrintedInvoice(newSaleRecord);
       setShowReceiptModal(true);
 
@@ -895,74 +2141,8 @@ export default function Dashboard() {
       setCurrentCart([]);
       setPosCustomerName('زبون نقدي / خارجي');
       setPosDiscountPercent(0);
+      setPosOnCredit(false);
     }
-  };
-
-  // --- MOH COMPLIANCE WRITE LOGS ---
-  const handleAddControlledPrescription = (e: FormEvent) => {
-    e.preventDefault();
-    if (!newPrescPatient || !newPrescDoctor) return;
-
-    const medObj = inventory.find(m => m.id === newPrescMedId);
-    if (!medObj) return;
-
-    const recordId = `REC-${Math.floor(Math.random() * 9000 + 1000)}`;
-
-    // Build the log
-    const newLog: ControlledPrescription = {
-      id: recordId,
-      patientName: newPrescPatient,
-      doctorName: newPrescDoctor,
-      prescriptionDate: new Date().toISOString().split('T')[0],
-      medicineName: `${medObj.nameAr} (${medObj.nameEn})`,
-      quantity: newPrescQty,
-      pharmacistLicense: newPrescLicense
-    };
-
-    if (currentUser) {
-      const userId = currentUser.uid;
-      // 1. Add controlled prescription record to Firestore
-      setDoc(doc(db, 'users', userId, 'narcoticPrescriptions', recordId), {
-        ...newLog,
-        userId
-      }).catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${userId}/narcoticPrescriptions/${recordId}`));
-
-      // 2. Decrement medicine stock quantity in Firestore
-      const resQty = Math.max(0, medObj.availableQuantity - newPrescQty);
-      const updatedMed = {
-        ...medObj,
-        availableQuantity: resQty,
-        status: resQty <= 0 ? 'unavailable' : resQty < 15 ? 'low' : 'available',
-        updatedAt: new Date().toISOString()
-      };
-      setDoc(doc(db, 'users', userId, 'inventory', medObj.id), updatedMed)
-        .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/inventory/${medObj.id}`));
-
-      setPrescriptionSuccess(true);
-    } else {
-      // Local state fallback
-      setNarcoticPrescriptions([newLog, ...narcoticPrescriptions]);
-      setPrescriptionSuccess(true);
-
-      // Decrement the narcotics quantities automatically
-      setInventory(prev => prev.map(m => {
-        if (m.id === newPrescMedId) {
-          const resQty = Math.max(0, m.availableQuantity - newPrescQty);
-          return {
-            ...m,
-            availableQuantity: resQty,
-            status: resQty <= 0 ? 'unavailable' : resQty < 15 ? 'low' : 'available'
-          };
-        }
-        return m;
-      }));
-    }
-
-    setTimeout(() => {
-      setPrescriptionSuccess(false);
-      setNewPrescPatient('');
-      setNewPrescDoctor('');
-    }, 2500);
   };
 
   // --- DYNAMIC NEW INVENTORY ADD ---
@@ -978,11 +2158,14 @@ export default function Dashboard() {
       scientificName: newDrugSci || 'N/A',
       activeIngredient: newDrugSci || 'N/A',
       category: newDrugCat,
-      warehouse: 'أدخلت يدويا في صيدلية بلس',
+      warehouse: 'أدخلت يدويا في صيدلية انوار الحسن',
       price: newDrugPrice,
       secondaryPrice: newDrugSecondaryPrice,
+      costPrice: Math.round(newDrugPrice * 0.72), // تقدير مبدئي للتكلفة (يُحدّث عند أول عملية شراء)
+      lastCostPrice: Math.round(newDrugPrice * 0.72),
       availableQuantity: newDrugQty,
       status: 'available',
+      minStock: newDrugMinStock,
       barcode: newDrugBarcode || '62811' + Math.floor(Math.random() * 90000000 + 10000000)
     };
 
@@ -1007,13 +2190,71 @@ export default function Dashboard() {
     setNewDrugQty(100);
     setNewDrugBarcode('');
     setIsAddingDrug(false);
+    setNewDrugMinStock(15);
+  };
+
+  // --- BULK INVENTORY IMPORT (استيراد المخزون الكامل من ES-PRO) ---
+  const handleBulkImportInventory = async () => {
+    setShowBulkImportConfirm(false);
+    setBulkImportStatus('loading');
+    setBulkImportMsg('جارٍ تحميل ملف الأدوية...');
+    try {
+      const res = await fetch('/inventory-seed.json');
+      if (!res.ok) throw new Error('تعذّر تحميل ملف البيانات');
+      const meds: Medicine[] = await res.json();
+
+      // دمج في الحالة المحلية فوراً (نتجاوز التكرار حسب id)
+      setInventory(prev => {
+        const map = new Map(prev.map(m => [m.id, m]));
+        meds.forEach(m => map.set(m.id, m));
+        return Array.from(map.values());
+      });
+
+      if (!currentUser) {
+        // وضع تجريبي بدون تسجيل دخول — يُحفظ محلياً فقط
+        setBulkImportStatus('done');
+        setBulkImportMsg(`تم تحميل ${meds.length.toLocaleString()} دواء محلياً. سجّل الدخول لمزامنتها سحابياً.`);
+        setTimeout(() => setBulkImportStatus('idle'), 8000);
+        return;
+      }
+
+      // كتابة دفعية إلى Firestore (حد الدفعة 500 عملية)
+      setBulkImportStatus('writing');
+      const userId = currentUser.uid;
+      const CHUNK = 450;
+      setBulkImportProgress({ done: 0, total: meds.length });
+      for (let i = 0; i < meds.length; i += CHUNK) {
+        const slice = meds.slice(i, i + CHUNK);
+        const batch = writeBatch(db);
+        slice.forEach(m => {
+          batch.set(doc(db, 'users', userId, 'inventory', m.id), { ...m, userId });
+        });
+        await batch.commit();
+        setBulkImportProgress({ done: Math.min(i + CHUNK, meds.length), total: meds.length });
+      }
+
+      setBulkImportStatus('done');
+      setBulkImportMsg(`تم استيراد ${meds.length.toLocaleString()} دواء بنجاح إلى مخزونك السحابي!`);
+      addAuditEntry({
+        action: 'inventory_import',
+        amount: 0,
+        description: `استيراد المخزون الكامل (${meds.length} دواء) من ES-PRO`,
+        relatedId: 'bulk-import',
+      });
+      setTimeout(() => setBulkImportStatus('idle'), 10000);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'خطأ غير متوقع';
+      setBulkImportStatus('error');
+      setBulkImportMsg(`فشل الاستيراد: ${msg}`);
+      if (currentUser) handleFirestoreError(e, OperationType.WRITE, `users/${currentUser.uid}/inventory`);
+    }
   };
 
   // --- PURCHASE ORDERS (طلبيات الشراء) BUSINESS LOGIC ---
-  const addToPurchaseDraft = (med: any) => {
+  const addToPurchaseDraft = (med: any, overrideQty?: number) => {
     const exists = purchaseDraft.find(d => d.medicineId === med.id);
     if (exists) {
-      setPurchaseDraft(prev => prev.map(d => d.medicineId === med.id ? { ...d, qty: d.qty + 10 } : d));
+      setPurchaseDraft(prev => prev.map(d => d.medicineId === med.id ? { ...d, qty: d.qty + (overrideQty ?? 10) } : d));
     } else {
       const newItem = {
         id: 'draft-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
@@ -1023,9 +2264,12 @@ export default function Dashboard() {
         scientificName: med.scientificName || 'N/A',
         category: med.category || 'مسكنات الألم',
         price: Math.floor(med.price * 0.72) || 3000, // Wholesale discount!
-        qty: 50,
+        retailPrice: med.price || 0,
+        officialPrice: med.secondaryPrice || (med.price ? med.price + 500 : 0),
+        qty: overrideQty ?? 50,
         expiryDate: expiryDates[med.id] || '2028-12-01',
-        barcode: med.barcode || '62811' + Math.floor(Math.random() * 900000 + 100000)
+        barcode: med.barcode || '62811' + Math.floor(Math.random() * 900000 + 100000),
+        warehouse: purchaseSupplier || med.warehouse || '',
       };
       setPurchaseDraft(prev => [...prev, newItem]);
     }
@@ -1059,11 +2303,27 @@ export default function Dashboard() {
         // Exists in inventory!
         updatedInventory = updatedInventory.map(med => {
           if (med.id === draftItem.medicineId) {
-            const newQty = med.availableQuantity + Number(draftItem.qty);
+            const purchaseQty = Number(draftItem.qty);
+            const purchaseUnitCost = Number(draftItem.price);
+            const existingQty = med.availableQuantity;
+            const existingCost = med.costPrice ?? Math.round(med.price * 0.72);
+            const newQty = existingQty + purchaseQty;
+            // Moving Average Cost: متوسط مرجّح بين تكلفة المخزون القديم وتكلفة الشراء الجديد
+            const movingAvgCost = newQty > 0
+              ? Math.round(((existingQty * existingCost) + (purchaseQty * purchaseUnitCost)) / newQty)
+              : purchaseUnitCost;
             return {
               ...med,
               availableQuantity: newQty,
-              price: Math.floor(draftItem.price * 1.25), // 25% profit margin for retail sale
+              costPrice: movingAvgCost,
+              lastCostPrice: purchaseUnitCost,
+              // سعر البيع: نحترم القيمة المعدّلة في الاستيراد إن وُجدت، وإلا التكلفة + هامش 25%
+              price: draftItem.retailPrice && Number(draftItem.retailPrice) > 0
+                ? Number(draftItem.retailPrice)
+                : Math.floor(draftItem.price * 1.25),
+              secondaryPrice: draftItem.officialPrice && Number(draftItem.officialPrice) > 0
+                ? Number(draftItem.officialPrice)
+                : med.secondaryPrice,
               barcode: draftItem.barcode || med.barcode,
               status: 'available' as const
             };
@@ -1084,8 +2344,14 @@ export default function Dashboard() {
           scientificName: draftItem.scientificName,
           category: draftItem.category,
           warehouse: 'مكتب علمي (توريد طلبيات الشراء)',
-          price: Math.floor(draftItem.price * 1.25),
-          secondaryPrice: Math.floor(draftItem.price * 1.35),
+          price: draftItem.retailPrice && Number(draftItem.retailPrice) > 0
+            ? Number(draftItem.retailPrice)
+            : Math.floor(draftItem.price * 1.25),
+          secondaryPrice: draftItem.officialPrice && Number(draftItem.officialPrice) > 0
+            ? Number(draftItem.officialPrice)
+            : Math.floor(draftItem.price * 1.35),
+          costPrice: Number(draftItem.price),
+          lastCostPrice: Number(draftItem.price),
           availableQuantity: Number(draftItem.qty),
           status: 'available',
           barcode: draftItem.barcode || '62811' + Math.floor(Math.random() * 900000 + 100000)
@@ -1113,9 +2379,59 @@ export default function Dashboard() {
     setB2bOrders(prev => [archivedOrder, ...prev]);
     setInventory(updatedInventory);
     setExpiryDates(updatedExpiries);
-    setWalletBalance(prev => Math.max(0, prev - totalCost));
+
+    addAuditEntry({
+      action: 'purchase',
+      amount: totalCost,
+      description: `فاتورة شراء ${purchaseOnCredit ? 'آجلة' : 'نقدية'} (${purchaseDraft.length} صنف)${purchaseOnCredit ? ' — ' + (creditSupplierName.trim() || 'المذخر') : ''}`,
+      relatedId: orderId,
+    });
+
+    if (purchaseOnCredit) {
+      // شراء بالآجل: تُسجَّل الفاتورة كذمّة على المذخر بدلاً من خصمها نقداً
+      const matchedSupplier = suppliers.find(s => s.name === creditSupplierName.trim());
+      const creditPayable: Payable = {
+        id: `PAY-${Math.floor(Math.random() * 90000 + 10000)}`,
+        supplierName: creditSupplierName.trim() || 'مذخر التوريد',
+        supplierId: matchedSupplier?.id,
+        amount: totalCost,
+        paidAmount: 0,
+        date: new Date().toISOString().split('T')[0],
+        status: 'open',
+        relatedOrderId: orderId,
+        description: `فاتورة شراء آجلة (${purchaseDraft.length} صنف)`,
+      };
+      setPayables(prev => [creditPayable, ...prev]);
+      if (currentUser) {
+        const userId = currentUser.uid;
+        // Firestore يرفض undefined — نرسل الحقول الموجودة فقط
+        const payload: any = {
+          id: creditPayable.id,
+          supplierName: creditPayable.supplierName,
+          amount: creditPayable.amount,
+          paidAmount: creditPayable.paidAmount,
+          date: creditPayable.date,
+          status: creditPayable.status,
+          userId,
+        };
+        if (creditPayable.dueDate) payload.dueDate = creditPayable.dueDate;
+        if (creditPayable.description) payload.description = creditPayable.description;
+        if (creditPayable.relatedOrderId) payload.relatedOrderId = creditPayable.relatedOrderId;
+        setDoc(doc(db, 'users', userId, 'payables', creditPayable.id), payload)
+          .catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${userId}/payables/${creditPayable.id}`));
+      }
+    } else {
+      // الدفع النقدي المعتاد: خصم قيمة الفاتورة من السيولة بالصندوق
+      setWalletBalance(prev => Math.max(0, prev - totalCost));
+    }
+
     setPurchaseDraft([]);
-    setPurchaseSuccessBanner(`تم بنجاح اعتماد فاتورة الشراء اليومي بقيمة ${totalCost.toLocaleString()} د.ع وتحديث مستويات المخزون والصلاحيات لـ ${purchaseDraft.length} أدوية!`);
+    setPurchaseOnCredit(false);
+    setPurchaseSuccessBanner(
+      purchaseOnCredit
+        ? `تم اعتماد فاتورة الشراء بقيمة ${totalCost.toLocaleString()} د.ع كذمّة آجلة على ${creditSupplierName.trim() || 'المذخر'} وتحديث المخزون لـ ${purchaseDraft.length} أدوية!`
+        : `تم بنجاح اعتماد فاتورة الشراء اليومي بقيمة ${totalCost.toLocaleString()} د.ع وتحديث مستويات المخزون والصلاحيات لـ ${purchaseDraft.length} أدوية!`
+    );
     
     setTimeout(() => {
       setPurchaseSuccessBanner(null);
@@ -1178,11 +2494,14 @@ export default function Dashboard() {
     }
   };
 
-  // Payoff supplier debt manually
+  // Payoff supplier debt manually — يسدّد 500,000 د.ع على أقدم ذمّة مفتوحة عبر دفتر ديون الموردين
   const settleSupplierDebts = () => {
     if (walletBalance < 500000) return;
-    setWalletBalance(prev => prev - 500000);
-    setTotalDebts(prev => Math.max(0, prev - 500000));
+    const oldestOpen = [...payables]
+      .filter(p => p.status !== 'paid' && (p.amount - p.paidAmount) > 0)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+    if (!oldestOpen) return;
+    handleSettlePayable(oldestOpen, 500000);
   };
 
   // Export financial reports to CSV
@@ -1193,7 +2512,7 @@ export default function Dashboard() {
     let csvContent = '\uFEFF'; // Excel UTF-8 BOM
 
     // Header Metadata
-    csvContent += `كشف الحسابات والسيولة والأرصدة المالية - صيدلية كبسولة بلس\r\n`;
+    csvContent += `كشف الحسابات والسيولة والأرصدة المالية - صيدلية انوار الحسن\r\n`;
     csvContent += `تاريخ ووقت التصدير,${nowStr}\r\n\r\n`;
 
     // Financial Metrics Summary Table
@@ -1228,7 +2547,7 @@ export default function Dashboard() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `التقرير_المالي_صيدلية_بلس_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `التقرير_المالي_صيدلية_انوار_الحسن_${new Date().toISOString().split('T')[0]}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -1265,7 +2584,32 @@ export default function Dashboard() {
 
   return (
     <div className="bg-slate-50 min-h-screen text-right" dir="rtl">
-      
+
+      {/* شريط تنبيه وضع محدود — يظهر فقط عند فشل تهيئة Firebase Auth */}
+      {authInitFailed && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-3 bg-amber-50 border-b border-amber-300 px-4 py-2.5 text-sm text-amber-800"
+          dir="rtl"
+        >
+          <div className="flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0 text-amber-500" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+            <span className="font-medium">تعذّر الاتصال بخدمة الحسابات — يعمل التطبيق بوضع محدود (بيانات محلية فقط)</span>
+          </div>
+          <button
+            onClick={() => setAuthInitFailed(false)}
+            aria-label="إغلاق التنبيه"
+            className="flex-shrink-0 rounded p-0.5 text-amber-600 hover:bg-amber-100 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </button>
+        </div>
+      )}
+
       {/* 
         =========================================================
         MATCH BRAND HEADER DIRECT FROM THE USER SCREENSHOT IMAGE
@@ -1297,7 +2641,7 @@ export default function Dashboard() {
                   </span>
                   <span className="text-[9px] text-emerald-600 font-bold block flex items-center space-x-reverse space-x-1">
                     <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                    <span>سحابة كبسولة نشطة ✓</span>
+                    <span>سحابة انوار الحسن نشطة ✓</span>
                   </span>
                 </div>
                 <button 
@@ -1315,26 +2659,107 @@ export default function Dashboard() {
                 <svg className="w-4 h-4" viewBox="0 0 24 24">
                   <path 
                     fill="currentColor" 
-                    D="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" 
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" 
                   />
                   <path 
                     fill="currentColor" 
-                    D="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" 
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" 
                   />
                   <path 
                     fill="currentColor" 
-                    D="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" 
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" 
                   />
                   <path 
                     fill="currentColor" 
-                    D="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" 
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" 
                   />
                 </svg>
                 <span>ربط المزامنة السحابية (Google)</span>
               </button>
             )}
             <span className="text-slate-300 font-mono text-sm tracking-wide font-bold hidden sm:inline">|</span>
-            <span className="text-slate-400 font-mono text-sm tracking-wide font-bold">Capsula Plus</span>
+            <span className="text-slate-400 font-mono text-sm tracking-wide font-bold hidden sm:inline">ANWAR AL-HASSAN</span>
+            {/* Role selector */}
+            {currentUser && (
+              <select
+                value={currentRole}
+                onChange={e => setCurrentRole(e.target.value as 'admin' | 'pharmacist' | 'cashier')}
+                className="text-[9px] font-bold bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 cursor-pointer"
+              >
+                <option value="admin">مدير</option>
+                <option value="pharmacist">صيدلاني</option>
+                <option value="cashier">كاشير</option>
+              </select>
+            )}
+            {/* Enable Notifications Button */}
+            {typeof Notification !== 'undefined' && Notification.permission !== 'granted' && (
+              <button
+                onClick={() => {
+                  Notification.requestPermission().then(p => {
+                    if (p === 'granted') alert('تم تفعيل الإشعارات بنجاح!');
+                  });
+                }}
+                className="text-[9px] font-bold bg-amber-50 border border-amber-200 text-amber-700 rounded-lg px-2 py-1 cursor-pointer hover:bg-amber-100 transition hidden sm:flex items-center gap-1"
+              >
+                <Bell className="w-3 h-3" />
+                تفعيل الإشعارات
+              </button>
+            )}
+            {/* Dark / Light mode toggle */}
+            <button
+              onClick={() => setDarkMode(prev => !prev)}
+              title={darkMode ? 'الوضع النهاري' : 'الوضع الليلي'}
+              className="w-8 h-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 transition cursor-pointer"
+            >
+              {darkMode ? <Sun className="w-4 h-4 text-amber-500" /> : <Moon className="w-4 h-4" />}
+            </button>
+
+            {/* Notification Bell */}
+            <div className="relative">
+              <button
+                onClick={() => setShowNotifDropdown(prev => !prev)}
+                className="w-8 h-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 transition cursor-pointer relative"
+              >
+                <Bell className="w-4 h-4" />
+                {(inventory.some(m => expiryDates[m.id] && new Date(expiryDates[m.id]) < new Date()) ||
+                  inventory.some(m => m.availableQuantity <= (m.minStock ?? 15)) ||
+                  payables.some(p => p.dueDate && new Date(p.dueDate) < new Date() && p.status !== 'paid')
+                ) && (
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white" />
+                )}
+              </button>
+              {showNotifDropdown && (
+                <div className="absolute left-0 top-10 w-72 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-4 space-y-3 text-right" dir="rtl">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <span className="text-xs font-black text-slate-800">مركز الإشعارات</span>
+                    <button onClick={() => setShowNotifDropdown(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X className="w-4 h-4" /></button>
+                  </div>
+                  {inventory.filter(m => expiryDates[m.id] && new Date(expiryDates[m.id]) < new Date()).map(m => (
+                    <div key={m.id} className="text-[10px] text-rose-700 bg-rose-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
+                      <AlertCircle className="w-3 h-3 shrink-0" />
+                      <span>{m.nameAr} — منتهية الصلاحية</span>
+                    </div>
+                  ))}
+                  {inventory.filter(m => m.availableQuantity <= (m.minStock ?? 15) && m.availableQuantity > 0).map(m => (
+                    <div key={m.id} className="text-[10px] text-amber-700 bg-amber-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
+                      <AlertCircle className="w-3 h-3 shrink-0" />
+                      <span>{m.nameAr} — مخزون منخفض ({m.availableQuantity})</span>
+                    </div>
+                  ))}
+                  {payables.filter(p => p.dueDate && new Date(p.dueDate) < new Date() && p.status !== 'paid').map(p => (
+                    <div key={p.id} className="text-[10px] text-slate-700 bg-slate-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
+                      <Clock className="w-3 h-3 shrink-0" />
+                      <span>{p.supplierName} — دين متأخر</span>
+                    </div>
+                  ))}
+                  {!inventory.some(m => expiryDates[m.id] && new Date(expiryDates[m.id]) < new Date()) &&
+                   !inventory.some(m => m.availableQuantity <= (m.minStock ?? 15)) &&
+                   !payables.some(p => p.dueDate && new Date(p.dueDate) < new Date() && p.status !== 'paid') && (
+                    <p className="text-[10px] text-slate-400 text-center">لا توجد تنبيهات جديدة</p>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* MIDDLE: Quick Refrigerator temp readout */}
@@ -1349,9 +2774,9 @@ export default function Dashboard() {
 
           {/* RIGHT: Logo tile widget following the screenshot image of 'نظام إدارة صيدليات المتكامل' */}
           <div className="flex items-center space-x-reverse space-x-3.5">
-            <div className="text-right">
+            <div className="text-right hidden sm:block">
               <h1 className="text-slate-900 font-extrabold text-lg tracking-tight leading-none mb-0.5">
-                كبسولة بلس <span className="text-emerald-500 font-black">+</span>
+                انوار الحسن <span className="text-emerald-500 font-black">+</span>
               </h1>
               <p className="text-[10px] text-slate-500 font-bold tracking-tight">
                 نظام إدارة صيدليات المتكامل
@@ -1380,180 +2805,177 @@ export default function Dashboard() {
       */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         
-        {/* Real-time Counter Indicators */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          
-          <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[10px] text-slate-400 font-black tracking-wider block">السيولة في صندوق الكاش</span>
-              <span className="text-xl font-black text-slate-900 tracking-tight font-mono">
-                {walletBalance.toLocaleString()} <span className="text-xs text-slate-500 font-sans font-extrabold">د.ع</span>
-              </span>
-            </div>
-            <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
-              <Wallet className="w-5.5 h-5.5" />
-            </div>
-          </div>
-
-          <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[10px] text-slate-400 font-black tracking-wider block">أرباح ومبيعات اليوم</span>
-              <span className="text-xl font-black text-slate-900 tracking-tight font-mono">
-                {dailySalesRevenue.toLocaleString()} <span className="text-xs text-slate-500 font-sans font-extrabold">د.ع</span>
-              </span>
-            </div>
-            <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
-              <TrendingUp className="w-5.5 h-5.5" />
-            </div>
-          </div>
-
-          <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[10px] text-slate-400 font-black tracking-wider block">ذمم المذاخر المتبقية</span>
-              <span className="text-xl font-black text-rose-700 tracking-tight font-mono">
-                {totalDebts.toLocaleString()} <span className="text-xs text-slate-500 font-sans font-extrabold">د.ع</span>
-              </span>
-            </div>
-            <div className="w-10 h-10 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center">
-              <ClipboardList className="w-5.5 h-5.5" />
-            </div>
-          </div>
-
-          <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center justify-between">
-            <div className="space-y-1">
-              <span className="text-[10px] text-slate-400 font-black tracking-wider block">المخزون الدوائي النشط</span>
-              <span className="text-xl font-black text-slate-900 tracking-tight">
-                {inventory.reduce((sum, m) => sum + m.availableQuantity, 0)} <span className="text-xs text-slate-500 font-extrabold">علب</span>
-              </span>
-            </div>
-            <div className="w-10 h-10 bg-slate-50 text-slate-700 rounded-xl flex items-center justify-center">
-              <Pill className="w-5.5 h-5.5" />
-            </div>
-          </div>
-
-        </div>
 
         {/* 
           =========================================================
           WORKSPACE INNER LAYOUT - SIDEBAR LINKS & VIEWS
           =========================================================
         */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          
-          {/* Sidebar Controller tabs */}
-          <div className="lg:col-span-3 space-y-2.5">
-            <span className="text-[10px] text-slate-400 font-black uppercase tracking-wider block px-2">مفاتيح النظام</span>
-            
-            <button
-              onClick={() => setActiveTab('pos')}
-              className={`w-full flex items-center justify-between p-4 rounded-2xl font-bold text-xs transition border cursor-pointer ${
-                activeTab === 'pos'
-                  ? 'bg-emerald-600 text-white border-transparent shadow-lg shadow-emerald-200/50'
-                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200/60'
-              }`}
-            >
-              <div className="flex items-center space-x-reverse space-x-3.5">
-                <ShoppingBag className="w-4.5 h-4.5" />
-                <span>نقطة البيع السريعة (POS)</span>
-              </div>
-              <span className="text-[10px] bg-emerald-100/10 text-slate-600 font-extrabold py-0.5 px-2 rounded-full">كاش</span>
-            </button>
+        {activeTab === 'home' ? (
+          /* ======================================================
+             الصفحة الرئيسية — بطاقات تنقل لكل قسم
+             ====================================================== */
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 
-            <button
-              onClick={() => setActiveTab('inventory')}
-              className={`w-full flex items-center justify-between p-4 rounded-2xl font-bold text-xs transition border cursor-pointer ${
-                activeTab === 'inventory'
-                  ? 'bg-emerald-600 text-white border-transparent shadow-lg shadow-emerald-200/50'
-                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200/60'
-              }`}
-            >
-              <div className="flex items-center space-x-reverse space-x-3.5">
-                <Pill className="w-4.5 h-4.5" />
-                <span>المخزن وتنبيهات الصلاحية</span>
-              </div>
-              <span className="text-[10px] bg-amber-500 text-white font-extrabold py-0.5 px-2 rounded-full">
-                {inventory.filter(m => (getDaysUntilExpiry(m.id) <= 30) || m.availableQuantity < 15).length} تنبيه
-              </span>
-            </button>
+              {/* POS */}
+              <button
+                onClick={() => setActiveTab('pos')}
+                className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-emerald-300 transition-all cursor-pointer text-right space-y-4 group"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-emerald-100 transition">
+                    <ShoppingBag className="w-6 h-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-black text-slate-800 text-sm">نقطة البيع السريعة</h3>
+                    <p className="text-[10px] text-slate-500 font-semibold mt-0.5">إصدار الفواتير وتسجيل المبيعات</p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full font-black">
+                    {salesLedger.filter(s => s.timestamp.startsWith(finTodayStr)).length} فاتورة اليوم
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-bold group-hover:text-emerald-600 transition">دخول ←</span>
+                </div>
+              </button>
 
-            <button
-              onClick={() => setActiveTab('b2b')}
-              className={`w-full flex items-center justify-between p-4 rounded-2xl font-bold text-xs transition border cursor-pointer ${
-                activeTab === 'b2b'
-                  ? 'bg-emerald-600 text-white border-transparent shadow-lg shadow-emerald-200/50'
-                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200/60'
-              }`}
-            >
-              <div className="flex items-center space-x-reverse space-x-3.5">
-                <Truck className="w-4.5 h-4.5" />
-                <span>طلبيات المذاخر (كبسولة B2B)</span>
-              </div>
-              <span className="text-[10px] bg-blue-100/20 text-slate-500 font-semibold py-0.5 px-2 rounded-full">شراء وعروض</span>
-            </button>
+              {/* Inventory */}
+              <button
+                onClick={() => setActiveTab('inventory')}
+                className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-amber-300 transition-all cursor-pointer text-right space-y-4 group"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-amber-100 transition">
+                    <Pill className="w-6 h-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-black text-slate-800 text-sm">المخزن وتنبيهات الصلاحية</h3>
+                    <p className="text-[10px] text-slate-500 font-semibold mt-0.5">إدارة المخزون ومتابعة الصلاحية</p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] bg-amber-50 text-amber-700 px-2.5 py-1 rounded-full font-black">
+                    {inventory.filter(m => (getDaysUntilExpiry(m.id) <= 30) || m.availableQuantity < 15).length} تنبيه نشط
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-bold group-hover:text-amber-600 transition">دخول ←</span>
+                </div>
+              </button>
 
-            <button
-              onClick={() => setActiveTab('narcotics')}
-              className={`w-full flex items-center justify-between p-4 rounded-2xl font-bold text-xs transition border cursor-pointer ${
-                activeTab === 'narcotics'
-                  ? 'bg-emerald-600 text-white border-transparent shadow-lg shadow-emerald-200/50'
-                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200/60'
-              }`}
-            >
-              <div className="flex items-center space-x-reverse space-x-3.5">
-                <ShieldCheck className="w-4.5 h-4.5" />
-                <span>المسجل الرقابي (سجل المؤثرات)</span>
-              </div>
-              <span className="text-[8px] bg-rose-600 text-white px-2 py-0.5 rounded-full font-sans">وزارة الصحة/النقابة</span>
-            </button>
+              {/* B2B */}
+              {currentRole !== 'cashier' && (
+                <button
+                  onClick={() => setActiveTab('b2b')}
+                  className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-blue-300 transition-all cursor-pointer text-right space-y-4 group"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition">
+                      <Truck className="w-6 h-6" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-black text-slate-800 text-sm">طلبيات المذاخر</h3>
+                      <p className="text-[10px] text-slate-500 font-semibold mt-0.5">فواتير الشراء وعروض انوار الحسن B2B</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full font-black">
+                      {b2bOrders.filter(o => o.status === 'pending' || o.status === 'preparing').length} طلبية نشطة
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-bold group-hover:text-blue-600 transition">دخول ←</span>
+                  </div>
+                </button>
+              )}
 
-            <button
-              onClick={() => setActiveTab('financial')}
-              className={`w-full flex items-center justify-between p-4 rounded-2xl font-bold text-xs transition border cursor-pointer ${
-                activeTab === 'financial'
-                  ? 'bg-emerald-600 text-white border-transparent shadow-lg shadow-emerald-200/50'
-                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200/60'
-              }`}
-            >
-              <div className="flex items-center space-x-reverse space-x-3.5">
-                <BarChart3 className="w-4.5 h-4.5" />
-                <span>الحسابات المالية وجرد الذمم</span>
-              </div>
-            </button>
+              {/* Financial */}
+              {currentRole === 'admin' && (
+                <button
+                  onClick={() => setActiveTab('financial')}
+                  className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-violet-300 transition-all cursor-pointer text-right space-y-4 group"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-violet-50 text-violet-600 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-violet-100 transition">
+                      <BarChart3 className="w-6 h-6" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-black text-slate-800 text-sm">الحسابات المالية</h3>
+                      <p className="text-[10px] text-slate-500 font-semibold mt-0.5">الأرباح والذمم وقائمة الدخل وسجل التدقيق</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className={`text-[10px] px-2.5 py-1 rounded-full font-black ${netProfitMonth >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                      صافي الشهر: {netProfitMonth.toLocaleString()} د.ع
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-bold group-hover:text-violet-600 transition">دخول ←</span>
+                  </div>
+                </button>
+              )}
 
-            <button
-              onClick={() => setActiveTab('team')}
-              className={`w-full flex items-center justify-between p-4 rounded-2xl font-bold text-xs transition border cursor-pointer ${
-                activeTab === 'team'
-                  ? 'bg-emerald-600 text-white border-transparent shadow-lg shadow-emerald-200/50'
-                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200/60'
-              }`}
-            >
-              <div className="flex items-center space-x-reverse space-x-3.5">
-                <Users className="w-4.5 h-4.5" />
-                <span>الصيادلة والدوام</span>
-              </div>
-              <span className="text-[9px] bg-slate-100 text-emerald-700 px-2.5 py-0.5 rounded-full font-bold">٢ نشط</span>
-            </button>
+              {/* Team */}
+              {currentRole === 'admin' && (
+                <button
+                  onClick={() => setActiveTab('team')}
+                  className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-slate-400 transition-all cursor-pointer text-right space-y-4 group"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-slate-100 text-slate-600 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-slate-200 transition">
+                      <Users className="w-6 h-6" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-black text-slate-800 text-sm">الصيادلة والدوام</h3>
+                      <p className="text-[10px] text-slate-500 font-semibold mt-0.5">إدارة فريق العمل والجداول</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] bg-slate-100 text-slate-700 px-2.5 py-1 rounded-full font-black">
+                      {teamMembers.length} موظف
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-bold group-hover:text-slate-700 transition">دخول ←</span>
+                  </div>
+                </button>
+              )}
 
-            {/* Compliance inspection note */}
-            <div className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 space-y-3.5 text-xs">
-              <div className="flex items-center space-x-reverse space-x-2 text-emerald-400 font-extrabold text-[11px]">
-                <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                <span>تفتيش نقابة صيادلة العراق</span>
-              </div>
-              <p className="text-[10px] text-slate-300 font-semibold leading-relaxed">
-                الصيدلية ممتثلة لكافة شروط نقابة صيادلة العراق ووزارة الصحة الاتحادية. تم رصد آخر تحديث وتعميم من اللجنة الطبية.
-              </p>
-              <div className="p-2 bg-slate-850 rounded-lg text-slate-400 text-[10px] space-y-1 font-mono">
-                <div>ترخيص صيدلية: مجاز رسمي</div>
-                <div>آخر مطابقة: اليوم الصباح</div>
-              </div>
             </div>
 
+            {/* Compliance card — كان في الـ sidebar، يظهر في الصفحة الرئيسية فقط */}
+            <div className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-emerald-400 font-extrabold text-[11px]">
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>تفتيش نقابة صيادلة العراق</span>
+                </div>
+                <p className="text-[10px] text-slate-300 font-semibold">الصيدلية ممتثلة لكافة شروط نقابة صيادلة العراق ووزارة الصحة الاتحادية.</p>
+              </div>
+              <div className="flex gap-4 text-[10px] font-mono text-slate-400 shrink-0">
+                <span>ترخيص: مجاز رسمي</span>
+                <span>آخر مطابقة: اليوم</span>
+              </div>
+            </div>
           </div>
-
-          {/* Main workspace container viewport */}
-          <div className="lg:col-span-9 space-y-6">
+        ) : (
+          /* ======================================================
+             صفحة القسم — شريط رجوع + محتوى كامل العرض
+             ====================================================== */
+          <div className="space-y-4">
+            {/* شريط الرجوع للرئيسية */}
+            <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-2xl px-5 py-3 shadow-sm">
+              <button
+                onClick={() => setActiveTab('home')}
+                className="flex items-center gap-1.5 text-emerald-600 hover:text-emerald-700 font-black text-xs transition cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>الرئيسية</span>
+              </button>
+              <span className="text-slate-300 font-mono text-sm">/</span>
+              <span className="text-slate-700 font-black text-xs">
+                {activeTab === 'pos' ? 'نقطة البيع السريعة (POS)'
+                  : activeTab === 'inventory' ? 'المخزن وتنبيهات الصلاحية'
+                  : activeTab === 'b2b' ? 'طلبيات المذاخر (انوار الحسن B2B)'
+                  : activeTab === 'financial' ? 'الحسابات المالية وجرد الذمم'
+                  : activeTab === 'team' ? 'الصيادلة والدوام' : ''}
+              </span>
+            </div>
+            {/* محتوى القسم — كامل العرض */}
+            <div className="space-y-6">
             
             <AnimatePresence mode="wait">
               
@@ -1568,11 +2990,11 @@ export default function Dashboard() {
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
-                  className="grid grid-cols-1 md:grid-cols-12 gap-6"
+                  className="grid grid-cols-1 lg:grid-cols-12 gap-6"
                 >
                   
-                  {/* Left Column: Register checkout & current Cart */}
-                  <div className="md:col-span-5 bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
+                  {/* Left Column: Register checkout & current Cart - order-first on mobile */}
+                  <div className="lg:col-span-5 order-first lg:order-none bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
                     <div className="flex justify-between items-center border-b border-slate-100 pb-3">
                       <h3 className="font-extrabold text-slate-900 text-sm">سلة البيع الحالية</h3>
                       <button 
@@ -1665,6 +3087,24 @@ export default function Dashboard() {
                               <option value="15">تصفية خصم خاص للصيادلة (15%)</option>
                             </select>
                           </div>
+
+                          {/* بيع بالآجل: تسجيل ذمّة على الزبون بدل القبض النقدي */}
+                          <div className="space-y-2 pt-1">
+                            <label className="flex items-center gap-2 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={posOnCredit}
+                                onChange={(e) => setPosOnCredit(e.target.checked)}
+                                className="w-4 h-4 accent-amber-600 cursor-pointer"
+                              />
+                              <span className="text-[11px] font-black text-amber-700">بيع بالآجل (تسجيل ذمّة على الزبون)</span>
+                            </label>
+                            {posOnCredit && (
+                              <p className="text-[10px] text-amber-600 font-bold leading-relaxed">
+                                سيُسجَّل المبلغ كذمّة مستحقة على «{posCustomerName}» ولن يُضاف لصندوق الكاش حتى التحصيل.
+                              </p>
+                            )}
+                          </div>
                         </div>
 
                         {/* Calculated totals */}
@@ -1698,7 +3138,7 @@ export default function Dashboard() {
                           className="w-full bg-gradient-to-l from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 text-white py-3 px-4 rounded-xl text-xs font-black shadow-md shadow-emerald-200 transition cursor-pointer flex items-center justify-center space-x-reverse space-x-2"
                         >
                           <Check className="w-4 h-4" />
-                          <span>إتمام البيع وصرف الفاتورة</span>
+                          <span>{posOnCredit ? 'تسجيل البيع كذمّة آجلة' : 'إتمام البيع وصرف الفاتورة'}</span>
                         </button>
 
                       </form>
@@ -1706,7 +3146,7 @@ export default function Dashboard() {
                   </div>
 
                   {/* Right Column: Searchable fast-add medicines shelf */}
-                  <div className="md:col-span-7 bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
+                  <div className="lg:col-span-7 bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
                     <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
                       <div>
                         <h3 className="font-extrabold text-slate-900 text-sm">أدوية ومخازن الصيدلة الحاضرة</h3>
@@ -1828,6 +3268,65 @@ export default function Dashboard() {
                       })}
                     </div>
 
+                    {/* حركة مبيع اليوم — جميع المواد والأدوية المباعة اليوم بالوقت والكمية */}
+                    <div className="pt-4 border-t border-slate-100">
+                      <h4 className="font-extrabold text-slate-800 text-xs mb-3 flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4 text-blue-500" />
+                        <span>حركة مبيع اليوم</span>
+                        <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                          {salesLedger.filter(s => {
+                            const d = new Date(String(s.timestamp).replace(' ','T'));
+                            return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` === finTodayStr;
+                          }).reduce((sum, s) => sum + s.items.length, 0)} صنف
+                        </span>
+                      </h4>
+                      {(() => {
+                        const todayItems = salesLedger
+                          .filter(s => {
+                            const d = new Date(String(s.timestamp).replace(' ','T'));
+                            return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` === finTodayStr;
+                          })
+                          .flatMap(s =>
+                            s.items.map(it => ({
+                              name: it.name,
+                              qty: it.quantity,
+                              price: it.price,
+                              time: String(s.timestamp).slice(11, 16),
+                              invoiceId: s.invoiceId,
+                            }))
+                          );
+                        if (todayItems.length === 0) return (
+                          <p className="text-[10px] text-slate-400 font-bold text-center py-4">لا توجد مبيعات مسجّلة اليوم بعد</p>
+                        );
+                        return (
+                          <div className="overflow-x-auto rounded-xl border border-slate-100">
+                            <table className="w-full text-[10px] font-bold border-collapse">
+                              <thead>
+                                <tr className="bg-slate-50 text-slate-500 text-[9px] border-b border-slate-100">
+                                  <th className="text-right font-black py-2 px-3">الدواء / المادة</th>
+                                  <th className="text-center font-black py-2 px-3">الكمية</th>
+                                  <th className="text-center font-black py-2 px-3">الوقت</th>
+                                  <th className="text-center font-black py-2 px-3">الفاتورة</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {todayItems.map((row, i) => (
+                                  <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/60">
+                                    <td className="text-right py-2 px-3 text-slate-700">{row.name}</td>
+                                    <td className="text-center py-2 px-3">
+                                      <span className="bg-blue-50 text-blue-700 font-mono px-2 py-0.5 rounded-lg">{row.qty}</span>
+                                    </td>
+                                    <td className="text-center py-2 px-3 font-mono text-slate-500">{row.time}</td>
+                                    <td className="text-center py-2 px-3 font-mono text-slate-400 text-[9px]">{row.invoiceId}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        );
+                      })()}
+                    </div>
+
                     {/* Historical sales log list below the shelf to see how money accumulated */}
                     <div className="pt-4 border-t border-slate-100">
                       <h4 className="font-extrabold text-slate-800 text-xs mb-3 flex items-center space-x-reverse space-x-2">
@@ -1835,21 +3334,112 @@ export default function Dashboard() {
                         <span>أحدث فواتير المبيعات الصادرة اليوم</span>
                       </h4>
                       <div className="space-y-2">
-                        {salesLedger.map((s) => (
-                          <div key={s.invoiceId} className="p-3 bg-slate-50/50 rounded-xl flex items-center justify-between text-[11px] border border-slate-100">
-                            <div>
-                              <strong className="text-slate-900 font-bold font-mono text-[10px]">{s.invoiceId}</strong>
-                              <span className="text-slate-400 mx-2">•</span>
-                              <span className="text-slate-600 font-medium">العميل: {s.customerName}</span>
-                              {s.isControlled && (
-                                <span className="text-[8px] bg-rose-100 text-rose-800 font-bold px-1.5 py-0.5 rounded mr-2">مؤثر عقلي رقابي</span>
+                        {returnSuccess && (
+                          <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 text-[10px] font-bold text-emerald-700 mb-2">
+                            <CheckCircle2 className="w-3.5 h-3.5" /> تمّ تسجيل المرتجع وتحديث المخزون بنجاح
+                          </div>
+                        )}
+                        {salesLedger.map((s) => {
+                          const isExpanded = expandedInvoiceId === s.invoiceId;
+                          return (
+                            <div key={s.invoiceId} className={`rounded-xl border text-[11px] transition-all ${isExpanded ? 'border-blue-200 bg-blue-50/30' : 'border-slate-100 bg-slate-50/50'}`}>
+                              {/* رأس الفاتورة — قابل للضغط للتوسيع */}
+                              <div
+                                className="p-3 flex items-center justify-between cursor-pointer select-none"
+                                onClick={() => {
+                                  if (isExpanded) {
+                                    setExpandedInvoiceId(null);
+                                  } else {
+                                    setExpandedInvoiceId(s.invoiceId);
+                                    setEditingItems(s.items.map(it => ({ ...it })));
+                                  }
+                                }}
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className={`text-[9px] transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
+                                  <strong className="text-slate-900 font-bold font-mono text-[10px]">{s.invoiceId}</strong>
+                                  <span className="text-slate-400">•</span>
+                                  <span className="text-slate-600 font-medium truncate">العميل: {s.customerName}</span>
+                                  {salesReturns.some(r => r.originalInvoiceId === s.invoiceId) && (
+                                    <span className="text-[8px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded shrink-0">مُرتجَع</span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="font-mono font-bold text-slate-700">{s.total.toLocaleString()} د.ع</span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setReturnTarget(s);
+                                      setReturnQtys({});
+                                      setReturnReason('');
+                                      setReturnRefundMethod('cash');
+                                      setShowReturnModal(true);
+                                    }}
+                                    className="text-[9px] font-black px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg transition cursor-pointer"
+                                  >
+                                    إرجاع
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* تفاصيل الأصناف — قابلة للتعديل */}
+                              {isExpanded && (
+                                <div className="px-3 pb-3 space-y-2 border-t border-blue-100">
+                                  <p className="text-[9px] text-blue-600 font-black pt-2">المواد المباعة — يمكنك تعديل الكمية أو السعر ثم حفظ التغييرات</p>
+                                  <div className="space-y-1.5">
+                                    {editingItems.map((it, idx) => (
+                                      <div key={idx} className="flex items-center gap-2 bg-white border border-slate-100 rounded-lg px-3 py-2">
+                                        <span className="flex-1 text-slate-700 font-bold text-[10px] truncate">{it.name}</span>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                          <span className="text-[9px] text-slate-400">كمية</span>
+                                          <input
+                                            type="number"
+                                            min={1}
+                                            value={it.quantity}
+                                            onChange={e => setEditingItems(prev => prev.map((x, i) => i === idx ? { ...x, quantity: Math.max(1, Number(e.target.value)) } : x))}
+                                            className="w-14 text-center border border-slate-200 rounded-lg px-1 py-0.5 font-mono text-[10px] font-bold bg-white"
+                                          />
+                                        </div>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                          <span className="text-[9px] text-slate-400">سعر</span>
+                                          <input
+                                            type="number"
+                                            min={0}
+                                            value={it.price}
+                                            onChange={e => setEditingItems(prev => prev.map((x, i) => i === idx ? { ...x, price: Math.max(0, Number(e.target.value)) } : x))}
+                                            className="w-24 text-center border border-slate-200 rounded-lg px-1 py-0.5 font-mono text-[10px] font-bold bg-white"
+                                          />
+                                        </div>
+                                        <span className="text-[9px] font-mono text-emerald-700 shrink-0">
+                                          = {(it.quantity * it.price).toLocaleString()}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                  <div className="flex items-center justify-between pt-1">
+                                    <span className="text-[10px] font-black text-slate-700">
+                                      الإجمالي الجديد: <span className="font-mono text-emerald-700">{editingItems.reduce((s, it) => s + it.quantity * it.price, 0).toLocaleString()} د.ع</span>
+                                    </span>
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={() => setExpandedInvoiceId(null)}
+                                        className="text-[9px] font-black px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition cursor-pointer border-none"
+                                      >
+                                        إلغاء
+                                      </button>
+                                      <button
+                                        onClick={() => handleSaveInvoiceEdit(s.invoiceId)}
+                                        className="text-[9px] font-black px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition cursor-pointer border-none"
+                                      >
+                                        حفظ التعديلات
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
                               )}
                             </div>
-                            <div className="text-left font-mono font-bold text-slate-700">
-                              <span>{s.total.toLocaleString()} د.ع</span>
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -1878,15 +3468,27 @@ export default function Dashboard() {
                         <p className="text-[10px] text-slate-400 font-bold mt-0.5">تحرير الأسعار ونسب المخزون وإدارة فترات انتهاء صلاحية الأدوية العضوية والمبردة</p>
                       </div>
 
-                      <div className="flex gap-2">
-                        <button 
+                      <div className="flex gap-2 flex-wrap">
+                        <button
                           onClick={() => setIsAddingDrug(!isAddingDrug)}
                           className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-4 py-2.5 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5"
                         >
                           <Plus className="w-4 h-4" />
                           <span>إضافة دواء جديد للمنظومة</span>
                         </button>
-                        
+
+                        {currentRole === 'admin' && (
+                          <button
+                            onClick={() => setShowBulkImportConfirm(true)}
+                            disabled={bulkImportStatus === 'loading' || bulkImportStatus === 'writing'}
+                            className="bg-slate-800 hover:bg-slate-900 text-white font-black text-xs px-4 py-2.5 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="استيراد المخزون الكامل من برنامج ES-PRO"
+                          >
+                            <Download className="w-4 h-4" />
+                            <span>استيراد المخزون الكامل</span>
+                          </button>
+                        )}
+
                         {/* Search in Inventory */}
                         <div className="flex items-center gap-2">
                           <div className="relative">
@@ -1910,6 +3512,37 @@ export default function Dashboard() {
                         </div>
                       </div>
                     </div>
+
+                    {/* Bulk import status banner */}
+                    {bulkImportStatus !== 'idle' && (
+                      <div className={`rounded-2xl p-4 text-right flex items-center gap-3 shadow-sm border ${
+                        bulkImportStatus === 'error' ? 'bg-red-50 border-red-200' :
+                        bulkImportStatus === 'done' ? 'bg-emerald-50 border-emerald-200' :
+                        'bg-slate-50 border-slate-200'
+                      }`}>
+                        {(bulkImportStatus === 'loading' || bulkImportStatus === 'writing') && (
+                          <RefreshCw className="w-5 h-5 text-slate-600 animate-spin shrink-0" />
+                        )}
+                        {bulkImportStatus === 'done' && <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />}
+                        {bulkImportStatus === 'error' && <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />}
+                        <div className="flex-1">
+                          <p className={`text-xs font-extrabold ${
+                            bulkImportStatus === 'error' ? 'text-red-800' :
+                            bulkImportStatus === 'done' ? 'text-emerald-800' : 'text-slate-800'
+                          }`}>
+                            {bulkImportStatus === 'writing'
+                              ? `جارٍ الرفع السحابي... ${bulkImportProgress.done.toLocaleString()} / ${bulkImportProgress.total.toLocaleString()}`
+                              : bulkImportMsg}
+                          </p>
+                          {bulkImportStatus === 'writing' && (
+                            <div className="mt-2 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                              <div className="h-full bg-emerald-500 transition-all duration-300"
+                                style={{ width: `${bulkImportProgress.total ? (bulkImportProgress.done / bulkImportProgress.total) * 100 : 0}%` }} />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Automatic Alert: Near Expiry Medicines (30 days) */}
                     {getNearExpiryMeds().length > 0 && (
@@ -1956,7 +3589,7 @@ export default function Dashboard() {
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      setB2bSelectedMedId(med.id);
+                                      addToPurchaseDraft(med);
                                       setActiveTab('b2b');
                                     }}
                                     className="text-[9px] bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-850 font-black px-2.5 py-1 rounded-lg transition border border-emerald-150 cursor-pointer flex items-center gap-1"
@@ -1972,10 +3605,106 @@ export default function Dashboard() {
                       </div>
                     )}
 
+                    {/* لوحة الصلاحيات الموسّعة: أفق 6 أشهر مع تصفية بالشهر وترتيب بالأولوية */}
+                    {getHorizonExpiryMeds().length > 0 && (
+                      <div className="bg-white border border-slate-200/70 rounded-2xl shadow-sm overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => setShowExpiryHorizon(!showExpiryHorizon)}
+                          className="w-full flex items-center justify-between p-5 text-right hover:bg-slate-50/60 transition cursor-pointer"
+                        >
+                          <div className="flex items-center space-x-reverse space-x-2.5">
+                            <span className="flex items-center justify-center w-8 h-8 rounded-xl bg-amber-50 border border-amber-150">
+                              <CalendarClock className="w-4 h-4 text-amber-600" />
+                            </span>
+                            <div>
+                              <h4 className="font-extrabold text-xs text-slate-900">سجلّ الصلاحيات الموسّع — أفق 6 أشهر</h4>
+                              <p className="text-[9px] text-slate-400 font-bold mt-0.5">اضغط شهراً لعرض كل المواد المنتهية فيه، مرتّبة بالأولوية (الأقرب انتهاءً أولاً)</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-reverse space-x-2">
+                            <span className="text-[10px] bg-amber-100 text-amber-800 font-extrabold px-3 py-0.5 rounded-full border border-amber-200/50">
+                              {getHorizonExpiryMeds().length} مستحضر
+                            </span>
+                            <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${showExpiryHorizon ? 'rotate-180' : ''}`} />
+                          </div>
+                        </button>
+
+                        {showExpiryHorizon && (
+                          <div className="px-5 pb-5 space-y-4 border-t border-slate-100 pt-4">
+                            {/* شرائح اختيار الشهر */}
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedExpiryMonth(null)}
+                                className={`text-[10px] font-extrabold px-3 py-1.5 rounded-lg border transition cursor-pointer ${selectedExpiryMonth === null ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'}`}
+                              >
+                                الكل ({getHorizonExpiryMeds().length})
+                              </button>
+                              {getExpiryMonths().map(mo => (
+                                <button
+                                  key={mo.key}
+                                  type="button"
+                                  disabled={mo.count === 0}
+                                  onClick={() => setSelectedExpiryMonth(mo.key)}
+                                  className={`text-[10px] font-extrabold px-3 py-1.5 rounded-lg border transition flex items-center gap-1.5 ${mo.count === 0 ? 'bg-slate-50/50 text-slate-300 border-slate-100 cursor-not-allowed' : selectedExpiryMonth === mo.key ? 'bg-amber-500 text-white border-amber-500 cursor-pointer' : 'bg-amber-50 text-amber-700 border-amber-200/60 hover:border-amber-300 cursor-pointer'}`}
+                                >
+                                  <span>{mo.label}</span>
+                                  {mo.count > 0 && (
+                                    <span className={`text-[8px] px-1.5 py-0.5 rounded-full ${selectedExpiryMonth === mo.key ? 'bg-white/25' : 'bg-amber-200/70'}`}>{mo.count}</span>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+
+                            {/* القائمة المرتّبة بالأولوية */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {getHorizonExpiryMeds()
+                                .filter(med => selectedExpiryMonth === null || (expiryDates[med.id] || '').substring(0, 7) === selectedExpiryMonth)
+                                .map(med => {
+                                  const days = getDaysUntilExpiry(med.id);
+                                  const sev = expirySeverity(days);
+                                  const tone = sev === 'expired' || sev === 'critical'
+                                    ? { card: 'border-rose-100/70 hover:border-rose-200', icon: 'text-rose-600', badge: 'bg-rose-50 text-rose-700 border-rose-200/50' }
+                                    : sev === 'warning'
+                                    ? { card: 'border-amber-100/70 hover:border-amber-200', icon: 'text-amber-600', badge: 'bg-amber-50 text-amber-700 border-amber-200/50' }
+                                    : { card: 'border-slate-200/70 hover:border-slate-300', icon: 'text-slate-500', badge: 'bg-slate-50 text-slate-600 border-slate-200/50' };
+                                  return (
+                                    <div key={med.id} className={`bg-white border ${tone.card} p-3.5 rounded-xl flex items-center justify-between text-xs transition hover:shadow-xs`}>
+                                      <div className="space-y-1">
+                                        <strong className="font-extrabold text-slate-950 block">{med.nameAr}</strong>
+                                        <span className="text-[10px] text-slate-500 font-mono block">{med.nameEn} • {med.scientificName}</span>
+                                        <div className="flex items-center space-x-reverse space-x-1.5 mt-1">
+                                          <Clock className={`w-3.5 h-3.5 ${tone.icon}`} />
+                                          <span className={`text-[10px] font-bold font-mono ${tone.icon}`}>انتهاء الصلاحية: {expiryDates[med.id]}</span>
+                                        </div>
+                                      </div>
+                                      <div className="flex flex-col items-end space-y-2.5">
+                                        <span className={`px-2.5 py-0.5 rounded-lg border font-extrabold text-[10px] tracking-wide ${tone.badge}`}>
+                                          {days < 0 ? `منتهية منذ ${Math.abs(days)} يوم` : days === 0 ? 'تنتهي اليوم!' : `متبقي ${days} يوم`}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => { addToPurchaseDraft(med); setActiveTab('b2b'); }}
+                                          className="text-[9px] bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-850 font-black px-2.5 py-1 rounded-lg transition border border-emerald-150 cursor-pointer flex items-center gap-1"
+                                        >
+                                          <Plus className="w-3 h-3" />
+                                          <span>طلب توريد B2B</span>
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* Expandable Box: Add drug Form */}
                     {isAddingDrug && (
                       <form onSubmit={handleAddNewDrug} className="bg-slate-50 p-5 rounded-2xl border border-slate-100 p-6 space-y-4">
-                        <h4 className="font-black text-slate-900 text-xs">إدخال دواء ومستحضر تجميل جديد يدوياً في صيدلية بلس</h4>
+                        <h4 className="font-black text-slate-900 text-xs">إدخال دواء ومستحضر تجميل جديد يدوياً في صيدلية انوار الحسن</h4>
                         
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                           <div className="space-y-1">
@@ -2065,6 +3794,17 @@ export default function Dashboard() {
                           </div>
                         </div>
 
+                        <div className="space-y-1">
+                          <label className="block text-[10px] font-bold text-slate-500">حد التنبيه (أدنى كمية):</label>
+                          <input
+                            type="number" min="1"
+                            value={newDrugMinStock ?? 15}
+                            onChange={(e) => setNewDrugMinStock(Number(e.target.value))}
+                            className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-emerald-500"
+                            placeholder="15"
+                          />
+                        </div>
+
                         <div className="flex justify-end space-x-reverse space-x-3 pt-3">
                           <button 
                             type="button" onClick={() => setIsAddingDrug(false)}
@@ -2076,7 +3816,7 @@ export default function Dashboard() {
                             type="submit"
                             className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl text-xs font-black cursor-pointer"
                           >
-                            حفظ المنتج في كبسولة بلس
+                            حفظ المنتج في انوار الحسن
                           </button>
                         </div>
                       </form>
@@ -2145,6 +3885,9 @@ export default function Dashboard() {
                                     }`}>
                                       {med.availableQuantity <= 0 ? 'نفذ بالكامل' : `${med.availableQuantity} علبة`}
                                     </span>
+                                    {med.availableQuantity <= (med.minStock ?? 15) && med.availableQuantity > 0 && (
+                                      <span className="text-[8px] bg-amber-500 text-white font-bold px-1.5 py-0.5 rounded mr-1">طلب عاجل</span>
+                                    )}
                                   </td>
                                   <td className={`py-3 px-4 font-mono font-bold ${isNearExpiry30 ? 'text-rose-600' : 'text-slate-400'}`}>
                                     <div className="flex items-center space-x-reverse space-x-1">
@@ -2193,6 +3936,346 @@ export default function Dashboard() {
                         </tbody>
                       </table>
                     </div>
+
+                  {/* ===================================================== */}
+                  {/* حركة المادة — سجل الوارد (شراء) والصادر (بيع) لصنف معيّن */}
+                  {/* ===================================================== */}
+                  <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
+                    <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                      <div className="w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+                        <RefreshCw className="w-4 h-4 text-indigo-600" />
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-slate-900 text-sm">حركة المادة — سجل الوارد والصادر</h4>
+                        <p className="text-[10px] text-slate-400 font-bold mt-0.5">اختر صنفاً لعرض كميات الشراء والبيع وتواريخها ضمن مدة زمنية قابلة للتحديد</p>
+                      </div>
+                    </div>
+
+                    {/* أدوات التحكم: اختيار الصنف + المدى الزمني */}
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                      <div className="md:col-span-5 space-y-1 relative">
+                        <label className="block text-[10px] font-black text-slate-500">الصنف / الدواء (بحث بالاسم أو الباركود)</label>
+                        <div className="flex gap-1.5">
+                          <div className="relative flex-1">
+                            <Search className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            <input
+                              type="text"
+                              value={movementSearch}
+                              onChange={(e) => {
+                                setMovementSearch(e.target.value);
+                                setMovementDropdownOpen(true);
+                                if (!e.target.value.trim()) setMovementMedId('');
+                              }}
+                              onFocus={() => setMovementDropdownOpen(true)}
+                              onBlur={() => setTimeout(() => setMovementDropdownOpen(false), 150)}
+                              placeholder="اكتب اسم الدواء أو امسح الباركود..."
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-8 py-2.5 text-xs font-bold text-slate-700 focus:outline-indigo-400 placeholder:text-slate-400 placeholder:font-medium"
+                            />
+                            {movementSearch && (
+                              <button
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => { setMovementSearch(''); setMovementMedId(''); setMovementDropdownOpen(false); }}
+                                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer bg-transparent border-none p-0"
+                                title="مسح"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => startScanning('movement')}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl px-3 py-2 cursor-pointer transition flex items-center justify-center shrink-0 border-none"
+                            title="مسح الباركود بالكاميرا"
+                          >
+                            <Barcode className="w-4 h-4" />
+                          </button>
+                        </div>
+                        {/* قائمة النتائج المنسدلة */}
+                        {movementDropdownOpen && (() => {
+                          const q = movementSearch.toLowerCase().trim();
+                          const selectedMed = inventory.find(m => m.id === movementMedId);
+                          const isExactSelected = !!selectedMed && movementSearch === `${selectedMed.nameAr} (${selectedMed.nameEn})`;
+                          const filtered = [...inventory]
+                            .filter(m =>
+                              !q || isExactSelected ||
+                              m.nameAr.toLowerCase().includes(q) ||
+                              m.nameEn.toLowerCase().includes(q) ||
+                              (m.scientificName || '').toLowerCase().includes(q) ||
+                              (m.barcode || '').includes(q)
+                            )
+                            .sort((a, b) => a.nameAr.localeCompare(b.nameAr));
+                          return (
+                            <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+                              {filtered.length === 0 ? (
+                                <p className="text-[10px] text-slate-400 font-bold text-center py-3">لا توجد نتائج مطابقة</p>
+                              ) : filtered.map(m => (
+                                <button
+                                  key={m.id}
+                                  type="button"
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={() => {
+                                    setMovementMedId(m.id);
+                                    setMovementSearch(`${m.nameAr} (${m.nameEn})`);
+                                    setMovementDropdownOpen(false);
+                                  }}
+                                  className={`w-full text-right px-3 py-2 hover:bg-indigo-50 cursor-pointer border-none flex items-center justify-between gap-2 transition ${m.id === movementMedId ? 'bg-indigo-50' : 'bg-transparent'}`}
+                                >
+                                  <div className="min-w-0">
+                                    <span className="block text-[11px] font-black text-slate-800 truncate">{m.nameAr} <span className="text-slate-400 font-mono text-[9px]">{m.nameEn}</span></span>
+                                    <span className="block text-[9px] text-slate-400 font-mono">{m.barcode || '—'} • {m.category}</span>
+                                  </div>
+                                  <span className="text-[9px] text-slate-400 font-bold shrink-0 whitespace-nowrap">{m.availableQuantity} علبة</span>
+                                </button>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                      <div className="md:col-span-3 space-y-1">
+                        <label className="block text-[10px] font-black text-slate-500">من تاريخ</label>
+                        <input
+                          type="date"
+                          value={movementFrom}
+                          onChange={(e) => setMovementFrom(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-700 font-mono focus:outline-indigo-400"
+                        />
+                      </div>
+                      <div className="md:col-span-3 space-y-1">
+                        <label className="block text-[10px] font-black text-slate-500">إلى تاريخ</label>
+                        <input
+                          type="date"
+                          value={movementTo}
+                          onChange={(e) => setMovementTo(e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-700 font-mono focus:outline-indigo-400"
+                        />
+                      </div>
+                      <div className="md:col-span-1">
+                        <button
+                          type="button"
+                          onClick={() => { setMovementFrom(''); setMovementTo(''); }}
+                          className="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-black py-2.5 rounded-xl text-[10px] cursor-pointer transition border-none"
+                          title="مسح المدى الزمني"
+                        >
+                          مسح
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* النتائج */}
+                    {!movementMedId ? (
+                      <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl py-10 text-center">
+                        <Search className="w-6 h-6 text-slate-300 mx-auto mb-2" />
+                        <p className="text-[11px] text-slate-400 font-bold">اختر صنفاً من القائمة أعلاه لعرض سجل حركته (الوارد والصادر)</p>
+                      </div>
+                    ) : (() => {
+                      const med = inventory.find(m => m.id === movementMedId);
+                      const { movements, totalIn, totalOut, valueIn, valueOut } = getStockMovements(movementMedId, movementFrom, movementTo);
+                      const net = totalIn - totalOut;
+                      return (
+                        <div className="space-y-4">
+                          {/* بطاقات الملخص */}
+                          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                            <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
+                              <span className="text-[9px] text-emerald-700 font-black block mb-1">إجمالي الوارد (شراء)</span>
+                              <strong className="text-lg font-black text-emerald-700 font-mono block">{totalIn.toLocaleString()} <span className="text-[9px] font-bold">علبة</span></strong>
+                              <span className="text-[9px] text-emerald-600/70 font-bold font-mono">{valueIn.toLocaleString()} د.ع</span>
+                            </div>
+                            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
+                              <span className="text-[9px] text-blue-700 font-black block mb-1">إجمالي الصادر (بيع)</span>
+                              <strong className="text-lg font-black text-blue-700 font-mono block">{totalOut.toLocaleString()} <span className="text-[9px] font-bold">علبة</span></strong>
+                              <span className="text-[9px] text-blue-600/70 font-bold font-mono">{valueOut.toLocaleString()} د.ع</span>
+                            </div>
+                            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
+                              <span className="text-[9px] text-slate-500 font-black block mb-1">صافي الحركة</span>
+                              <strong className={`text-lg font-black font-mono block ${net >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>{net >= 0 ? '+' : ''}{net.toLocaleString()} <span className="text-[9px] font-bold">علبة</span></strong>
+                              <span className="text-[9px] text-slate-400 font-bold">وارد − صادر</span>
+                            </div>
+                            <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4">
+                              <span className="text-[9px] text-indigo-700 font-black block mb-1">الرصيد الحالي بالمخزن</span>
+                              <strong className="text-lg font-black text-indigo-700 font-mono block">{(med?.availableQuantity ?? 0).toLocaleString()} <span className="text-[9px] font-bold">علبة</span></strong>
+                              <span className="text-[9px] text-indigo-600/70 font-bold">{med?.nameAr}</span>
+                            </div>
+                          </div>
+
+                          {/* جدول الحركات الزمني */}
+                          {movements.length === 0 ? (
+                            <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl py-8 text-center">
+                              <p className="text-[11px] text-slate-400 font-bold">لا توجد حركات مسجّلة لهذا الصنف{(movementFrom || movementTo) ? ' ضمن المدى الزمني المحدد' : ''}</p>
+                            </div>
+                          ) : (
+                            <div className="overflow-x-auto border border-slate-100 rounded-2xl">
+                              <table className="w-full text-right text-[11px]">
+                                <thead>
+                                  <tr className="bg-slate-50 text-slate-500 border-b border-slate-100 font-bold">
+                                    <th className="py-2.5 px-3 rounded-r-xl">التاريخ</th>
+                                    <th className="py-2.5 px-3 text-center">نوع الحركة</th>
+                                    <th className="py-2.5 px-3 text-center">الكمية</th>
+                                    <th className="py-2.5 px-3 text-center">سعر الوحدة</th>
+                                    <th className="py-2.5 px-3 text-center">القيمة الإجمالية</th>
+                                    <th className="py-2.5 px-3">المرجع</th>
+                                    <th className="py-2.5 px-3 rounded-l-xl">الجهة</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {movements.map((mv, i) => (
+                                    <tr key={mv.ref + '-' + i} className="border-b border-slate-100/70 hover:bg-slate-50/50 transition">
+                                      <td className="py-2.5 px-3 font-mono text-slate-500 whitespace-nowrap">{mv.date}</td>
+                                      <td className="py-2.5 px-3 text-center">
+                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[9px] font-black ${mv.type === 'in' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>
+                                          {mv.type === 'in' ? '↓ وارد (شراء)' : '↑ صادر (بيع)'}
+                                        </span>
+                                      </td>
+                                      <td className={`py-2.5 px-3 text-center font-mono font-black ${mv.type === 'in' ? 'text-emerald-700' : 'text-blue-700'}`}>
+                                        {mv.type === 'in' ? '+' : '−'}{mv.qty.toLocaleString()}
+                                      </td>
+                                      <td className="py-2.5 px-3 text-center font-mono text-slate-600">{mv.price.toLocaleString()} د.ع</td>
+                                      <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-700">{(mv.qty * mv.price).toLocaleString()} د.ع</td>
+                                      <td className="py-2.5 px-3 font-mono text-slate-400">{mv.ref}</td>
+                                      <td className="py-2.5 px-3 text-slate-600 font-semibold max-w-[160px] truncate" title={mv.party}>{mv.party}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                          <p className="text-[9px] text-slate-400 font-bold">* الوارد يُحتسب من طلبيات الشراء (المذاخر)، والصادر من سجل فواتير البيع (POS). عدد الحركات: {movements.length}</p>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Reorder point section */}
+                  {(() => {
+                    const lowItems = inventory.filter(m =>
+                      m.availableQuantity <= 1 && !dismissedLowStock.has(m.id)
+                    );
+                    if (lowItems.length === 0) return null;
+
+                    // حساب أعلى كمية سبق شراؤها لكل دواء من سجل الطلبيات
+                    const getMaxPurchasedQty = (med: Medicine): number => {
+                      let max = 0;
+                      b2bOrders.forEach(order => {
+                        order.items?.forEach((it: any) => {
+                          if (
+                            it.medicineName?.includes(med.nameAr.substring(0, 6)) ||
+                            med.nameAr.includes((it.medicineName || '').substring(0, 6))
+                          ) {
+                            if ((it.quantity || 0) > max) max = it.quantity;
+                          }
+                        });
+                      });
+                      return max;
+                    };
+
+                    // اقتراح كمية الطلب بناءً على سلوك الشراء السابق
+                    const getSuggestedQty = (med: Medicine): number => {
+                      const maxQty = getMaxPurchasedQty(med);
+                      if (maxQty > 100) return 10;
+                      if (maxQty > 50)  return 5;
+                      if (maxQty > 10)  return 2;
+                      return 2;
+                    };
+
+                    return (
+                      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">
+                        {/* رأس القسم */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 text-amber-600" />
+                            <span className="text-xs font-black text-amber-900">أصناف نفدت أو شارفت على النفاد</span>
+                            <span className="text-[10px] bg-amber-200 text-amber-900 font-extrabold px-2.5 py-0.5 rounded-full">{lowItems.length} صنف</span>
+                          </div>
+                          {/* زر الطباعة */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const win = window.open('', '_blank');
+                              if (!win) return;
+                              win.document.write(`
+                                <html dir="rtl"><head><title>قائمة الطلب العاجل</title>
+                                <style>body{font-family:Arial,sans-serif;padding:20px;direction:rtl}
+                                table{width:100%;border-collapse:collapse}
+                                th,td{border:1px solid #ccc;padding:8px 12px;text-align:right}
+                                th{background:#fef3c7;font-weight:bold}
+                                h2{color:#92400e}</style></head><body>
+                                <h2>قائمة الطلب العاجل — صيدلية انوار الحسن</h2>
+                                <p style="color:#666;font-size:12px">${new Date().toLocaleDateString('ar-IQ')}</p>
+                                <table><thead><tr><th>الدواء</th><th>الكمية الحالية</th><th>الكمية المقترحة للطلب</th></tr></thead>
+                                <tbody>${lowItems.map(m => `<tr><td>${m.nameAr}</td><td>${m.availableQuantity} علبة</td><td>${getSuggestedQty(m)} علبة</td></tr>`).join('')}
+                                </tbody></table></body></html>
+                              `);
+                              win.document.close();
+                              win.print();
+                            }}
+                            className="flex items-center gap-1.5 text-[10px] font-black bg-amber-200 hover:bg-amber-300 text-amber-900 px-3 py-1.5 rounded-xl transition cursor-pointer border-none"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            طباعة القائمة
+                          </button>
+                        </div>
+
+                        {/* قائمة الأصناف */}
+                        <div className="space-y-2">
+                          {lowItems.map(m => {
+                            const suggestedQty = getSuggestedQty(m);
+                            const maxPast = getMaxPurchasedQty(m);
+                            return (
+                              <div key={m.id} className="bg-white border border-amber-100 rounded-xl px-3 py-2.5 flex items-center justify-between text-xs gap-2">
+                                <div className="min-w-0 flex-1">
+                                  <span className="font-bold text-slate-800 block">{m.nameAr}</span>
+                                  <span className={`font-mono font-bold text-[10px] ${m.availableQuantity === 0 ? 'text-rose-600' : 'text-amber-600'}`}>
+                                    {m.availableQuantity === 0 ? 'نفد المخزون' : `${m.availableQuantity} علبة متبقية`}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {/* اقتراح الكمية */}
+                                  <div className="text-center">
+                                    <span className="text-[8px] text-slate-400 font-bold block">اقتراح الطلب</span>
+                                    <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg font-mono">
+                                      {suggestedQty} علبة
+                                    </span>
+                                    {maxPast > 0 && (
+                                      <span className="text-[8px] text-slate-400 block">بناءً على {maxPast} سابقاً</span>
+                                    )}
+                                  </div>
+                                  {/* زر إضافة للشراء */}
+                                  <button
+                                    type="button"
+                                    onClick={() => { addToPurchaseDraft(m, suggestedQty); setActiveTab('b2b'); }}
+                                    className="text-[9px] font-black px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition cursor-pointer border-none"
+                                  >
+                                    أضف للشراء
+                                  </button>
+                                  {/* زر الإخفاء */}
+                                  <button
+                                    type="button"
+                                    onClick={() => setDismissedLowStock(prev => new Set([...prev, m.id]))}
+                                    className="text-[9px] font-black px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-lg transition cursor-pointer border-none"
+                                    title="إخفاء من القائمة"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {dismissedLowStock.size > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setDismissedLowStock(new Set())}
+                            className="text-[9px] text-amber-700 font-bold underline cursor-pointer bg-transparent border-none"
+                          >
+                            إعادة عرض الأصناف المخفية ({dismissedLowStock.size})
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Stock Movement Log */}
 
                   </div>
                 </motion.div>
@@ -2248,7 +4331,22 @@ export default function Dashboard() {
                     
                     {/* RIGHT PANEL - QUICK ADDERS (4 Cols) */}
                     <div className="lg:col-span-4 space-y-6">
-                      
+
+                      {/* Import from Image Button */}
+                      <button
+                        type="button"
+                        onClick={() => setShowInvoiceImport(true)}
+                        className="w-full flex items-center gap-3 bg-gradient-to-l from-emerald-600 to-emerald-500 text-white rounded-2xl p-4 shadow-sm hover:from-emerald-700 hover:to-emerald-600 transition cursor-pointer"
+                      >
+                        <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
+                          <ScanLine className="w-5 h-5" />
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs font-extrabold">استيراد فاتورة من صورة</p>
+                          <p className="text-[10px] text-emerald-100 font-bold mt-0.5">ارفع صورة القائمة وسيُعبّأ المخزون تلقائياً</p>
+                        </div>
+                      </button>
+
                       {/* Interactive Section: Search and Add by Name */}
                       <div className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-xs space-y-4">
                         <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
@@ -2269,20 +4367,32 @@ export default function Dashboard() {
                               type="text"
                               value={purchaseSearchWord}
                               onChange={(e) => setPurchaseSearchWord(e.target.value)}
-                              placeholder="ابحث بالاسم العربي، الإنكليزي أو المادة..."
-                              className="w-full bg-slate-50 hover:bg-slate-100/70 border border-slate-200 rounded-xl py-2.5 pr-9 pl-4 text-xs font-bold text-slate-850 placeholder:text-slate-400 transition focus:outline-emerald-500"
+                              placeholder="ابحث بالاسم أو الباركود..."
+                              className="w-full bg-slate-50 hover:bg-slate-100/70 border border-slate-200 rounded-xl py-2.5 pr-9 pl-10 text-xs font-bold text-slate-850 placeholder:text-slate-400 transition focus:outline-emerald-500"
                             />
+                            <button
+                              type="button"
+                              onClick={() => startScanning('purchase-order')}
+                              title="مسح باركود"
+                              className="absolute inset-y-0 left-2 flex items-center px-1 text-emerald-600 hover:text-emerald-700 transition cursor-pointer"
+                            >
+                              <Barcode className="w-4 h-4" />
+                            </button>
                           </div>
 
                           {/* Quick Suggestion List */}
                           {purchaseSearchWord.trim().length > 0 && (
                             <div className="bg-white border border-slate-150 rounded-2xl max-h-56 overflow-y-auto divide-y divide-slate-100 text-right shadow-md scrollbar-thin">
                               {inventory
-                                .filter(m => 
-                                  m.nameAr.toLowerCase().includes(purchaseSearchWord.toLowerCase()) || 
-                                  m.nameEn.toLowerCase().includes(purchaseSearchWord.toLowerCase()) ||
-                                  (m.scientificName && m.scientificName.toLowerCase().includes(purchaseSearchWord.toLowerCase()))
-                                )
+                                .filter(m => {
+                                  const q = purchaseSearchWord.toLowerCase();
+                                  return (
+                                    m.nameAr.toLowerCase().includes(q) ||
+                                    m.nameEn.toLowerCase().includes(q) ||
+                                    (m.scientificName && m.scientificName.toLowerCase().includes(q)) ||
+                                    (m.barcode && m.barcode.toLowerCase().includes(q))
+                                  );
+                                })
                                 .slice(0, 6)
                                 .map(med => (
                                   <button
@@ -2314,26 +4424,6 @@ export default function Dashboard() {
                         </div>
                       </div>
 
-                      {/* Barcode Quick Scan Section */}
-                      <div className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-xs space-y-4">
-                        <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-                          <Barcode className="w-5 h-5 text-emerald-600" />
-                          <h4 className="font-extrabold text-xs text-slate-900">إضافة فورية عبر كاميرا الباركود</h4>
-                        </div>
-                        
-                        <p className="text-[10px] text-slate-400 font-bold leading-relaxed">
-                          وجّه باركود علبة الدواء نحو الكاميرا ليقوم النظام بمطابقتها ذاتياً وإدراجها فورياً في جدول الشراء.
-                        </p>
-
-                        <button
-                          type="button"
-                          onClick={() => startScanning('purchase-order')}
-                          className="w-full bg-emerald-50 hover:bg-emerald-100/80 text-emerald-800 font-black py-3 px-4 rounded-2xl transition border border-emerald-100 cursor-pointer flex items-center justify-center gap-2 text-xs"
-                        >
-                          <Camera className="w-4 h-4 text-emerald-600 animate-pulse" />
-                          <span>تفعيل قارئ الكاميرا للمشتريات</span>
-                        </button>
-                      </div>
 
                       {/* Section: Dynamic form to add a completely custom brand new drug */}
                       <div className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-xs space-y-4">
@@ -2407,7 +4497,7 @@ export default function Dashboard() {
                                     <option value="أمراض القلب والضغط">أمراض القلب والضغط</option>
                                     <option value="السكري والغدد">السكري والغدد</option>
                                     <option value="الفيتامينات والمكملات">الفيتامينات والمكملات</option>
-                                    <option value="مؤثرات عقلية رقابية">مؤثرات عقلية رقابية</option>
+
                                   </select>
                                 </div>
 
@@ -2472,7 +4562,8 @@ export default function Dashboard() {
                                     price: purchaseNewProdPrice,
                                     qty: purchaseNewProdQty,
                                     expiryDate: purchaseNewProdExpiry,
-                                    barcode: purchaseNewProdBarcode || '628' + Math.floor(Math.random() * 90000000 + 10000000)
+                                    barcode: purchaseNewProdBarcode || '628' + Math.floor(Math.random() * 90000000 + 10000000),
+                                    warehouse: purchaseSupplier || '',
                                   };
                                   setPurchaseDraft(prev => [...prev, customItem]);
                                   setPurchaseNewProdAr('');
@@ -2539,8 +4630,11 @@ export default function Dashboard() {
                                   <tr className="bg-slate-50 text-slate-500 border-b border-slate-100 font-bold">
                                     <th className="py-2.5 px-3 rounded-r-xl">الدواء / المستحضر</th>
                                     <th className="py-2.5 px-3 text-center">الكمية المطلوبة (علبة)</th>
-                                    <th className="py-2.5 px-3 text-center">سعر جملة العلبة (د.ع)</th>
+                                    <th className="py-2.5 px-3 text-center">سعر جملة (د.ع)</th>
+                                    <th className="py-2.5 px-3 text-center text-blue-700">سعر البيع للجمهور (د.ع)</th>
+                                    <th className="py-2.5 px-3 text-center text-violet-700">سعر البيع الرسمي (د.ع)</th>
                                     <th className="py-2.5 px-3 text-center">انتهاء الصلاحية</th>
+                                    <th className="py-2.5 px-3 text-center text-indigo-700">المورد</th>
                                     <th className="py-2.5 px-3 text-center">الإجمالي الفرعي</th>
                                     <th className="py-2.5 px-3 text-center rounded-l-xl">تنظيف</th>
                                   </tr>
@@ -2627,17 +4721,79 @@ export default function Dashboard() {
                                           </div>
                                         </td>
 
-                                        {/* Expiry Date */}
+                                        {/* سعر البيع للجمهور — يُحدّث inventory.price مباشرة */}
+                                        <td className="py-3.5 px-3">
+                                          <div className="flex items-center justify-center gap-1 font-mono">
+                                            <input
+                                              type="number"
+                                              step="250"
+                                              value={item.retailPrice ?? ''}
+                                              onChange={(e) => {
+                                                const val = Number(e.target.value);
+                                                if (isNaN(val)) return;
+                                                setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, retailPrice: val } : d));
+                                                setInventory(prev => prev.map(m => m.id === item.medicineId ? { ...m, price: val } : m));
+                                              }}
+                                              className="w-16 bg-blue-50 rounded border border-blue-200 p-1 text-center text-blue-900 font-mono text-xs focus:outline-blue-400 focus:outline-none"
+                                            />
+                                            <span className="text-[10px] text-slate-400">عراقي</span>
+                                          </div>
+                                        </td>
+
+                                        {/* سعر البيع الرسمي — يُحدّث inventory.secondaryPrice مباشرة */}
+                                        <td className="py-3.5 px-3">
+                                          <div className="flex items-center justify-center gap-1 font-mono">
+                                            <input
+                                              type="number"
+                                              step="250"
+                                              value={item.officialPrice ?? ''}
+                                              onChange={(e) => {
+                                                const val = Number(e.target.value);
+                                                if (isNaN(val)) return;
+                                                setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, officialPrice: val } : d));
+                                                setInventory(prev => prev.map(m => m.id === item.medicineId ? { ...m, secondaryPrice: val } : m));
+                                              }}
+                                              className="w-16 bg-violet-50 rounded border border-violet-200 p-1 text-center text-violet-900 font-mono text-xs focus:outline-none"
+                                            />
+                                            <span className="text-[10px] text-slate-400">عراقي</span>
+                                          </div>
+                                        </td>
+
+                                        {/* Expiry Date — يعرض آخر تاريخ محفوظ ويحدّثه عند التعديل */}
                                         <td className="py-3.5 px-3">
                                           <input
                                             type="date"
-                                            value={item.expiryDate}
+                                            value={expiryDates[item.medicineId] || item.expiryDate || ''}
                                             onChange={(e) => {
                                               const val = e.target.value;
                                               setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, expiryDate: val } : d));
+                                              if (item.medicineId) setExpiryDates(prev => ({ ...prev, [item.medicineId]: val }));
                                             }}
                                             className="w-28 bg-slate-50 rounded border border-slate-200 p-1 font-mono text-center text-[10px] focus:outline-none"
                                           />
+                                        </td>
+
+                                        {/* Supplier — يُطبَّق على كل أصناف المسودة ويصبح المورّد الافتراضي للأصناف القادمة */}
+                                        <td className="py-3.5 px-3 text-center">
+                                          <select
+                                            value={item.warehouse || purchaseSupplier || ''}
+                                            onChange={(e) => {
+                                              const val = e.target.value;
+                                              // اعتماده مورّداً نشطاً للمسودة وتطبيقه على جميع الأصناف الحالية
+                                              setPurchaseSupplier(val);
+                                              setPurchaseDraft(prev => prev.map(d => ({ ...d, warehouse: val })));
+                                              if (val) setInventory(prev => prev.map(m => purchaseDraft.some(d => d.medicineId === m.id) ? { ...m, warehouse: val } : m));
+                                            }}
+                                            className="bg-indigo-50 border border-indigo-100 rounded-lg p-1.5 text-[10px] font-bold text-indigo-800 cursor-pointer focus:outline-indigo-400 max-w-[130px]"
+                                          >
+                                            <option value="">— اختر —</option>
+                                            {suppliers.map(s => (
+                                              <option key={s.id} value={s.name}>{s.name}</option>
+                                            ))}
+                                            {item.warehouse && !suppliers.find(s => s.name === item.warehouse) && (
+                                              <option value={item.warehouse}>{item.warehouse}</option>
+                                            )}
+                                          </select>
                                         </td>
 
                                         {/* Row Subtotal */}
@@ -2676,7 +4832,45 @@ export default function Dashboard() {
                                   </span>
                                 </div>
                                 <div className="text-[10px] text-slate-400 leading-normal font-medium">
-                                  <p>سعر توريد الجملة النهائي خاضع لحسابات الصيدلية و يحدّث أرصدة دواء صيدلية بلس مع تطبيق الأرباح تلقائياً عند التأكيد.</p>
+                                  <p>سعر توريد الجملة النهائي خاضع لحسابات الصيدلية و يحدّث أرصدة دواء صيدلية انوار الحسن مع تطبيق الأرباح تلقائياً عند التأكيد.</p>
+                                </div>
+
+                                {/* شراء بالآجل: تسجيل الفاتورة كذمّة على المذخر بدل خصمها نقداً */}
+                                <div className="pt-1 space-y-2">
+                                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                                    <input
+                                      type="checkbox"
+                                      checked={purchaseOnCredit}
+                                      onChange={(e) => setPurchaseOnCredit(e.target.checked)}
+                                      className="w-4 h-4 accent-rose-600 cursor-pointer"
+                                    />
+                                    <span className="text-[11px] font-black text-rose-700">شراء بالآجل (على حساب المذخر)</span>
+                                  </label>
+                                  {purchaseOnCredit && (
+                                    <div className="space-y-1">
+                                      <label className="block text-slate-500 text-[10px] font-bold">المورّد</label>
+                                      <select
+                                        value={creditSupplierName}
+                                        onChange={(e) => setCreditSupplierName(e.target.value)}
+                                        className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold text-slate-700 cursor-pointer"
+                                      >
+                                        <option value="">— اختر المورد —</option>
+                                        {suppliers.map(s => (
+                                          <option key={s.id} value={s.name}>{s.name}</option>
+                                        ))}
+                                        <option value="__manual__">إدخال يدوي...</option>
+                                      </select>
+                                      {creditSupplierName === '__manual__' && (
+                                        <input
+                                          type="text"
+                                          onChange={(e) => setCreditSupplierName(e.target.value)}
+                                          className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold text-slate-700 mt-1"
+                                          placeholder="اسم المورد..."
+                                        />
+                                      )}
+                                      <p className="text-[9px] text-rose-500 font-bold leading-normal">* لن تُخصم القيمة من الصندوق، وستُسجَّل كذمّة مستحقة في دفتر ديون الموردين.</p>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
 
@@ -2712,11 +4906,51 @@ export default function Dashboard() {
                           <span className="text-[10px] text-slate-400 font-bold">حالة تدفق الفواتير: موثقة بكامل القيود</span>
                         </div>
 
-                        {b2bOrders.length === 0 ? (
-                          <p className="p-8 text-center text-[11px] text-slate-400 font-bold">لا يوجد طلبيات شراء سابقة مسجلة حالياً.</p>
-                        ) : (
+                        {/* حقل البحث برقم القائمة أو اسم المورد */}
+                        <div className="relative">
+                          <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                          <input
+                            type="text"
+                            value={b2bOrderSearch}
+                            onChange={e => setB2bOrderSearch(e.target.value)}
+                            placeholder="ابحث برقم القائمة (مثال: CAP-28109) أو اسم المورد..."
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-8 pl-3 py-2 text-[11px] font-bold text-slate-700 placeholder:text-slate-400 placeholder:font-normal focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 transition"
+                          />
+                          {b2bOrderSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setB2bOrderSearch('')}
+                              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition bg-transparent border-none cursor-pointer p-0"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+
+                        {(() => {
+                          const q = b2bOrderSearch.trim().toLowerCase();
+                          const filtered = q
+                            ? b2bOrders.filter(o =>
+                                o.id.toLowerCase().includes(q) ||
+                                (o.warehouseName || '').toLowerCase().includes(q)
+                              )
+                            : b2bOrders;
+
+                          if (b2bOrders.length === 0) {
+                            return <p className="p-8 text-center text-[11px] text-slate-400 font-bold">لا يوجد طلبيات شراء سابقة مسجلة حالياً.</p>;
+                          }
+                          if (filtered.length === 0) {
+                            return (
+                              <div className="p-6 text-center space-y-1">
+                                <p className="text-[11px] text-slate-500 font-bold">لا توجد نتائج لـ «{b2bOrderSearch}»</p>
+                                <p className="text-[10px] text-slate-400 font-medium">تأكد من رقم القائمة أو اسم المورد</p>
+                              </div>
+                            );
+                          }
+
+                          return (
                           <div className="space-y-3.5">
-                            {b2bOrders.map((order) => (
+                            {filtered.map((order) => (
                               <div key={order.id} className="bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs transition">
                                 <div className="space-y-1 text-right">
                                   <div className="flex items-center gap-2">
@@ -2752,7 +4986,8 @@ export default function Dashboard() {
                               </div>
                             ))}
                           </div>
-                        )}
+                          );
+                        })()}
                       </div>
 
                     </div>
@@ -2761,145 +4996,68 @@ export default function Dashboard() {
                 </motion.div>
               )}
 
-              {/* 
-                =========================================================
-                VIEWPORT SECTION 4: NARC/PSYCH LEGAL COMPLIANCE
-                =========================================================
-              */}
-              {activeTab === 'narcotics' && (
-                <motion.div
-                  key="narcotics"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="space-y-6"
-                >
-                  <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
-                    <div className="border-b border-slate-100 pb-4">
-                      <span className="text-xs text-rose-500 font-extrabold bg-rose-50 px-3 py-1 rounded-full uppercase">سجل تفتيش اللجان الطبية الاتحادي</span>
-                      <h3 className="font-extrabold text-slate-900 text-sm mt-3">سجل بيع المؤثرات والمخدرات الخاضعة للمراقبة</h3>
-                      <p className="text-[10px] text-slate-400 font-semibold mt-1">
-                        وفق المادة 52 من قانون مكافحة المخدرات لجمهورية العراق. يجب تسجيل هوية المريض الطبي، ترخيص الطبيب الموصوف ورابط الوصفة الطبية قبل الصرف.
-                      </p>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-12 gap-8text-xs font-semibold">
-                      
-                      {/* Register prescriptions form */}
-                      <div className="md:col-span-4 bg-slate-50 p-5 rounded-2xl border border-slate-100 space-y-4">
-                        <span className="text-[10px] text-slate-400 font-black block">إدراج وتوثيق وصفة خاضعة للمراقبة</span>
-                        
-                        {prescriptionSuccess ? (
-                          <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl text-center space-y-2 text-xs font-bold font-sans">
-                            <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
-                            <p className="text-slate-900">تم تسجيل المستند ومطابقة الترخيص!</p>
-                            <span className="text-[9px] text-slate-400 block font-normal">تم تمديد الرابط وجرد المخزون.</span>
-                          </div>
-                        ) : (
-                          <form onSubmit={handleAddControlledPrescription} className="space-y-3 text-xs font-semibold">
-                            <div className="space-y-1">
-                              <label className="block text-slate-500">اسم المريض الكامل:</label>
-                              <input 
-                                type="text" required
-                                value={newPrescPatient} onChange={(e) => setNewPrescPatient(e.target.value)}
-                                className="w-full bg-white border border-slate-200 rounded-lg p-2 focus:outline-emerald-500" 
-                                placeholder="حسب الهوية الموحدة"
-                              />
-                            </div>
-
-                            <div className="space-y-1">
-                              <label className="block text-slate-500">الطبيب المعالج وعيادته:</label>
-                              <input 
-                                type="text" required
-                                value={newPrescDoctor} onChange={(e) => setNewPrescDoctor(e.target.value)}
-                                className="w-full bg-white border border-slate-200 rounded-lg p-2 focus:outline-emerald-500" 
-                                placeholder="اللقب والرصافة الطبية"
-                              />
-                            </div>
-
-                            <div className="space-y-1">
-                              <label className="block text-slate-500">مادة الدواء الرقابي:</label>
-                              <select 
-                                value={newPrescMedId} onChange={(e) => setNewPrescMedId(e.target.value)}
-                                className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700"
-                              >
-                                {inventory.filter(m => m.category.includes('مؤثرات') || m.id === '7').map(m => (
-                                  <option key={m.id} value={m.id}>{m.nameAr}</option>
-                                ))}
-                              </select>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className="space-y-1">
-                                <label className="block text-slate-500">الكمية الصرف:</label>
-                                <input 
-                                  type="number" min="1" max="5"
-                                  value={newPrescQty} onChange={(e) => setNewPrescQty(Number(e.target.value))}
-                                  className="w-full bg-white border border-slate-200 rounded-lg p-2 text-center" 
-                                />
-                              </div>
-                              <div className="space-y-1">
-                                <label className="block text-slate-500 font-sans text-[10px]">كود نقابي:</label>
-                                <input 
-                                  type="text" required
-                                  value={newPrescLicense} onChange={(e) => setNewPrescLicense(e.target.value)}
-                                  className="w-full bg-white border border-slate-200 rounded-lg p-2 font-mono text-center text-slate-700 font-bold" 
-                                />
-                              </div>
-                            </div>
-
-                            <button 
-                              type="submit"
-                              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black py-2 rounded-xl text-center cursor-pointer"
-                            >
-                              توثيق الوصفة الرقابية
-                            </button>
-                          </form>
-                        )}
-                      </div>
-
-                      {/* Active Narc prescriptions entries */}
-                      <div className="md:col-span-8 space-y-3.5">
-                        <div className="bg-rose-50 border border-rose-100/50 rounded-2xl p-4 flex items-center space-x-reverse space-x-3 text-rose-800">
-                          <ShieldAlert className="w-6 h-6 flex-shrink-0" />
-                          <div>
-                            <strong className="text-xs font-black block">هام جداً لمفتشي وزارة الصحة:</strong>
-                            <p className="text-[10px] leading-relaxed font-medium mt-0.5">
-                              هذا المسجل سحابي ومؤمن بلس متاح دائما لتنزيله أثناء التفتيش الدوري. أي صرف لمهدئ أو مخدر مدرج خارج هذا الكشف يعرض الصيدلية للمساءلة القانونية.
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="space-y-2.5">
-                          <span className="text-[10px] text-slate-400 font-black block">السندات المصدقة حالياً</span>
-                          
-                          {narcoticPrescriptions.map((p) => (
-                            <div key={p.id} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex justify-between items-center text-xs font-semibold">
-                              <div className="space-y-1 text-right">
-                                <div className="flex items-center space-x-reverse space-x-2">
-                                  <strong className="text-slate-900 text-xs font-extrabold">{p.patientName}</strong>
-                                  <span className="text-[9px] bg-rose-100 text-rose-800 px-2 py-0.5 rounded font-mono font-bold">{p.id}</span>
-                                </div>
-                                <span className="text-slate-500 font-medium block">المادة المصروفة: {p.medicineName} • الكمية: {p.quantity} علبة</span>
-                                <span className="text-slate-400 text-[10px] block">الطبيب: {p.doctorName} • الكود النقابي: {p.pharmacistLicense}</span>
-                              </div>
-                              <span className="text-[9px] text-slate-400 font-mono block">التاريخ: {p.prescriptionDate}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                    </div>
-                  </div>
-                </motion.div>
-              )}
-
-              {/* 
+              {/*
                 =========================================================
                 VIEWPORT SECTION 5: FINANCIAL ANNOTATIONS & SUPP SETTLE
                 =========================================================
               */}
-              {activeTab === 'financial' && (
+              {activeTab === 'financial' && !financialUnlocked && (
+                <motion.div
+                  key="financial-lock"
+                  initial={{ opacity: 0, scale: 0.97 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.97 }}
+                  className="flex items-center justify-center min-h-[60vh]"
+                >
+                  <div className="bg-white border border-slate-200 rounded-3xl shadow-lg p-8 w-full max-w-sm space-y-6 text-center">
+                    <div className="w-16 h-16 bg-violet-50 rounded-2xl flex items-center justify-center mx-auto">
+                      <ShieldCheck className="w-8 h-8 text-violet-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-black text-slate-800 text-base">الحسابات المالية</h3>
+                      <p className="text-[11px] text-slate-500 font-semibold mt-1">أدخل كلمة المرور للوصول إلى السجلات المالية</p>
+                    </div>
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (pinEntry === financialPin) {
+                          setFinancialUnlocked(true);
+                          setPinError(false);
+                          setPinEntry('');
+                        } else {
+                          setPinError(true);
+                          setPinEntry('');
+                        }
+                      }}
+                      className="space-y-4"
+                    >
+                      <div className="relative">
+                        <input
+                          type="password"
+                          inputMode="numeric"
+                          maxLength={20}
+                          value={pinEntry}
+                          onChange={(e) => { setPinEntry(e.target.value); setPinError(false); }}
+                          placeholder="••••"
+                          autoFocus
+                          className={`w-full text-center text-2xl font-mono tracking-[0.5em] bg-slate-50 border rounded-xl py-3 px-4 focus:outline-none focus:ring-2 transition ${pinError ? 'border-rose-400 focus:ring-rose-200 bg-rose-50' : 'border-slate-200 focus:ring-violet-200 focus:border-violet-400'}`}
+                        />
+                        {pinError && (
+                          <p className="text-[11px] text-rose-600 font-bold mt-1.5 text-center">كلمة المرور غير صحيحة</p>
+                        )}
+                      </div>
+                      <button
+                        type="submit"
+                        className="w-full bg-violet-600 hover:bg-violet-700 text-white font-black py-3 rounded-xl cursor-pointer transition border-none font-sans text-sm"
+                      >
+                        دخول
+                      </button>
+                    </form>
+                  </div>
+                </motion.div>
+              )}
+
+              {activeTab === 'financial' && financialUnlocked && (
                 <motion.div
                   key="financial"
                   initial={{ opacity: 0, y: 10 }}
@@ -2910,61 +5068,1125 @@ export default function Dashboard() {
                   <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
                     <div className="border-b border-slate-100 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div>
-                        <span className="text-xs text-emerald-600 font-extrabold bg-emerald-50 px-3 py-1 rounded-full uppercase">كشاف الحسابات كبسولة بلس</span>
+                        <span className="text-xs text-emerald-600 font-extrabold bg-emerald-50 px-3 py-1 rounded-full uppercase">كشاف الحسابات انوار الحسن</span>
                         <h3 className="font-extrabold text-slate-900 text-sm mt-3">الحساب المالي الموحد ومحاكاة المقاصة للذمم</h3>
                         <p className="text-[10px] text-slate-400 font-bold mt-1">
-                          تتبع جرد الصيدلية الإجمالي، الحسابات المدينة والذمم المترتبة لمذاخر أدوية العراق لتسويتها عبر كبسولة باي
+                          تتبع جرد الصيدلية الإجمالي، الحسابات المدينة والذمم المترتبة لمذاخر أدوية العراق لتسويتها عبر انوار الحسن باي
                         </p>
                       </div>
-                      <button
-                        onClick={exportFinancialsToCSV}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition shadow-sm cursor-pointer border-none text-xs font-sans shrink-0 hover:scale-102"
-                      >
-                        <Download className="w-4 h-4 text-emerald-100 animate-bounce-slow" />
-                        <span>تصدير كشف حسابات المبيعات والديون (CSV)</span>
-                      </button>
+                      <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+                        <button
+                          onClick={exportFinancialsToCSV}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition shadow-sm cursor-pointer border-none text-xs font-sans hover:scale-102"
+                        >
+                          <Download className="w-4 h-4 text-emerald-100 animate-bounce-slow" />
+                          <span>تصدير CSV</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            const backup = {
+                              exportedAt: new Date().toISOString(),
+                              inventory,
+                              salesLedger,
+                              expenses,
+                              payables,
+                              receivables,
+                              salesReturns,
+                              b2bOrders,
+                              walletBalance,
+                            };
+                            const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `anwar-backup-${new Date().toISOString().split('T')[0]}.json`;
+                            a.click();
+                            URL.revokeObjectURL(url);
+                          }}
+                          className="bg-slate-700 hover:bg-slate-800 text-white font-black py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
+                        >
+                          <Download className="w-4 h-4" />
+                          <span>نسخ احتياطي JSON</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            document.body.classList.add('printing-financial');
+                            window.print();
+                            setTimeout(() => document.body.classList.remove('printing-financial'), 1000);
+                          }}
+                          className="bg-violet-600 hover:bg-violet-700 text-white font-black py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
+                        >
+                          <FileText className="w-4 h-4" />
+                          <span>طباعة / PDF</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* --- بطاقات المؤشرات السريعة --- */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center justify-between">
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-slate-400 font-black tracking-wider block">السيولة في صندوق الكاش</span>
+                          <span className="text-xl font-black text-slate-900 tracking-tight font-mono">
+                            {walletBalance.toLocaleString()} <span className="text-xs text-slate-500 font-sans font-extrabold">د.ع</span>
+                          </span>
+                        </div>
+                        <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
+                          <Wallet className="w-5 h-5" />
+                        </div>
+                      </div>
+                      <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center justify-between">
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-slate-400 font-black tracking-wider block">أرباح ومبيعات اليوم</span>
+                          <span className="text-xl font-black text-slate-900 tracking-tight font-mono">
+                            {dailySalesRevenue.toLocaleString()} <span className="text-xs text-slate-500 font-sans font-extrabold">د.ع</span>
+                          </span>
+                        </div>
+                        <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
+                          <TrendingUp className="w-5 h-5" />
+                        </div>
+                      </div>
+                      <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center justify-between">
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-slate-400 font-black tracking-wider block">ذمم المذاخر المتبقية</span>
+                          <span className="text-xl font-black text-rose-700 tracking-tight font-mono">
+                            {totalDebts.toLocaleString()} <span className="text-xs text-slate-500 font-sans font-extrabold">د.ع</span>
+                          </span>
+                        </div>
+                        <div className="w-10 h-10 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center">
+                          <ClipboardList className="w-5 h-5" />
+                        </div>
+                      </div>
+                      <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center justify-between">
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-slate-400 font-black tracking-wider block">المخزون الدوائي النشط</span>
+                          <span className="text-xl font-black text-slate-900 tracking-tight">
+                            {inventory.reduce((sum, m) => sum + m.availableQuantity, 0)} <span className="text-xs text-slate-500 font-extrabold">علب</span>
+                          </span>
+                        </div>
+                        <div className="w-10 h-10 bg-slate-50 text-slate-700 rounded-xl flex items-center justify-center">
+                          <Pill className="w-5 h-5" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* --- بطاقات الملخص المالي حسب الفترة (يومي/أسبوعي/شهري/سنوي) --- */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <BarChart3 className="w-4 h-4 text-emerald-600" />
+                        <span className="text-[11px] text-slate-500 font-black">ملخص الأداء المالي حسب الفترة (مبيعات / أرباح / هامش)</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {financialPeriods.map((p) => {
+                          const a = finAccent[p.accent];
+                          return (
+                            <div key={p.key} className={`bg-white border ${a.ring} rounded-2xl p-4 shadow-sm space-y-3`}>
+                              <div className="flex items-center justify-between">
+                                <span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${a.badge}`}>{p.label}</span>
+                                <Calendar className={`w-3.5 h-3.5 ${a.icon}`} />
+                              </div>
+                              <div className="space-y-0.5">
+                                <span className="text-[9px] text-slate-400 font-bold uppercase block">{p.sub}</span>
+                                <h5 className="text-lg font-black text-slate-900 font-serif tracking-tight">
+                                  {p.stats.sales.toLocaleString()} <span className="text-[10px] text-slate-400">د.ع</span>
+                                </h5>
+                              </div>
+                              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                                <div className="space-y-0.5">
+                                  <span className="text-[9px] text-slate-400 font-bold block">الربح الإجمالي</span>
+                                  <strong className={`text-sm font-black font-mono ${a.profit}`}>{p.stats.profit.toLocaleString()}</strong>
+                                </div>
+                                <span className={`text-[10px] font-black px-2 py-1 rounded-lg ${a.badge}`}>هامش {p.stats.margin}%</span>
+                              </div>
+                              <div className="flex items-center justify-between text-[9px] text-slate-400 font-bold pt-1">
+                                <span>الفواتير: <strong className="text-slate-600 font-mono">{p.stats.count}</strong></span>
+                                <span>م. الفاتورة: <strong className="text-slate-600 font-mono">{p.stats.avg.toLocaleString()}</strong></span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* --- منحنى المبيعات والأرباح عبر الزمن --- */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                        <div className="flex items-center gap-2">
+                          <TrendingUp className="w-4 h-4 text-emerald-600" />
+                          <span className="text-[11px] text-slate-600 font-black">منحنى المبيعات والأرباح عبر الزمن</span>
+                        </div>
+                        <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
+                          {[7, 30, 90].map(r => (
+                            <button
+                              key={r}
+                              onClick={() => setChartRange(r as 7 | 30 | 90)}
+                              className={`text-[10px] font-black px-3 py-1.5 rounded-lg transition cursor-pointer border-none font-sans ${chartRange === r ? 'bg-white text-emerald-700 shadow-sm' : 'bg-transparent text-slate-500'}`}
+                            >
+                              {r} يوم
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-4 mb-3 text-[9px] font-bold text-slate-500">
+                        <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-sm inline-block" style={{ backgroundColor: '#a7f3d0' }}></span> المبيعات</span>
+                        <span className="flex items-center gap-1"><span className="w-3 h-1.5 rounded-sm inline-block" style={{ backgroundColor: '#059669' }}></span> صافي الربح</span>
+                      </div>
+
+                      <div dir="ltr" className="w-full overflow-x-auto">
+                        <svg viewBox={`0 0 ${Math.max(chartSeries.length * 42, 320)} 180`} className="w-full" style={{ minWidth: Math.max(chartSeries.length * 26, 280) }}>
+                          {chartSeries.map((b, i) => {
+                            const gap = 42;
+                            const barW = 26;
+                            const x = i * gap + 10;
+                            const maxH = 128;
+                            const baseY = 150;
+                            const salesH = Math.round((b.sales / chartMax) * maxH);
+                            const profitH = Math.round((b.profit / chartMax) * maxH);
+                            return (
+                              <g key={i}>
+                                <rect x={x} y={baseY - salesH} width={barW} height={salesH} rx={3} fill="#a7f3d0" />
+                                <rect x={x + 7} y={baseY - profitH} width={barW - 14} height={profitH} rx={2} fill="#059669" />
+                                <text x={x + barW / 2} y={baseY + 13} textAnchor="middle" fill="#94a3b8" style={{ fontSize: 8 }}>{b.label}</text>
+                              </g>
+                            );
+                          })}
+                          <line x1="0" y1="150" x2={Math.max(chartSeries.length * 42, 320)} y2="150" stroke="#e2e8f0" strokeWidth="1" />
+                        </svg>
+                      </div>
+                      <p className="text-[9px] text-slate-400 font-bold mt-2 text-center">
+                        القيم بالدينار العراقي • التجميع {chartRange > 30 ? 'أسبوعي' : 'يومي'} • الأعمدة الفاتحة: المبيعات، الداكنة: صافي الربح
+                      </p>
+                    </div>
+
+                    {/* --- جداول تحليل أداء المنتجات (ربحية / مبيعاً / راكد) --- */}
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2">
+                        <BarChart3 className="w-4 h-4 text-emerald-600" />
+                        <span className="text-[11px] text-slate-600 font-black">تحليل أداء المنتجات</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        {/* أعلى المنتجات ربحية */}
+                        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                          <div className="flex items-center gap-2 mb-3">
+                            <span className="text-base">🏆</span>
+                            <span className="text-[11px] font-black text-slate-700">أعلى المنتجات ربحية</span>
+                          </div>
+                          <div className="space-y-1.5">
+                            {topProfitable.map((p, i) => (
+                              <div key={p.name} className="flex items-center justify-between text-[10px] font-bold bg-slate-50 rounded-lg px-3 py-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-black shrink-0">{i + 1}</span>
+                                  <span className="text-slate-700 truncate">{p.name}</span>
+                                </div>
+                                <div className="text-left shrink-0 mr-2">
+                                  <strong className="text-emerald-700 font-mono">{p.profit.toLocaleString()}</strong>
+                                  <span className="text-slate-400 text-[9px]"> د.ع</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* الأكثر مبيعاً بالكمية */}
+                        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                          <div className="flex items-center gap-2 mb-3">
+                            <TrendingUp className="w-4 h-4 text-blue-600" />
+                            <span className="text-[11px] font-black text-slate-700">الأكثر مبيعاً (بالكمية)</span>
+                          </div>
+                          <div className="space-y-1.5">
+                            {topSelling.map((p, i) => (
+                              <div key={p.name} className="flex items-center justify-between text-[10px] font-bold bg-slate-50 rounded-lg px-3 py-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-black shrink-0">{i + 1}</span>
+                                  <span className="text-slate-700 truncate">{p.name}</span>
+                                </div>
+                                <div className="text-left shrink-0 mr-2">
+                                  <strong className="text-blue-700 font-mono">{p.qty.toLocaleString()}</strong>
+                                  <span className="text-slate-400 text-[9px]"> وحدة</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* الأبطأ حركةً — مخزون راكد */}
+                      <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className="text-base">🐌</span>
+                          <span className="text-[11px] font-black text-slate-700">الأبطأ حركةً (مخزون راكد — رأس مال مجمّد)</span>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-[10px] font-bold border-collapse">
+                            <thead>
+                              <tr className="text-slate-400 text-[9px] border-b border-slate-100">
+                                <th className="text-right font-black py-2 px-2">المنتج</th>
+                                <th className="text-center font-black py-2 px-2">المُباع</th>
+                                <th className="text-center font-black py-2 px-2">المخزون الحالي</th>
+                                <th className="text-left font-black py-2 px-2">رأس المال المجمّد</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {slowestMoving.map(m => (
+                                <tr key={m.name} className="border-b border-slate-50 hover:bg-slate-50/60">
+                                  <td className="text-right py-2 px-2 text-slate-700">{m.name}</td>
+                                  <td className="text-center py-2 px-2">
+                                    <span className={`font-mono ${m.sold === 0 ? 'text-rose-600' : 'text-slate-600'}`}>{m.sold}</span>
+                                  </td>
+                                  <td className="text-center py-2 px-2 font-mono text-slate-600">{m.stock}</td>
+                                  <td className="text-left py-2 px-2 font-mono text-amber-700">{m.value.toLocaleString()} د.ع</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        <p className="text-[9px] text-slate-400 font-bold mt-2">* المنتجات قليلة/معدومة المبيعات مع رأس مال مجمّد عالٍ مرشّحة لإعادة التسعير أو العروض الترويجية.</p>
+                      </div>
+                    </div>
+
+                    {/* --- دفتر المصاريف والربح الصافي --- */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                      <div className="flex items-center gap-2">
+                        <Wallet className="w-4 h-4 text-emerald-600" />
+                        <span className="text-[11px] text-slate-600 font-black">دفتر المصاريف والربح الصافي (هذا الشهر)</span>
+                      </div>
+
+                      {/* ملخص صافي الربح للشهر */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3">
+                          <span className="text-[9px] text-emerald-700 font-black block mb-1">الربح الإجمالي (الشهر)</span>
+                          <strong className="text-base font-black text-emerald-800 font-mono">{statsMonth.profit.toLocaleString()} <span className="text-[9px] font-bold">د.ع</span></strong>
+                        </div>
+                        <div className="bg-rose-50 border border-rose-100 rounded-xl p-3">
+                          <span className="text-[9px] text-rose-700 font-black block mb-1">− إجمالي المصاريف (الشهر)</span>
+                          <strong className="text-base font-black text-rose-700 font-mono">{expMonth.toLocaleString()} <span className="text-[9px] font-bold">د.ع</span></strong>
+                        </div>
+                        <div className={`${netProfitMonth >= 0 ? 'bg-emerald-600' : 'bg-rose-600'} rounded-xl p-3`}>
+                          <span className="text-[9px] text-white/80 font-black block mb-1">= صافي الربح (الشهر)</span>
+                          <strong className="text-base font-black text-white font-mono">{netProfitMonth.toLocaleString()} <span className="text-[9px] font-bold">د.ع</span></strong>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                        {/* نموذج تسجيل مصروف */}
+                        <form onSubmit={handleAddExpense} className="md:col-span-5 bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-3 text-xs font-semibold">
+                          <span className="text-[10px] text-slate-400 font-black block">تسجيل مصروف جديد</span>
+                          <div className="space-y-1">
+                            <label className="block text-slate-500 text-[10px]">نوع المصروف</label>
+                            <select value={newExpCategory} onChange={(e) => setNewExpCategory(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700">
+                              <option value="إيجار المحل">إيجار المحل</option>
+                              <option value="رواتب الموظفين">رواتب الموظفين</option>
+                              <option value="كهرباء ومولّدة">كهرباء ومولّدة</option>
+                              <option value="صيانة وتنظيف">صيانة وتنظيف</option>
+                              <option value="نقل وتوصيل">نقل وتوصيل</option>
+                              <option value="قرطاسية وأكياس">قرطاسية وأكياس</option>
+                              <option value="أخرى">أخرى</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-slate-500 text-[10px]">المبلغ (د.ع)</label>
+                            <input type="number" min="0" required value={newExpAmount} onChange={(e) => setNewExpAmount(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-mono text-center font-bold" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-slate-500 text-[10px]">وصف (اختياري)</label>
+                            <input type="text" value={newExpDesc} onChange={(e) => setNewExpDesc(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2" placeholder="مثال: فاتورة كهرباء شهر أيار" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-slate-500 text-[10px]">طريقة الدفع</label>
+                            <select value={newExpPaidBy} onChange={(e) => setNewExpPaidBy(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700">
+                              <option value="نقد">نقد</option>
+                              <option value="تحويل">تحويل</option>
+                              <option value="بطاقة">بطاقة</option>
+                            </select>
+                          </div>
+                          <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2.5 rounded-xl cursor-pointer transition shadow-sm border-none font-sans text-xs">
+                            إضافة المصروف وخصمه من الصندوق
+                          </button>
+                          {expenseSuccess && <p className="text-[10px] text-emerald-700 font-black text-center">✓ تم تسجيل المصروف وخصمه من السيولة</p>}
+                        </form>
+
+                        {/* قائمة المصاريف */}
+                        <div className="md:col-span-7 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-slate-400 font-black">آخر المصاريف المسجّلة</span>
+                            <span className="text-[9px] text-slate-400 font-bold">العدد: {expenses.length}</span>
+                          </div>
+                          <div className="space-y-2 max-h-72 overflow-y-auto pl-1">
+                            {expenses.length === 0 && <p className="text-[10px] text-slate-400 font-bold text-center py-6">لا توجد مصاريف مسجّلة بعد.</p>}
+                            {expenses.map((exp) => (
+                              <div key={exp.id} className="flex items-center justify-between bg-white border border-slate-100 rounded-xl px-3 py-2.5 text-[10px] font-bold">
+                                <div className="min-w-0">
+                                  <strong className="text-slate-800 block">{exp.category}</strong>
+                                  <span className="text-slate-400 text-[9px] font-semibold">{exp.date} • {exp.paidBy}{exp.description ? ` • ${exp.description}` : ''}</span>
+                                </div>
+                                <strong className="text-rose-700 font-mono shrink-0 mr-2">−{exp.amount.toLocaleString()} د.ع</strong>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* --- قائمة الأرباح والخسائر (Income Statement / P&L) --- */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-violet-600" />
+                          <span className="text-[11px] text-slate-600 font-black">قائمة الأرباح والخسائر (الدخل)</span>
+                        </div>
+                        <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
+                          {([['month', 'هذا الشهر'], ['year', 'هذا العام']] as const).map(([k, lbl]) => (
+                            <button
+                              key={k}
+                              onClick={() => setPlPeriod(k)}
+                              className={`text-[10px] font-black px-3 py-1.5 rounded-lg transition cursor-pointer border-none font-sans ${plPeriod === k ? 'bg-white text-violet-700 shadow-sm' : 'bg-transparent text-slate-500'}`}
+                            >
+                              {lbl}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="border border-slate-100 rounded-2xl overflow-hidden text-[11px] font-bold">
+                        {/* الإيراد */}
+                        <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50">
+                          <span className="text-slate-700">إجمالي المبيعات (الإيراد)</span>
+                          <span className="font-mono text-slate-800">{plGrossSales.toLocaleString()} د.ع</span>
+                        </div>
+                        <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100">
+                          <span className="text-slate-500">(−) مرتجعات المبيعات{plReturns.count > 0 ? ` (${plReturns.count})` : ''}</span>
+                          <span className="font-mono text-rose-600">−{plReturns.value.toLocaleString()} د.ع</span>
+                        </div>
+                        <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100 bg-slate-50/60">
+                          <span className="text-slate-700 font-black">= صافي المبيعات</span>
+                          <span className="font-mono text-slate-800 font-black">{plNetSales.toLocaleString()} د.ع</span>
+                        </div>
+                        {/* التكلفة */}
+                        <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100">
+                          <span className="text-slate-500">(−) تكلفة البضاعة المباعة (COGS)</span>
+                          <span className="font-mono text-rose-600">−{plNetCogs.toLocaleString()} د.ع</span>
+                        </div>
+                        {/* مجمل الربح */}
+                        <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 bg-emerald-50">
+                          <span className="text-emerald-800 font-black">= مجمل الربح <span className="text-[9px] text-emerald-600 font-bold">(هامش {plGrossMargin}%)</span></span>
+                          <span className="font-mono text-emerald-800 font-black">{plGrossProfit.toLocaleString()} د.ع</span>
+                        </div>
+                        {/* المصاريف التشغيلية مفصّلة */}
+                        <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100">
+                          <span className="text-slate-700 font-black">(−) المصاريف التشغيلية</span>
+                          <span className="font-mono text-rose-600">−{plTotalExpenses.toLocaleString()} د.ع</span>
+                        </div>
+                        {plExpenseRows.length === 0 ? (
+                          <div className="px-6 py-2 border-t border-slate-50 text-[10px] text-slate-400 font-bold">لا مصاريف مسجّلة في هذه الفترة</div>
+                        ) : plExpenseRows.map(row => (
+                          <div key={row.category} className="flex items-center justify-between px-6 py-1.5 border-t border-slate-50 text-[10px]">
+                            <span className="text-slate-500">• {row.category}</span>
+                            <span className="font-mono text-slate-500">−{row.amount.toLocaleString()} د.ع</span>
+                          </div>
+                        ))}
+                        {/* صافي الربح */}
+                        <div className={`flex items-center justify-between px-4 py-3.5 border-t-2 ${plNetProfit >= 0 ? 'bg-emerald-600 border-emerald-700' : 'bg-rose-600 border-rose-700'}`}>
+                          <span className="text-white font-black">= صافي الربح <span className="text-[9px] text-white/75 font-bold">(هامش {plNetMargin}%)</span></span>
+                          <span className="font-mono text-white font-black text-sm">{plNetProfit.toLocaleString()} د.ع</span>
+                        </div>
+                      </div>
+                      <p className="text-[9px] text-slate-400 font-bold">* تُحتسب القائمة آلياً من سجل المبيعات (الإيراد والتكلفة) ومرتجعات المبيعات والمصاريف التشغيلية ضمن {plIsMonth ? 'الشهر الحالي' : 'السنة المالية الحالية'}. صافي الربح = مجمل الربح − المصاريف التشغيلية.</p>
+                    </div>
+
+                    {/* ======================================================= */}
+                    {/* --- قائمة الموردين ومصادر التجهيز --- */}
+                    {/* ======================================================= */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Truck className="w-4 h-4 text-indigo-600" />
+                          <span className="text-[11px] text-slate-600 font-black">قائمة الموردين ومصادر التجهيز</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => { setSupplierFormVisible(v => !v); setSelectedSupplierId(null); }}
+                          className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black px-3 py-1.5 rounded-xl transition cursor-pointer border-none"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          إضافة مورد جديد
+                        </button>
+                      </div>
+
+                      {/* نموذج إضافة مورد جديد */}
+                      <AnimatePresence>
+                        {supplierFormVisible && !selectedSupplierId && (
+                          <motion.form
+                            key="supplier-form"
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.2 }}
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              if (!newSupName.trim()) return;
+                              const newSup: Supplier = {
+                                id: `SUP-${Math.floor(Math.random() * 9000 + 1000)}`,
+                                name: newSupName.trim(),
+                                phone: newSupPhone.trim() || undefined,
+                                address: newSupAddress.trim() || undefined,
+                                contactPerson: newSupContact.trim() || undefined,
+                                creditLimit: newSupCreditLimit > 0 ? newSupCreditLimit : undefined,
+                                paymentTerms: newSupPaymentTerms > 0 ? newSupPaymentTerms : undefined,
+                                notes: newSupNotes.trim() || undefined,
+                                createdAt: new Date().toISOString().split('T')[0],
+                              };
+                              addSupplier(newSup);
+                              setNewSupName(''); setNewSupPhone(''); setNewSupContact('');
+                              setNewSupAddress(''); setNewSupCreditLimit(0); setNewSupPaymentTerms(30); setNewSupNotes('');
+                              setSupplierFormVisible(false);
+                            }}
+                            className="overflow-hidden"
+                          >
+                            <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 space-y-3 text-xs font-semibold">
+                              <span className="text-[10px] text-indigo-700 font-black block">بيانات المورد الجديد</span>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="space-y-1 sm:col-span-2">
+                                  <label className="block text-slate-500 text-[10px]">اسم المورد / المذخر *</label>
+                                  <input required type="text" value={newSupName} onChange={e => setNewSupName(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" placeholder="مذخر / شركة / مكتب علمي..." />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="block text-slate-500 text-[10px]">رقم الهاتف</label>
+                                  <input type="text" value={newSupPhone} onChange={e => setNewSupPhone(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" placeholder="07XXXXXXXXX" />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="block text-slate-500 text-[10px]">اسم المسؤول / المندوب</label>
+                                  <input type="text" value={newSupContact} onChange={e => setNewSupContact(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" placeholder="اسم المسؤول..." />
+                                </div>
+                                <div className="space-y-1 sm:col-span-2">
+                                  <label className="block text-slate-500 text-[10px]">العنوان</label>
+                                  <input type="text" value={newSupAddress} onChange={e => setNewSupAddress(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" placeholder="المحافظة — الحي..." />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="block text-slate-500 text-[10px]">سقف الائتمان (د.ع)</label>
+                                  <input type="number" min="0" value={newSupCreditLimit} onChange={e => setNewSupCreditLimit(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-mono text-center font-bold text-xs" />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="block text-slate-500 text-[10px]">مدة الآجل (أيام)</label>
+                                  <input type="number" min="0" value={newSupPaymentTerms} onChange={e => setNewSupPaymentTerms(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-mono text-center font-bold text-xs" />
+                                </div>
+                                <div className="space-y-1 sm:col-span-2">
+                                  <label className="block text-slate-500 text-[10px]">ملاحظات</label>
+                                  <input type="text" value={newSupNotes} onChange={e => setNewSupNotes(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" placeholder="تفاصيل إضافية..." />
+                                </div>
+                              </div>
+                              <div className="flex gap-2 pt-1">
+                                <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-black py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
+                                  حفظ المورد
+                                </button>
+                                <button type="button" onClick={() => setSupplierFormVisible(false)} className="px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
+                                  إلغاء
+                                </button>
+                              </div>
+                            </div>
+                          </motion.form>
+                        )}
+                      </AnimatePresence>
+
+                      {/* تفاصيل مورد مختار */}
+                      <AnimatePresence>
+                        {selectedSupplierId && (() => {
+                          const sup = suppliers.find(s => s.id === selectedSupplierId);
+                          if (!sup) return null;
+                          const supPayables = payables.filter(p => p.supplierId === sup.id || p.supplierName === sup.name);
+                          const supOrders = b2bOrders.filter(o => o.supplierId === sup.id || o.warehouseName === sup.name);
+                          const totalOwed = supPayables.reduce((s, p) => s + Math.max(0, p.amount - p.paidAmount), 0);
+                          const totalPaid = supPayables.reduce((s, p) => s + (p.paidAmount || 0), 0);
+                          const totalInvoiced = supPayables.reduce((s, p) => s + p.amount, 0);
+                          return (
+                            <motion.div
+                              key="supplier-detail"
+                              initial={{ opacity: 0, y: 8 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: 8 }}
+                              className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 space-y-4"
+                            >
+                              {/* Header */}
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="space-y-0.5">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center flex-shrink-0">
+                                      <Truck className="w-4 h-4 text-white" />
+                                    </div>
+                                    <h4 className="font-black text-sm text-slate-900">{sup.name}</h4>
+                                  </div>
+                                  <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[10px] text-slate-500 font-semibold pr-10">
+                                    {sup.phone && <span>📞 {sup.phone}</span>}
+                                    {sup.contactPerson && <span>👤 {sup.contactPerson}</span>}
+                                    {sup.address && <span>📍 {sup.address}</span>}
+                                    {sup.paymentTerms && <span>🗓 آجل {sup.paymentTerms} يوم</span>}
+                                    {sup.creditLimit && <span>💳 سقف {sup.creditLimit.toLocaleString()} د.ع</span>}
+                                  </div>
+                                  {sup.notes && <p className="text-[9px] text-slate-400 font-semibold pr-10">{sup.notes}</p>}
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      // فتح نموذج التعديل بالبيانات الحالية
+                                      setEditingSupplierId(sup.id);
+                                      setNewSupName(sup.name);
+                                      setNewSupPhone(sup.phone || '');
+                                      setNewSupContact(sup.contactPerson || '');
+                                      setNewSupAddress(sup.address || '');
+                                      setNewSupCreditLimit(sup.creditLimit || 0);
+                                      setNewSupPaymentTerms(sup.paymentTerms || 30);
+                                      setNewSupNotes(sup.notes || '');
+                                    }}
+                                    className="p-1.5 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-100 rounded-lg transition cursor-pointer bg-transparent border-none"
+                                    title="تعديل بيانات المورد"
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (window.confirm(`حذف المورد "${sup.name}"؟ لن تتأثّر الذمم أو الفواتير المسجّلة سابقاً.`)) {
+                                        deleteSupplier(sup);
+                                      }
+                                    }}
+                                    className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-100 rounded-lg transition cursor-pointer bg-transparent border-none"
+                                    title="حذف المورد"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedSupplierId(null)}
+                                    className="p-1.5 text-slate-400 hover:text-slate-600 transition cursor-pointer bg-transparent border-none"
+                                    title="إغلاق"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* نموذج تعديل بيانات المورد */}
+                              {editingSupplierId === sup.id && (
+                                <form
+                                  onSubmit={(e) => {
+                                    e.preventDefault();
+                                    if (!newSupName.trim()) return;
+                                    updateSupplier({
+                                      ...sup,
+                                      name: newSupName.trim(),
+                                      phone: newSupPhone.trim() || undefined,
+                                      address: newSupAddress.trim() || undefined,
+                                      contactPerson: newSupContact.trim() || undefined,
+                                      creditLimit: newSupCreditLimit > 0 ? newSupCreditLimit : undefined,
+                                      paymentTerms: newSupPaymentTerms > 0 ? newSupPaymentTerms : undefined,
+                                      notes: newSupNotes.trim() || undefined,
+                                    });
+                                    setEditingSupplierId(null);
+                                  }}
+                                  className="bg-white border border-indigo-200 rounded-2xl p-4 space-y-3 text-xs font-semibold"
+                                >
+                                  <span className="text-[10px] text-indigo-700 font-black block">تعديل بيانات المورد</span>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div className="space-y-1 sm:col-span-2">
+                                      <label className="block text-slate-500 text-[10px]">اسم المورد / المذخر *</label>
+                                      <input required type="text" value={newSupName} onChange={e => setNewSupName(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="block text-slate-500 text-[10px]">رقم الهاتف</label>
+                                      <input type="text" value={newSupPhone} onChange={e => setNewSupPhone(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" placeholder="07XXXXXXXXX" />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="block text-slate-500 text-[10px]">اسم المسؤول / المندوب</label>
+                                      <input type="text" value={newSupContact} onChange={e => setNewSupContact(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" />
+                                    </div>
+                                    <div className="space-y-1 sm:col-span-2">
+                                      <label className="block text-slate-500 text-[10px]">العنوان</label>
+                                      <input type="text" value={newSupAddress} onChange={e => setNewSupAddress(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="block text-slate-500 text-[10px]">سقف الائتمان (د.ع)</label>
+                                      <input type="number" min="0" value={newSupCreditLimit} onChange={e => setNewSupCreditLimit(Number(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-mono text-center font-bold text-xs" />
+                                    </div>
+                                    <div className="space-y-1">
+                                      <label className="block text-slate-500 text-[10px]">مدة الآجل (أيام)</label>
+                                      <input type="number" min="0" value={newSupPaymentTerms} onChange={e => setNewSupPaymentTerms(Number(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-mono text-center font-bold text-xs" />
+                                    </div>
+                                    <div className="space-y-1 sm:col-span-2">
+                                      <label className="block text-slate-500 text-[10px]">ملاحظات</label>
+                                      <input type="text" value={newSupNotes} onChange={e => setNewSupNotes(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" />
+                                    </div>
+                                  </div>
+                                  <div className="flex gap-2 pt-1">
+                                    <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-black py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
+                                      حفظ التعديلات
+                                    </button>
+                                    <button type="button" onClick={() => setEditingSupplierId(null)} className="px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
+                                      إلغاء
+                                    </button>
+                                  </div>
+                                </form>
+                              )}
+
+                              {/* ملخص الحساب */}
+                              <div className="grid grid-cols-3 gap-2">
+                                <div className="bg-rose-50 border border-rose-100 rounded-xl p-3 text-center">
+                                  <span className="text-[9px] text-rose-600 font-black block mb-0.5">المتبقي للمورد</span>
+                                  <strong className="text-sm font-black text-rose-700 font-mono">{totalOwed.toLocaleString()}</strong>
+                                  <span className="text-[8px] text-rose-500 font-bold block">د.ع</span>
+                                </div>
+                                <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center">
+                                  <span className="text-[9px] text-emerald-600 font-black block mb-0.5">إجمالي المسدَّد</span>
+                                  <strong className="text-sm font-black text-emerald-700 font-mono">{totalPaid.toLocaleString()}</strong>
+                                  <span className="text-[8px] text-emerald-500 font-bold block">د.ع</span>
+                                </div>
+                                <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center">
+                                  <span className="text-[9px] text-blue-600 font-black block mb-0.5">إجمالي الفواتير</span>
+                                  <strong className="text-sm font-black text-blue-700 font-mono">{totalInvoiced.toLocaleString()}</strong>
+                                  <span className="text-[8px] text-blue-500 font-bold block">د.ع</span>
+                                </div>
+                              </div>
+
+                              {/* تسديد دفعة */}
+                              {totalOwed > 0 && (
+                                <div className="bg-white border border-slate-100 rounded-xl p-3 space-y-2">
+                                  <span className="text-[10px] text-slate-600 font-black">تسديد دفعة للمورد</span>
+                                  <div className="flex gap-2">
+                                    {supPayModalId === sup.id ? (
+                                      <>
+                                        <input
+                                          type="number"
+                                          min="1"
+                                          max={totalOwed}
+                                          value={supPayAmount || ''}
+                                          onChange={e => setSupPayAmount(Number(e.target.value))}
+                                          className="flex-1 bg-white border border-slate-200 rounded-lg p-2 font-mono text-center text-xs font-bold focus:outline-emerald-400"
+                                          placeholder={`أقصى ${totalOwed.toLocaleString()}`}
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (!supPayAmount || supPayAmount <= 0) return;
+                                            paySupplierDebt(sup, supPayAmount);
+                                            setSupPayModalId(null); setSupPayAmount(0);
+                                          }}
+                                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-4 py-2 rounded-xl text-xs cursor-pointer transition border-none"
+                                        >
+                                          تأكيد
+                                        </button>
+                                        <button type="button" onClick={() => setSupPayModalId(null)} className="bg-slate-100 text-slate-600 font-bold px-3 py-2 rounded-xl text-xs cursor-pointer transition border-none">
+                                          إلغاء
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => { setSupPayModalId(sup.id); setSupPayAmount(0); }}
+                                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2 rounded-xl text-xs cursor-pointer transition border-none"
+                                        >
+                                          تسديد جزئي
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => paySupplierDebt(sup, null)}
+                                          className="flex-1 bg-slate-700 hover:bg-slate-800 text-white font-black py-2 rounded-xl text-xs cursor-pointer transition border-none"
+                                        >
+                                          تسديد الكل ({totalOwed.toLocaleString()} د.ع)
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* سجل المعاملات — الذمم */}
+                              <div className="space-y-1.5">
+                                <span className="text-[10px] text-slate-500 font-black">سجل الفواتير والذمم</span>
+                                {supPayables.length === 0
+                                  ? <p className="text-[10px] text-slate-400 text-center py-3">لا توجد فواتير مسجّلة لهذا المورد</p>
+                                  : supPayables.map(p => {
+                                    const rem = Math.max(0, p.amount - p.paidAmount);
+                                    const stCls = p.status === 'paid' ? 'text-emerald-700 bg-emerald-50 border-emerald-100' : p.status === 'partial' ? 'text-amber-700 bg-amber-50 border-amber-100' : 'text-rose-700 bg-rose-50 border-rose-100';
+                                    const stLabel = p.status === 'paid' ? 'مسدّدة' : p.status === 'partial' ? 'جزئي' : 'مفتوحة';
+                                    return (
+                                      <div key={p.id} className="bg-white border border-slate-100 rounded-xl px-3 py-2 text-[10px] font-semibold flex items-center gap-2 justify-between">
+                                        <div className="min-w-0">
+                                          <span className="text-slate-500 font-bold block">{p.id}{p.relatedOrderId ? ` • ${p.relatedOrderId}` : ''}</span>
+                                          <span className="text-slate-400 text-[9px]">{p.date}{p.description ? ` — ${p.description}` : ''}</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0 text-right">
+                                          <div>
+                                            <span className="font-mono text-slate-700 font-black block text-[11px]">{p.amount.toLocaleString()} د.ع</span>
+                                            {rem > 0 && <span className="font-mono text-rose-600 text-[9px] font-bold">متبقّي {rem.toLocaleString()}</span>}
+                                          </div>
+                                          <span className={`px-2 py-0.5 rounded-full border text-[9px] font-black ${stCls}`}>{stLabel}</span>
+                                        </div>
+                                      </div>
+                                    );
+                                  })
+                                }
+                              </div>
+
+                              {/* قوائم الشراء المرتبطة */}
+                              {supOrders.length > 0 && (
+                                <div className="space-y-1.5">
+                                  <span className="text-[10px] text-slate-500 font-black">قوائم الشراء المرتبطة</span>
+                                  {supOrders.map(o => (
+                                    <div key={o.id} className="bg-white border border-slate-100 rounded-xl px-3 py-2 text-[10px] font-semibold flex items-center justify-between gap-2">
+                                      <div>
+                                        <span className="text-slate-700 font-black">{o.id}</span>
+                                        <span className="text-slate-400 text-[9px] block">{o.date} • {o.itemsCount} أصناف</span>
+                                      </div>
+                                      <div className="text-right">
+                                        <span className="font-mono text-slate-700 font-black block">{o.totalAmount.toLocaleString()} د.ع</span>
+                                        <span className={`text-[9px] font-bold ${o.status === 'delivered' ? 'text-emerald-600' : o.status === 'cancelled' ? 'text-rose-500' : 'text-amber-600'}`}>
+                                          {o.status === 'delivered' ? 'مستلمة' : o.status === 'on_way' ? 'في الطريق' : o.status === 'preparing' ? 'تحضير' : o.status === 'cancelled' ? 'ملغاة' : 'معلّقة'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </motion.div>
+                          );
+                        })()}
+                      </AnimatePresence>
+
+                      {/* قائمة الموردين */}
+                      {!selectedSupplierId && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {suppliers.map(sup => {
+                            const supPayables = payables.filter(p => p.supplierId === sup.id || p.supplierName === sup.name);
+                            const totalOwed = supPayables.reduce((s, p) => s + Math.max(0, p.amount - p.paidAmount), 0);
+                            const openCount = supPayables.filter(p => p.status !== 'paid').length;
+                            return (
+                              <button
+                                key={sup.id}
+                                type="button"
+                                onClick={() => { setSelectedSupplierId(sup.id); setSupplierFormVisible(false); }}
+                                className="text-right bg-white border border-slate-100 hover:border-indigo-300 hover:bg-indigo-50 rounded-2xl p-4 transition cursor-pointer text-xs space-y-2 w-full"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="font-black text-slate-900 text-[11px] leading-snug truncate">{sup.name}</p>
+                                    {sup.contactPerson && <p className="text-[9px] text-slate-400 font-semibold mt-0.5">{sup.contactPerson}</p>}
+                                  </div>
+                                  <div className="shrink-0 text-left">
+                                    {totalOwed > 0
+                                      ? <span className="text-[10px] font-black text-rose-600 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full font-mono">{totalOwed.toLocaleString()} د.ع</span>
+                                      : <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">✓ مسوّى</span>
+                                    }
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3 text-[9px] text-slate-400 font-bold">
+                                  {sup.phone && <span>📞 {sup.phone}</span>}
+                                  {sup.paymentTerms && <span>🗓 {sup.paymentTerms} يوم آجل</span>}
+                                  {openCount > 0 && <span className="text-amber-600">⚠ {openCount} ذمّة مفتوحة</span>}
+                                </div>
+                              </button>
+                            );
+                          })}
+                          {suppliers.length === 0 && (
+                            <p className="text-[10px] text-slate-400 font-bold text-center py-6 col-span-2">لم يُضَف أي مورّد بعد — اضغط "إضافة مورد جديد"</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* --- ديون الموردين والذمم الدائنة --- */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                      <div className="flex items-center gap-2">
+                        <ClipboardList className="w-4 h-4 text-rose-600" />
+                        <span className="text-[11px] text-slate-600 font-black">ديون الموردين والذمم الدائنة (المذاخر والمكاتب العلمية)</span>
+                      </div>
+
+                      {/* ملخص الذمم الدائنة */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="bg-rose-50 border border-rose-100 rounded-xl p-3">
+                          <span className="text-[9px] text-rose-700 font-black block mb-1">إجمالي الذمم المستحقة</span>
+                          <strong className="text-base font-black text-rose-700 font-mono">{totalDebts.toLocaleString()} <span className="text-[9px] font-bold">د.ع</span></strong>
+                        </div>
+                        <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
+                          <span className="text-[9px] text-amber-700 font-black block mb-1">عدد الذمم المفتوحة</span>
+                          <strong className="text-base font-black text-amber-700 font-mono">{payables.filter(p => p.status !== 'paid').length} <span className="text-[9px] font-bold">ذمّة</span></strong>
+                        </div>
+                        <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3">
+                          <span className="text-[9px] text-emerald-700 font-black block mb-1">إجمالي المسدَّد</span>
+                          <strong className="text-base font-black text-emerald-800 font-mono">{payables.reduce((s, p) => s + (p.paidAmount || 0), 0).toLocaleString()} <span className="text-[9px] font-bold">د.ع</span></strong>
+                        </div>
+                      </div>
+
+                      {/* قائمة الذمم الدائنة — تُضاف تلقائياً عبر طلبيات الشراء بالآجل */}
+                      <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-slate-400 font-black">ذمم الموردين المسجّلة</span>
+                            <span className="text-[9px] text-slate-400 font-bold">العدد: {payables.length}</span>
+                          </div>
+                          <div className="space-y-2 max-h-72 overflow-y-auto pl-1">
+                            {payables.length === 0 && <p className="text-[10px] text-slate-400 font-bold text-center py-6">لا توجد ذمم مستحقة.</p>}
+                            {payables.map((p) => {
+                              const remaining = Math.max(0, p.amount - p.paidAmount);
+                              const statusLabel = p.status === 'paid' ? 'مسدّدة' : p.status === 'partial' ? 'مسدّدة جزئياً' : 'مفتوحة';
+                              const statusCls = p.status === 'paid'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                                : p.status === 'partial'
+                                  ? 'bg-amber-50 text-amber-700 border-amber-100'
+                                  : 'bg-rose-50 text-rose-700 border-rose-100';
+                              return (
+                                <div key={p.id} className="bg-white border border-slate-100 rounded-xl px-3 py-2.5 text-[10px] font-bold space-y-2">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <strong className="text-slate-800 block">{p.supplierName}</strong>
+                                      <span className="text-slate-400 text-[9px] font-semibold">{p.date}{p.dueDate ? ` • استحقاق ${p.dueDate}` : ''}{p.description ? ` • ${p.description}` : ''}</span>
+                                    </div>
+                                    <span className={`shrink-0 px-2 py-0.5 rounded-full border text-[9px] font-black ${statusCls}`}>{statusLabel}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between gap-2 text-[9px] text-slate-500 font-bold">
+                                    <span>الأصل: <span className="font-mono text-slate-700">{p.amount.toLocaleString()}</span></span>
+                                    <span>المسدَّد: <span className="font-mono text-emerald-700">{p.paidAmount.toLocaleString()}</span></span>
+                                    <span>المتبقّي: <span className="font-mono text-rose-700">{remaining.toLocaleString()} د.ع</span></span>
+                                  </div>
+                                  {p.status !== 'paid' && (
+                                    <div className="flex items-center gap-1.5 pt-1">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max={remaining}
+                                        value={settleInputs[p.id] ?? ''}
+                                        onChange={(e) => setSettleInputs(prev => ({ ...prev, [p.id]: Number(e.target.value) }))}
+                                        className="w-24 bg-white border border-slate-200 rounded-lg p-1.5 font-mono text-center text-[10px] font-bold"
+                                        placeholder="مبلغ"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSettlePayable(p, settleInputs[p.id] ?? 0)}
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-black py-1.5 px-3 rounded-lg cursor-pointer transition border-none font-sans text-[10px]"
+                                      >
+                                        تسديد
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSettlePayable(p, remaining)}
+                                        className="bg-slate-700 hover:bg-slate-800 text-white font-black py-1.5 px-3 rounded-lg cursor-pointer transition border-none font-sans text-[10px]"
+                                      >
+                                        تسديد الكل
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                      </div>
+                    </div>
+
+                    {/* --- ذمم الزبائن والبيع بالآجل (الذمم المدينة) --- */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                      <div className="flex items-center gap-2">
+                        <ClipboardList className="w-4 h-4 text-amber-600" />
+                        <span className="text-[11px] text-slate-600 font-black">ذمم الزبائن والبيع بالآجل (الذمم المدينة المستحقة لنا)</span>
+                      </div>
+
+                      {/* ملخص الذمم المدينة */}
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
+                          <span className="text-[9px] text-amber-700 font-black block mb-1">إجمالي الذمم المستحقة لنا</span>
+                          <strong className="text-base font-black text-amber-700 font-mono">{totalReceivables.toLocaleString()} <span className="text-[9px] font-bold">د.ع</span></strong>
+                        </div>
+                        <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
+                          <span className="text-[9px] text-blue-700 font-black block mb-1">عدد الذمم المفتوحة</span>
+                          <strong className="text-base font-black text-blue-700 font-mono">{receivables.filter(r => r.status !== 'paid').length} <span className="text-[9px] font-bold">ذمّة</span></strong>
+                        </div>
+                        <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3">
+                          <span className="text-[9px] text-emerald-700 font-black block mb-1">إجمالي المُحصَّل</span>
+                          <strong className="text-base font-black text-emerald-800 font-mono">{receivables.reduce((s, r) => s + (r.paidAmount || 0), 0).toLocaleString()} <span className="text-[9px] font-bold">د.ع</span></strong>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                        {/* نموذج تسجيل ذمّة على زبون */}
+                        <form onSubmit={handleAddReceivable} className="md:col-span-5 bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-3 text-xs font-semibold">
+                          <span className="text-[10px] text-slate-400 font-black block">تسجيل ذمّة مستحقة على زبون</span>
+                          <div className="space-y-1">
+                            <label className="block text-slate-500 text-[10px]">اسم الزبون / العيادة</label>
+                            <input type="text" required value={newRecCustomer} onChange={(e) => setNewRecCustomer(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700" placeholder="مثال: عيادة د. سرمد للأطفال" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-slate-500 text-[10px]">مبلغ الدين (د.ع)</label>
+                            <input type="number" min="0" required value={newRecAmount} onChange={(e) => setNewRecAmount(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-mono text-center font-bold" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-slate-500 text-[10px]">تاريخ الاستحقاق (اختياري)</label>
+                            <input type="date" value={newRecDueDate} onChange={(e) => setNewRecDueDate(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="block text-slate-500 text-[10px]">وصف (اختياري)</label>
+                            <input type="text" value={newRecDesc} onChange={(e) => setNewRecDesc(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2" placeholder="مثال: أدوية ومستلزمات شهرية للعيادة" />
+                          </div>
+                          <button type="submit" className="w-full bg-amber-600 hover:bg-amber-700 text-white font-black py-2.5 rounded-xl cursor-pointer transition shadow-sm border-none font-sans text-xs">
+                            تسجيل ذمّة على زبون
+                          </button>
+                          {receivableSuccess && <p className="text-[10px] text-emerald-700 font-black text-center">✓ تم تسجيل الذمّة في دفتر ذمم الزبائن</p>}
+                        </form>
+
+                        {/* قائمة الذمم المدينة */}
+                        <div className="md:col-span-7 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] text-slate-400 font-black">ذمم الزبائن المسجّلة</span>
+                            <span className="text-[9px] text-slate-400 font-bold">العدد: {receivables.length}</span>
+                          </div>
+                          <div className="space-y-2 max-h-72 overflow-y-auto pl-1">
+                            {receivables.length === 0 && <p className="text-[10px] text-slate-400 font-bold text-center py-6">لا توجد ذمم على الزبائن.</p>}
+                            {receivables.map((r) => {
+                              const remaining = Math.max(0, r.amount - r.paidAmount);
+                              const statusLabel = r.status === 'paid' ? 'محصّلة بالكامل' : r.status === 'partial' ? 'محصّلة جزئياً' : 'مفتوحة';
+                              const statusCls = r.status === 'paid'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                                : r.status === 'partial'
+                                  ? 'bg-blue-50 text-blue-700 border-blue-100'
+                                  : 'bg-amber-50 text-amber-700 border-amber-100';
+                              return (
+                                <div key={r.id} className="bg-white border border-slate-100 rounded-xl px-3 py-2.5 text-[10px] font-bold space-y-2">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <strong className="text-slate-800 block">{r.customerName}</strong>
+                                      <span className="text-slate-400 text-[9px] font-semibold">{r.date}{r.dueDate ? ` • استحقاق ${r.dueDate}` : ''}{r.description ? ` • ${r.description}` : ''}</span>
+                                    </div>
+                                    <span className={`shrink-0 px-2 py-0.5 rounded-full border text-[9px] font-black ${statusCls}`}>{statusLabel}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between gap-2 text-[9px] text-slate-500 font-bold">
+                                    <span>الأصل: <span className="font-mono text-slate-700">{r.amount.toLocaleString()}</span></span>
+                                    <span>المُحصَّل: <span className="font-mono text-emerald-700">{r.paidAmount.toLocaleString()}</span></span>
+                                    <span>المتبقّي: <span className="font-mono text-amber-700">{remaining.toLocaleString()} د.ع</span></span>
+                                  </div>
+                                  {r.status !== 'paid' && (
+                                    <div className="flex items-center gap-1.5 pt-1">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max={remaining}
+                                        value={collectInputs[r.id] ?? ''}
+                                        onChange={(e) => setCollectInputs(prev => ({ ...prev, [r.id]: Number(e.target.value) }))}
+                                        className="w-24 bg-white border border-slate-200 rounded-lg p-1.5 font-mono text-center text-[10px] font-bold"
+                                        placeholder="مبلغ"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCollectReceivable(r, collectInputs[r.id] ?? 0)}
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-black py-1.5 px-3 rounded-lg cursor-pointer transition border-none font-sans text-[10px]"
+                                      >
+                                        تحصيل
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCollectReceivable(r, remaining)}
+                                        className="bg-slate-700 hover:bg-slate-800 text-white font-black py-1.5 px-3 rounded-lg cursor-pointer transition border-none font-sans text-[10px]"
+                                      >
+                                        تحصيل الكل
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      
-                      {/* Left: Supp debts breakdown & settle simulator */}
+
+                      {/* Left: Supp debts breakdown & settle per supplier */}
                       <div className="bg-slate-50 p-5 rounded-2xl border border-slate-150 text-xs space-y-4 font-semibold text-slate-705">
                         <h4 className="font-extrabold text-slate-900 text-xs">سداد الديون وتسوية ذمم المذاخر والتقاص الطبية</h4>
-                        
+
                         <div className="space-y-2">
                           <p className="flex justify-between">
-                            <span>ملفات الذمم المستحقة الإجمالي للمذاخر:</span>
+                            <span>إجمالي الذمم المستحقة للموردين:</span>
                             <strong className="text-rose-700 font-mono text-sm">{totalDebts.toLocaleString()} د.ع</strong>
                           </p>
                           <p className="flex justify-between text-slate-500">
-                            <span>الرصيد المتاح حالياً بالصندوق:</span>
+                            <span>الرصيد المتاح بالصندوق:</span>
                             <span className="font-mono">{walletBalance.toLocaleString()} د.ع</span>
                           </p>
                         </div>
 
-                        <div className="bg-white p-3.5 rounded-xl border border-slate-100 text-[11px] space-y-2.5 font-bold">
-                          <p className="flex justify-between">
-                            <span>مكتب دجلة العلمي للأدوية (بغداد)</span>
-                            <span className="font-mono text-slate-800">750,000 د.ع</span>
-                          </p>
-                          <p className="flex justify-between">
-                            <span>مذخر قصر الشفاء الحديث (أربيل)</span>
-                            <span className="font-mono text-slate-800">1,100,000 د.ع</span>
-                          </p>
-                        </div>
+                        {/* قائمة ديناميكية لكل مورد له ذمم مفتوحة */}
+                        {(() => {
+                          // تجميع الذمم المفتوحة حسب المورد
+                          const grouped = payables
+                            .filter(p => p.status !== 'paid')
+                            .reduce((acc, p) => {
+                              const key = p.supplierName;
+                              if (!acc[key]) acc[key] = { name: key, supplierId: p.supplierId, remaining: 0 };
+                              acc[key].remaining += Math.max(0, p.amount - p.paidAmount);
+                              return acc;
+                            }, {} as Record<string, { name: string; supplierId?: string; remaining: number }>);
+                          const debtSuppliers = Object.values(grouped).filter(s => s.remaining > 0);
 
-                        <div className="space-y-2.5">
-                          <button 
-                            onClick={settleSupplierDebts}
-                            disabled={walletBalance < 500000 || totalDebts === 0}
-                            className="w-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black py-2.5 rounded-xl text-center cursor-pointer transition shadow-sm text-xs font-sans"
-                          >
-                            تسوية ذمم المذاخر بقيمة (500,000 د.ع ثنائية)
-                          </button>
-                          <p className="text-[10px] text-slate-400 text-center font-medium leading-normal block">
-                            * الضغط على الزر سيقوم بسحب قيمة 500,000 د.ع من السيولة وتسوية كشف المذاخر المعنية أوتوماتيكياً.
-                          </p>
-                        </div>
+                          if (debtSuppliers.length === 0) {
+                            return (
+                              <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 text-center text-emerald-700 font-bold text-[11px]">
+                                ✓ لا توجد ذمم مستحقة — جميع الموردين مسوَّون
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <div className="space-y-3">
+                              {debtSuppliers.map(sup => {
+                                const payAmt = debtPayAmounts[sup.name] || 0;
+                                const canPay = walletBalance >= payAmt && payAmt > 0;
+                                const canPayAll = walletBalance >= sup.remaining;
+                                // ابحث عن كائن المورد الكامل أو أنشئ واحداً مؤقتاً
+                                const supplierObj = suppliers.find(s => s.id === sup.supplierId || s.name === sup.name)
+                                  || { id: sup.supplierId || sup.name, name: sup.name, createdAt: '' } as any;
+                                return (
+                                  <div key={sup.name} className="bg-white border border-slate-100 rounded-xl p-3 space-y-2.5">
+                                    {/* اسم المورد والمبلغ المستحق */}
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-black text-slate-800 text-[11px]">{sup.name}</span>
+                                      <span className="font-mono text-rose-600 font-black text-[11px]">{sup.remaining.toLocaleString()} د.ع</span>
+                                    </div>
+                                    {/* حقل المبلغ + أزرار التسديد */}
+                                    <div className="flex gap-1.5 items-center">
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        max={sup.remaining}
+                                        placeholder="مبلغ الدفعة"
+                                        value={payAmt || ''}
+                                        onChange={e => setDebtPayAmounts(prev => ({ ...prev, [sup.name]: Number(e.target.value) }))}
+                                        className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 font-mono text-center text-[10px] font-bold min-w-0"
+                                      />
+                                      <button
+                                        type="button"
+                                        disabled={!canPay}
+                                        onClick={() => {
+                                          paySupplierDebt(supplierObj, payAmt);
+                                          setDebtPayAmounts(prev => ({ ...prev, [sup.name]: 0 }));
+                                        }}
+                                        className="shrink-0 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-black px-3 py-1.5 rounded-lg text-[10px] cursor-pointer transition border-none"
+                                      >
+                                        دفعة
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={!canPayAll}
+                                        onClick={() => paySupplierDebt(supplierObj, null)}
+                                        className="shrink-0 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-black px-3 py-1.5 rounded-lg text-[10px] cursor-pointer transition border-none"
+                                      >
+                                        سدّد الكل
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {/* Right: Dynamic capital and markup calculator logic */}
@@ -2989,12 +6211,364 @@ export default function Dashboard() {
                         </div>
                       </div>
 
+                    {/* =========================================================
+                        قسم المرتجعات (مرتجعات المبيعات)
+                        ========================================================= */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <RefreshCw className="w-4 h-4 text-rose-500" />
+                          <span className="text-[11px] text-slate-600 font-black">مرتجعات المبيعات</span>
+                        </div>
+                        <span className="text-[9px] bg-rose-50 text-rose-700 font-black px-2.5 py-1 rounded-full border border-rose-100">
+                          {salesReturns.length} مرتجع • {salesReturns.reduce((s, r) => s + r.total, 0).toLocaleString()} د.ع
+                        </span>
+                      </div>
+
+                      {salesReturns.length === 0 ? (
+                        <p className="text-[10px] text-slate-400 font-bold text-center py-6">لا توجد مرتجعات مسجّلة بعد.</p>
+                      ) : (
+                        <div className="space-y-2 max-h-64 overflow-y-auto pl-1">
+                          {salesReturns.map(r => (
+                            <div key={r.returnId} className="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-[10px] font-bold space-y-1">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono text-rose-700 font-black">{r.returnId}</span>
+                                  <span className="text-slate-400">←</span>
+                                  <span className="font-mono text-slate-500">{r.originalInvoiceId}</span>
+                                </div>
+                                <strong className="text-rose-700 font-mono">−{r.total.toLocaleString()} د.ع</strong>
+                              </div>
+                              <div className="flex items-center justify-between text-slate-500 text-[9px]">
+                                <span>{r.timestamp} • {r.customerName} • {r.reason}</span>
+                                <span className={`px-1.5 py-0.5 rounded font-black ${r.refundMethod === 'cash' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'}`}>
+                                  {r.refundMethod === 'cash' ? 'استرداد نقدي' : 'تصحيح فقط'}
+                                </span>
+                              </div>
+                              <div className="text-[9px] text-slate-400 font-semibold">
+                                {r.items.map((it, i) => <span key={i}>{it.name} ×{it.quantity}{i < r.items.length - 1 ? ' | ' : ''}</span>)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* =========================================================
+                        كشف الحساب — الموردين والزبائن
+                        ========================================================= */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-5">
+                      <div className="flex items-center gap-2 border-b border-slate-100 pb-4">
+                        <FileText className="w-4 h-4 text-emerald-600" />
+                        <span className="text-[11px] text-slate-600 font-black">كشف الحساب — الموردين والزبائن</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                        {/* ---- كشف حساب المورد ---- */}
+                        <div className="space-y-3">
+                          <span className="text-[10px] font-black text-rose-600 flex items-center gap-1.5">
+                            <Truck className="w-3.5 h-3.5" /> كشف حساب المورد / المذخر
+                          </span>
+                          <select
+                            value={stmtSupplier}
+                            onChange={e => setStmtSupplier(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-[10px] font-bold focus:outline-emerald-400"
+                          >
+                            <option value="">— اختر المورد —</option>
+                            {[...new Set(payables.map(p => p.supplierName))].map(name => (
+                              <option key={name} value={name}>{name}</option>
+                            ))}
+                          </select>
+
+                          {stmtSupplier && (() => {
+                            const rows = payables.filter(p => p.supplierName === stmtSupplier);
+                            const totalOwed = rows.reduce((s, p) => s + p.amount, 0);
+                            const totalPaid = rows.reduce((s, p) => s + p.paidAmount, 0);
+                            const balance = totalOwed - totalPaid;
+                            let running = 0;
+                            return (
+                              <div className="space-y-2">
+                                <div className="grid grid-cols-3 gap-2">
+                                  <div className="bg-rose-50 rounded-xl p-2.5 text-center">
+                                    <span className="text-[8px] text-rose-600 font-black block">إجمالي الدين</span>
+                                    <strong className="text-[10px] font-mono text-rose-700">{totalOwed.toLocaleString()}</strong>
+                                  </div>
+                                  <div className="bg-emerald-50 rounded-xl p-2.5 text-center">
+                                    <span className="text-[8px] text-emerald-600 font-black block">المدفوع</span>
+                                    <strong className="text-[10px] font-mono text-emerald-700">{totalPaid.toLocaleString()}</strong>
+                                  </div>
+                                  <div className="bg-amber-50 rounded-xl p-2.5 text-center">
+                                    <span className="text-[8px] text-amber-600 font-black block">المتبقي</span>
+                                    <strong className="text-[10px] font-mono text-amber-700">{balance.toLocaleString()}</strong>
+                                  </div>
+                                </div>
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-[9px] font-bold border-collapse">
+                                    <thead>
+                                      <tr className="bg-slate-100 text-slate-500">
+                                        <th className="text-right p-1.5 rounded-r-lg">التاريخ</th>
+                                        <th className="text-right p-1.5">البيان</th>
+                                        <th className="text-left p-1.5">مدين</th>
+                                        <th className="text-left p-1.5">دائن</th>
+                                        <th className="text-left p-1.5 rounded-l-lg">الرصيد</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {rows.map(p => {
+                                        running += (p.amount - p.paidAmount);
+                                        return (
+                                          <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50">
+                                            <td className="p-1.5 text-slate-500">{p.date}</td>
+                                            <td className="p-1.5 text-slate-700">{p.description || 'فاتورة توريد'}</td>
+                                            <td className="p-1.5 font-mono text-rose-600 text-left">{p.amount.toLocaleString()}</td>
+                                            <td className="p-1.5 font-mono text-emerald-600 text-left">{p.paidAmount > 0 ? p.paidAmount.toLocaleString() : '—'}</td>
+                                            <td className="p-1.5 font-mono text-amber-700 text-left">{running.toLocaleString()}</td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                    <tfoot>
+                                      <tr className="bg-slate-50 font-black">
+                                        <td colSpan={2} className="p-1.5 text-slate-600">الرصيد النهائي</td>
+                                        <td className="p-1.5 font-mono text-rose-700 text-left">{totalOwed.toLocaleString()}</td>
+                                        <td className="p-1.5 font-mono text-emerald-700 text-left">{totalPaid.toLocaleString()}</td>
+                                        <td className="p-1.5 font-mono text-amber-800 text-left">{balance.toLocaleString()}</td>
+                                      </tr>
+                                    </tfoot>
+                                  </table>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+
+                        {/* ---- كشف حساب الزبون ---- */}
+                        <div className="space-y-3">
+                          <span className="text-[10px] font-black text-emerald-700 flex items-center gap-1.5">
+                            <Users className="w-3.5 h-3.5" /> كشف حساب الزبون / العميل
+                          </span>
+                          <select
+                            value={stmtCustomer}
+                            onChange={e => setStmtCustomer(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-[10px] font-bold focus:outline-emerald-400"
+                          >
+                            <option value="">— اختر الزبون —</option>
+                            {[...new Set([
+                              ...receivables.map(r => r.customerName),
+                              ...salesLedger.map(s => s.customerName).filter(n => n !== 'زبون نقدي / خارجي'),
+                            ])].map(name => (
+                              <option key={name} value={name}>{name}</option>
+                            ))}
+                          </select>
+
+                          {stmtCustomer && (() => {
+                            const recRows = receivables.filter(r => r.customerName === stmtCustomer);
+                            const saleRows = salesLedger.filter(s => s.customerName === stmtCustomer);
+                            const totalSales = saleRows.reduce((s, x) => s + x.total, 0);
+                            const totalRec = recRows.reduce((s, r) => s + r.amount, 0);
+                            const totalCollected = recRows.reduce((s, r) => s + r.paidAmount, 0);
+                            const balance = totalRec - totalCollected;
+                            let running = 0;
+                            const allRows: { date: string; desc: string; debit: number; credit: number; type: 'sale' | 'rec' }[] = [
+                              ...saleRows.map(s => ({ date: s.timestamp.split(' ')[0], desc: `فاتورة ${s.invoiceId}`, debit: s.total, credit: 0, type: 'sale' as const })),
+                              ...recRows.map(r => ({ date: r.date, desc: r.description || 'ذمّة مدينة', debit: r.amount, credit: r.paidAmount, type: 'rec' as const })),
+                            ].sort((a, b) => a.date.localeCompare(b.date));
+                            return (
+                              <div className="space-y-2">
+                                <div className="grid grid-cols-3 gap-2">
+                                  <div className="bg-blue-50 rounded-xl p-2.5 text-center">
+                                    <span className="text-[8px] text-blue-600 font-black block">إجمالي المبيعات</span>
+                                    <strong className="text-[10px] font-mono text-blue-700">{(totalSales + totalRec).toLocaleString()}</strong>
+                                  </div>
+                                  <div className="bg-emerald-50 rounded-xl p-2.5 text-center">
+                                    <span className="text-[8px] text-emerald-600 font-black block">المحصَّل</span>
+                                    <strong className="text-[10px] font-mono text-emerald-700">{(totalSales + totalCollected).toLocaleString()}</strong>
+                                  </div>
+                                  <div className="bg-amber-50 rounded-xl p-2.5 text-center">
+                                    <span className="text-[8px] text-amber-600 font-black block">المتبقي (ذمّة)</span>
+                                    <strong className="text-[10px] font-mono text-amber-700">{balance.toLocaleString()}</strong>
+                                  </div>
+                                </div>
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-[9px] font-bold border-collapse">
+                                    <thead>
+                                      <tr className="bg-slate-100 text-slate-500">
+                                        <th className="text-right p-1.5 rounded-r-lg">التاريخ</th>
+                                        <th className="text-right p-1.5">البيان</th>
+                                        <th className="text-left p-1.5">مدين</th>
+                                        <th className="text-left p-1.5">دائن</th>
+                                        <th className="text-left p-1.5 rounded-l-lg">الرصيد</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {allRows.map((row, i) => {
+                                        running += row.debit - row.credit;
+                                        return (
+                                          <tr key={i} className="border-b border-slate-50 hover:bg-slate-50">
+                                            <td className="p-1.5 text-slate-500">{row.date}</td>
+                                            <td className="p-1.5 text-slate-700">{row.desc}</td>
+                                            <td className="p-1.5 font-mono text-rose-600 text-left">{row.debit > 0 ? row.debit.toLocaleString() : '—'}</td>
+                                            <td className="p-1.5 font-mono text-emerald-600 text-left">{row.credit > 0 ? row.credit.toLocaleString() : '—'}</td>
+                                            <td className="p-1.5 font-mono text-amber-700 text-left">{running.toLocaleString()}</td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                    <tfoot>
+                                      <tr className="bg-slate-50 font-black">
+                                        <td colSpan={2} className="p-1.5 text-slate-600">الرصيد النهائي</td>
+                                        <td colSpan={2} className="p-1.5 text-slate-500 text-left text-[8px]">إجمالي الحركات</td>
+                                        <td className="p-1.5 font-mono text-amber-800 text-left">{balance.toLocaleString()}</td>
+                                      </tr>
+                                    </tfoot>
+                                  </table>
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
+
+                      </div>
+                    </div>
+
                     </div>
                   </div>
+
+                  {/* --- سجل التدقيق --- */}
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-slate-600" />
+                        <span className="text-[11px] text-slate-600 font-black">سجل التدقيق (آخر 50 عملية)</span>
+                      </div>
+                      <span className="text-[9px] text-slate-400 font-bold">{auditLog.length} إدخال</span>
+                    </div>
+
+                    <div className="space-y-1.5 max-h-96 overflow-y-auto">
+                      {auditLog.slice(0, 50).map(entry => {
+                        const actionMeta: Record<AuditEntry['action'], { label: string; color: string; bg: string }> = {
+                          sale:               { label: 'بيع',       color: 'text-emerald-700', bg: 'bg-emerald-50' },
+                          purchase:           { label: 'شراء',      color: 'text-blue-700',   bg: 'bg-blue-50'   },
+                          expense:            { label: 'مصروف',     color: 'text-rose-700',   bg: 'bg-rose-50'   },
+                          payable_add:        { label: 'ذمّة مورّد', color: 'text-amber-700',  bg: 'bg-amber-50'  },
+                          payable_settle:     { label: 'تسديد',     color: 'text-emerald-700',bg: 'bg-emerald-50'},
+                          receivable_add:     { label: 'ذمّة زبون', color: 'text-violet-700', bg: 'bg-violet-50' },
+                          receivable_collect: { label: 'تحصيل',     color: 'text-emerald-700',bg: 'bg-emerald-50'},
+                          return:             { label: 'مرتجع',     color: 'text-rose-700',   bg: 'bg-rose-50'   },
+                          inventory_import:   { label: 'استيراد مخزون', color: 'text-slate-700', bg: 'bg-slate-100' },
+                        };
+                        const meta = actionMeta[entry.action];
+                        return (
+                          <div key={entry.id} className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-[10px] font-bold gap-3">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className={`shrink-0 px-1.5 py-0.5 rounded-md font-black text-[9px] ${meta.bg} ${meta.color}`}>{meta.label}</span>
+                              <span className="text-slate-600 truncate">{entry.description}</span>
+                            </div>
+                            <div className="flex items-center gap-3 shrink-0 text-right">
+                              {entry.amount > 0 && (
+                                <span className={`font-mono font-black ${['expense','payable_settle','return'].includes(entry.action) ? 'text-rose-600' : 'text-emerald-700'}`}>
+                                  {['expense','payable_settle','return'].includes(entry.action) ? '−' : '+'}{entry.amount.toLocaleString()} د.ع
+                                </span>
+                              )}
+                              <div className="text-slate-400 text-right">
+                                <span className="block font-mono">{entry.timestamp}</span>
+                                <span className="block text-[9px]">{entry.actor}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {auditLog.length === 0 && (
+                        <p className="text-[10px] text-slate-400 font-bold text-center py-6">لا توجد سجلات تدقيق بعد.</p>
+                      )}
+                    </div>
+                    <p className="text-[9px] text-slate-400 font-bold">* يُسجَّل كل بيع، شراء، مصروف، تسديد ذمّة، تحصيل، ومرتجع تلقائياً مع الوقت والمسؤول.</p>
+                  </div>
+
+                  {/* --- تغيير كلمة مرور التبويب المالي --- */}
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-violet-600" />
+                      <span className="text-[11px] text-slate-600 font-black">تغيير كلمة مرور الحسابات المالية</span>
+                    </div>
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (!changePinOld || !changePinNew || !changePinConfirm) {
+                          setChangePinMsg({ type: 'error', text: 'يرجى تعبئة جميع الحقول' });
+                          return;
+                        }
+                        if (changePinOld !== financialPin) {
+                          setChangePinMsg({ type: 'error', text: 'كلمة المرور الحالية غير صحيحة' });
+                          return;
+                        }
+                        if (changePinNew !== changePinConfirm) {
+                          setChangePinMsg({ type: 'error', text: 'كلمة المرور الجديدة وتأكيدها غير متطابقتين' });
+                          return;
+                        }
+                        if (changePinNew.length < 4) {
+                          setChangePinMsg({ type: 'error', text: 'كلمة المرور يجب أن تكون 4 أحرف على الأقل' });
+                          return;
+                        }
+                        setFinancialPin(changePinNew);
+                        try { localStorage.setItem('fin_pin', changePinNew); } catch {}
+                        setChangePinOld(''); setChangePinNew(''); setChangePinConfirm('');
+                        setChangePinMsg({ type: 'success', text: '✓ تم تغيير كلمة المرور بنجاح' });
+                        setTimeout(() => setChangePinMsg(null), 3000);
+                      }}
+                      className="grid grid-cols-1 sm:grid-cols-3 gap-3"
+                    >
+                      <div className="space-y-1">
+                        <label className="block text-[10px] text-slate-500 font-black">كلمة المرور الحالية</label>
+                        <input
+                          type="password"
+                          value={changePinOld}
+                          onChange={e => { setChangePinOld(e.target.value); setChangePinMsg(null); }}
+                          placeholder="••••"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center font-mono text-sm focus:outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-200 transition"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-[10px] text-slate-500 font-black">كلمة المرور الجديدة</label>
+                        <input
+                          type="password"
+                          value={changePinNew}
+                          onChange={e => { setChangePinNew(e.target.value); setChangePinMsg(null); }}
+                          placeholder="••••"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center font-mono text-sm focus:outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-200 transition"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-[10px] text-slate-500 font-black">تأكيد كلمة المرور</label>
+                        <input
+                          type="password"
+                          value={changePinConfirm}
+                          onChange={e => { setChangePinConfirm(e.target.value); setChangePinMsg(null); }}
+                          placeholder="••••"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center font-mono text-sm focus:outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-200 transition"
+                        />
+                      </div>
+                      <div className="sm:col-span-3 flex items-center gap-3">
+                        <button
+                          type="submit"
+                          className="bg-violet-600 hover:bg-violet-700 text-white font-black px-6 py-2.5 rounded-xl text-xs cursor-pointer transition border-none font-sans"
+                        >
+                          حفظ كلمة المرور الجديدة
+                        </button>
+                        {changePinMsg && (
+                          <span className={`text-[11px] font-black ${changePinMsg.type === 'success' ? 'text-emerald-700' : 'text-rose-600'}`}>
+                            {changePinMsg.text}
+                          </span>
+                        )}
+                      </div>
+                    </form>
+                  </div>
+
                 </motion.div>
               )}
 
-              {/* 
+              {/*
                 =========================================================
                 VIEWPORT SECTION 6: PHARMACY TEAM MANAGMENT
                 =========================================================
@@ -3009,7 +6583,7 @@ export default function Dashboard() {
                 >
                   <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
                     <div className="border-b border-slate-100 pb-4">
-                      <span className="text-xs text-emerald-600 font-extrabold bg-emerald-50 px-3 py-1 rounded-full uppercase">إدارة الطاقم كابسولة بلس</span>
+                      <span className="text-xs text-emerald-600 font-extrabold bg-emerald-50 px-3 py-1 rounded-full uppercase">إدارة الطاقم انوار الحسن</span>
                       <h3 className="font-extrabold text-slate-900 text-sm mt-3">سجل الصيادلة، الموظفين والمساعدين المرخصين</h3>
                       <p className="text-[10px] text-slate-400 font-bold mt-1">
                         توزيع الصلاحيات للشفت المناوب ومتابعة تراخيص الصيادلة التابعين للمؤسسة والملحقين بنقابة صيادلة جمهورية العراق
@@ -3103,9 +6677,9 @@ export default function Dashboard() {
 
             </AnimatePresence>
 
+            </div>
           </div>
-
-        </div>
+        )}
 
       </div>
 
@@ -3131,7 +6705,7 @@ export default function Dashboard() {
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl border border-slate-200 p-6 max-w-sm w-full shadow-2xl relative text-right text-slate-800 space-y-4 z-10"
+              className="bg-white rounded-3xl border border-slate-200 p-6 max-w-sm w-full shadow-2xl relative text-right text-slate-800 space-y-4 z-10 print-receipt"
             >
               
               <div className="text-center space-y-2 border-b border-dashed border-slate-200 pb-4">
@@ -3191,8 +6765,15 @@ export default function Dashboard() {
 
               {/* Legal confirmation */}
               <div className="bg-slate-50 p-2.5 rounded-xl text-center text-[10px] text-slate-400 font-bold border border-slate-100 leading-normal">
-                برمجيات كبسولة بلس + موثقة سحابياً وفقاً للائحة رقم 42 الصادرة من نقابة صيادلة العراق.
+                برمجيات انوار الحسن موثقة سحابياً وفقاً للائحة رقم 42 الصادرة من نقابة صيادلة العراق.
               </div>
+
+              <button
+                onClick={() => window.print()}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 rounded-xl cursor-pointer transition"
+              >
+                طباعة الفاتورة
+              </button>
 
               <button 
                 type="button" 
@@ -3202,6 +6783,102 @@ export default function Dashboard() {
                 الموافقة وإغلاق الفاتورة صيدلي
               </button>
 
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 
+        =========================================================
+        MODAL DIALOG: SALES RETURN (مرتجع مبيعات)
+        =========================================================
+      */}
+      <AnimatePresence>
+        {showReturnModal && returnTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm" dir="rtl">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-md p-6 space-y-5"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                <div>
+                  <span className="text-[10px] font-black text-rose-600 bg-rose-50 px-2.5 py-1 rounded-full uppercase">مرتجع مبيعات</span>
+                  <h3 className="font-extrabold text-slate-900 text-sm mt-2">إرجاع فاتورة {returnTarget.invoiceId}</h3>
+                  <p className="text-[10px] text-slate-400 font-bold mt-0.5">الزبون: {returnTarget.customerName} • المبلغ الأصلي: {returnTarget.total.toLocaleString()} د.ع</p>
+                </div>
+                <button onClick={() => setShowReturnModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleProcessReturn} className="space-y-4">
+                {/* Items with qty inputs */}
+                <div className="space-y-2">
+                  <span className="text-[10px] font-black text-slate-600 block">الأصناف المُرادة للإرجاع:</span>
+                  {returnTarget.items.map((it, idx) => (
+                    <div key={idx} className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2.5 text-[10px] font-bold gap-3">
+                      <div className="min-w-0 flex-1">
+                        <span className="text-slate-800 block truncate">{it.name}</span>
+                        <span className="text-slate-400 text-[9px]">الكمية المباعة: {it.quantity} • السعر: {it.price.toLocaleString()} د.ع</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <label className="text-slate-500 text-[9px]">كمية الإرجاع:</label>
+                        <input
+                          type="number" min={0} max={it.quantity}
+                          value={returnQtys[idx] ?? 0}
+                          onChange={e => setReturnQtys(prev => ({ ...prev, [idx]: Math.min(it.quantity, Math.max(0, Number(e.target.value))) }))}
+                          className="w-14 bg-white border border-slate-200 rounded-lg p-1.5 text-center focus:outline-emerald-400 text-[10px]"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Running total */}
+                {Object.values(returnQtys).some(q => q > 0) && (
+                  <div className="bg-rose-50 border border-rose-100 rounded-xl px-3 py-2 text-[10px] font-black text-rose-700 flex justify-between">
+                    <span>إجمالي مبلغ الاسترداد:</span>
+                    <span className="font-mono">
+                      {returnTarget.items.reduce((s, it, idx) => s + it.price * (returnQtys[idx] ?? 0), 0).toLocaleString()} د.ع
+                    </span>
+                  </div>
+                )}
+
+                {/* Reason */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-600 block">سبب الإرجاع: *</label>
+                  <input
+                    type="text" required value={returnReason} onChange={e => setReturnReason(e.target.value)}
+                    placeholder="دواء منتهي الصلاحية / خطأ في الصرف / طلب الزبون..."
+                    className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-[10px] font-bold focus:outline-emerald-400"
+                  />
+                </div>
+
+                {/* Refund method */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-600 block">طريقة الاسترداد:</label>
+                  <div className="flex gap-3">
+                    {(['cash', 'none'] as const).map(m => (
+                      <label key={m} className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold">
+                        <input type="radio" name="refundMethod" value={m} checked={returnRefundMethod === m} onChange={() => setReturnRefundMethod(m)} className="accent-emerald-600" />
+                        {m === 'cash' ? 'استرداد نقدي (يُخصم من الصندوق)' : 'بدون صرف نقدي (تصحيح فقط)'}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Submit */}
+                <button
+                  type="submit"
+                  disabled={!Object.values(returnQtys).some(q => q > 0)}
+                  className="w-full bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white font-black text-xs py-3 rounded-xl cursor-pointer transition shadow-sm"
+                >
+                  تأكيد المرتجع وتحديث المخزون
+                </button>
+              </form>
             </motion.div>
           </div>
         )}
@@ -3361,14 +7038,108 @@ export default function Dashboard() {
         )}
       </AnimatePresence>
 
+      {/* Bulk Inventory Import Confirmation */}
+      <AnimatePresence>
+        {showBulkImportConfirm && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={() => setShowBulkImportConfirm(false)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+              className="relative bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl text-right space-y-4"
+              dir="rtl"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 bg-slate-100 rounded-2xl flex items-center justify-center shrink-0">
+                  <Download className="w-5 h-5 text-slate-700" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900">استيراد المخزون الكامل</h3>
+                  <p className="text-[10px] text-slate-400 font-bold">من برنامج ES-PRO</p>
+                </div>
+              </div>
+              <p className="text-xs text-slate-600 font-medium leading-relaxed">
+                سيُضاف <strong className="text-slate-900">6,964 دواء</strong> إلى مخزونك مع الأسعار والكميات.
+                الأدوية ذات الكود نفسه ستُحدَّث. {currentUser ? 'ستُرفع إلى حسابك السحابي.' : 'ستُحفظ محلياً (غير مسجّل الدخول).'}
+              </p>
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[10px] text-amber-800 font-bold">
+                ⚠️ قد تستغرق العملية دقيقة. لا تغلق الصفحة أثناء الرفع.
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setShowBulkImportConfirm(false)}
+                  className="flex-1 border border-slate-200 rounded-xl py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer">
+                  إلغاء
+                </button>
+                <button onClick={handleBulkImportInventory}
+                  className="flex-1 bg-slate-800 hover:bg-slate-900 text-white rounded-xl py-2.5 text-xs font-extrabold transition cursor-pointer">
+                  ابدأ الاستيراد
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Invoice Import Modal */}
+      <AnimatePresence>
+        {showInvoiceImport && (
+          <InvoiceImportModal
+            inventory={inventory}
+            onClose={() => setShowInvoiceImport(false)}
+            onConfirm={(draftItems, supplierName) => {
+              // Merge imported items into purchaseDraft
+              setPurchaseDraft(prev => {
+                const updated = [...prev];
+                draftItems.forEach(newItem => {
+                  const exists = newItem.medicineId
+                    ? updated.findIndex(d => d.medicineId === newItem.medicineId)
+                    : -1;
+                  if (exists >= 0) {
+                    updated[exists] = {
+                      ...updated[exists],
+                      qty: updated[exists].qty + newItem.qty,
+                      price: newItem.price,
+                      expiryDate: newItem.expiryDate,
+                    };
+                  } else {
+                    updated.push(newItem);
+                  }
+                });
+                return updated;
+              });
+              if (supplierName) setPurchaseSupplier(supplierName);
+              setShowInvoiceImport(false);
+              setPurchaseSuccessBanner(`تم استيراد ${draftItems.length} صنف من الفاتورة إلى مسودة الشراء`);
+              setTimeout(() => setPurchaseSuccessBanner(null), 5000);
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Hidden financial print div */}
+      <div className='print-financial p-8 text-right' dir='rtl'>
+        <h1 className='text-xl font-black mb-2'>صيدلية انوار الحسن — التقرير المالي</h1>
+        <p className='text-sm mb-4'>تاريخ التصدير: {new Date().toLocaleDateString('ar-IQ')}</p>
+        <table className='w-full border-collapse text-xs mb-4'><tbody>
+          <tr><td className='border p-2 font-bold'>السيولة في الصندوق</td><td className='border p-2 font-mono'>{walletBalance.toLocaleString()} د.ع</td></tr>
+          <tr><td className='border p-2 font-bold'>مبيعات هذا الشهر</td><td className='border p-2 font-mono'>{statsMonth.sales.toLocaleString()} د.ع</td></tr>
+          <tr><td className='border p-2 font-bold'>الربح الإجمالي (الشهر)</td><td className='border p-2 font-mono'>{statsMonth.profit.toLocaleString()} د.ع</td></tr>
+          <tr><td className='border p-2 font-bold'>إجمالي الذمم للموردين</td><td className='border p-2 font-mono'>{totalDebts.toLocaleString()} د.ع</td></tr>
+        </tbody></table>
+        <p className='text-xs text-slate-500'>صيدلية انوار الحسن — نظام إدارة صيدليات المتكامل</p>
+      </div>
+
       {/* 
         =========================================================
-        SMALL SIGNATURE FOOTER FOR CAPSULA CLIENTS
+        SMALL SIGNATURE FOOTER FOR ANWAR AL-HASSAN CLIENTS
         =========================================================
       */}
       <footer className="bg-slate-950 text-slate-500 py-8 border-t border-slate-900 text-center text-xs font-semibold mt-16">
         <div className="max-w-7xl mx-auto px-4 space-y-2">
-          <p>© 2026 Capsula Iraq Plus. جميع الحقوق معتمدة ومحفوظة لنقابة صيادلة العراق ومستودعات الأدوية.</p>
+          <p>© 2026 ANWAR AL-HASSAN. جميع الحقوق معتمدة ومحفوظة لنقابة صيادلة العراق ومستودعات الأدوية.</p>
           <p className="text-[10px] text-slate-600 font-mono">Platform Integration Applet ID: {`e3fe30f5-c41f-4ed7`}</p>
         </div>
       </footer>

@@ -1,4 +1,4 @@
-import { Activity, Mail, Phone, MapPin, ExternalLink, Globe } from 'lucide-react';
+﻿import { Activity, Mail, Phone, MapPin, ExternalLink, Globe } from 'lucide-react';
 
 interface FooterProps {
   setCurrentTab: (tab: 'landing' | 'search' | 'ecosystem' | 'register' | 'portal') => void;
@@ -16,13 +16,13 @@ export default function Footer({ setCurrentTab }: FooterProps) {
               <div className="w-10 h-10 bg-emerald-600 rounded-lg flex items-center justify-center text-white">
                 <Activity className="w-5.5 h-5.5" />
               </div>
-              <span className="text-xl font-black text-white">Capsula | كبسولة</span>
+              <span className="text-xl font-black text-white">ANWAR AL-HASSAN</span>
             </div>
             <p className="text-sm font-semibold text-slate-400 leading-relaxed">
               منصة العراق الطبية والدوائية B2B الأولى والمجانية تماماً للصيدليات ومستودعات الأدوية والمكاتب العلمية. نساعد في تسريع توزيع بضائع الأدوية وتنظيم المدفوعات في كافة المحافظات العراقية.
             </p>
             <div className="pt-2 text-xs text-slate-500 font-bold">
-              تطبيق كبسولة مجاز ومسجل وفقاً للقوانين واللوائح الطبية الخاصة بوزارة الصحة العراقية ونقابة الصيادلة للجمهورية العراقية.
+              تطبيق انوار الحسن مجاز ومسجل وفقاً للقوانين واللوائح الطبية الخاصة بوزارة الصحة العراقية ونقابة الصيادلة للجمهورية العراقية.
             </div>
           </div>
 
@@ -42,7 +42,7 @@ export default function Footer({ setCurrentTab }: FooterProps) {
               </li>
               <li>
                 <button onClick={() => setCurrentTab('ecosystem')} className="hover:text-emerald-400 transition cursor-pointer">
-                  منظومة كبسولة
+                  منظومة انوار الحسن
                 </button>
               </li>
               <li>
@@ -67,12 +67,12 @@ export default function Footer({ setCurrentTab }: FooterProps) {
               </li>
               <li className="flex items-center space-x-reverse space-x-2.5">
                 <Mail className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                <span>support@capsula.iq</span>
+                <span>support@anwar-al-hassan.iq</span>
               </li>
               <li className="flex items-center space-x-reverse space-x-2.5">
                 <Globe className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                <a href="https://capsula.iq/" target="_blank" rel="noopener noreferrer" className="hover:text-emerald-400 transition flex items-center space-x-reverse space-x-1">
-                  <span>الموقع الرسمي: capsula.iq</span>
+                <a href="https://anwar-al-hassan.iq/" target="_blank" rel="noopener noreferrer" className="hover:text-emerald-400 transition flex items-center space-x-reverse space-x-1">
+                  <span>الموقع الرسمي: anwar-al-hassan.iq</span>
                   <ExternalLink className="w-3 h-3 text-slate-600" />
                 </a>
               </li>
@@ -83,7 +83,7 @@ export default function Footer({ setCurrentTab }: FooterProps) {
 
         {/* Outer footer credits card */}
         <div className="mt-12 pt-8 border-t border-slate-900 flex flex-col sm:flex-row justify-between items-center gap-4 text-[11px] font-bold text-slate-500">
-          <p>© 2026 Capsula Iraq. جميع الحقوق محفوظة لشركة كبسولة للتقنيات الطبية المحدودة.</p>
+          <p>© 2026 ANWAR AL-HASSAN. جميع الحقوق محفوظة لشركة انوار الحسن للتقنيات الطبية المحدودة.</p>
           <div className="flex space-x-reverse space-x-4">
             <a href="#" className="hover:text-emerald-400">سياسة الخصوصية للأطباء</a>
             <span>•</span>
