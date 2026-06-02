@@ -2355,29 +2355,43 @@ export default function Dashboard() {
     setBulkImportStatus('loading');
     setBulkImportMsg('جارٍ تحميل ملف الأدوية...');
     try {
-      const res = await fetch('/inventory-seed.json');
+      const res = await fetch('/inventory-seed.json', { cache: 'no-store' });
       if (!res.ok) throw new Error('تعذّر تحميل ملف البيانات');
       const meds: Medicine[] = await res.json();
 
-      // دمج في الحالة المحلية فوراً (نتجاوز التكرار حسب id)
-      setInventory(prev => {
-        const map = new Map(prev.map(m => [m.id, m]));
-        meds.forEach(m => map.set(m.id, m));
-        return Array.from(map.values());
-      });
+      // معرّفات المواد القديمة التي ستُحذف (استبدال كامل — كل ما ليس ضمن الملف الجديد)
+      const newIdSet = new Set(meds.map(m => m.id));
+      const oldIds = inventory.map(m => m.id).filter(id => !newIdSet.has(id));
+
+      // استبدال الحالة المحلية فوراً بالبيانات الجديدة فقط
+      setInventory(meds);
 
       if (!currentUser) {
         // وضع تجريبي بدون تسجيل دخول — يُحفظ محلياً فقط
         setBulkImportStatus('done');
-        setBulkImportMsg(`تم تحميل ${meds.length.toLocaleString()} دواء محلياً. سجّل الدخول لمزامنتها سحابياً.`);
+        setBulkImportMsg(`تم تحميل ${meds.length.toLocaleString()} صنف محلياً. سجّل الدخول لمزامنتها سحابياً.`);
         setTimeout(() => setBulkImportStatus('idle'), 8000);
         return;
       }
 
-      // كتابة دفعية إلى Firestore (حد الدفعة 500 عملية)
       setBulkImportStatus('writing');
       const userId = currentUser.uid;
       const CHUNK = 450;
+
+      // 1) حذف المواد القديمة/التجريبية من Firestore (دفعات)
+      if (oldIds.length) {
+        setBulkImportMsg(`جارٍ تنظيف ${oldIds.length.toLocaleString()} مادة قديمة...`);
+        for (let i = 0; i < oldIds.length; i += CHUNK) {
+          const batch = writeBatch(db);
+          oldIds.slice(i, i + CHUNK).forEach(id => {
+            batch.delete(doc(db, 'users', userId, 'inventory', id));
+          });
+          await batch.commit();
+        }
+      }
+
+      // 2) كتابة المخزون الجديد (دفعات، حد الدفعة 500 عملية)
+      setBulkImportMsg('جارٍ رفع المخزون الجديد...');
       setBulkImportProgress({ done: 0, total: meds.length });
       for (let i = 0; i < meds.length; i += CHUNK) {
         const slice = meds.slice(i, i + CHUNK);
@@ -2390,11 +2404,11 @@ export default function Dashboard() {
       }
 
       setBulkImportStatus('done');
-      setBulkImportMsg(`تم استيراد ${meds.length.toLocaleString()} دواء بنجاح إلى مخزونك السحابي!`);
+      setBulkImportMsg(`تم استبدال المخزون بنجاح — ${meds.length.toLocaleString()} صنف في حسابك السحابي!`);
       addAuditEntry({
         action: 'inventory_import',
         amount: 0,
-        description: `استيراد المخزون الكامل (${meds.length} دواء) من بيانات المخازن`,
+        description: `استبدال المخزون الكامل (${meds.length} صنف) من بيانات المخازن`,
         relatedId: 'bulk-import',
       });
       setTimeout(() => setBulkImportStatus('idle'), 10000);
@@ -7271,11 +7285,11 @@ export default function Dashboard() {
                 </div>
               </div>
               <p className="text-xs text-slate-600 font-medium leading-relaxed">
-                سيُضاف <strong className="text-slate-900">6,978 صنف</strong> إلى مخزونك مع الباركود والأسعار (شراء وبيع) والكميات.
+                سيُستبدل مخزونك بالكامل بـ <strong className="text-slate-900">6,978 صنف</strong> من الملف، مع الباركود والأسعار (شراء وبيع) والكميات.
                 الكميات السالبة ستُحوَّل إلى صفر. {currentUser ? 'ستُرفع إلى حسابك السحابي.' : 'ستُحفظ محلياً (غير مسجّل الدخول).'}
               </p>
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[10px] text-amber-800 font-bold">
-                ⚠️ قد تستغرق العملية دقيقة. لا تغلق الصفحة أثناء الرفع.
+              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-[10px] text-rose-800 font-bold">
+                ⚠️ تنبيه: سيتم <strong>حذف كل المواد الحالية</strong> (بما فيها التجريبية) واستبدالها بمواد الملف. لن تتأثّر الفواتير أو المبيعات السابقة. قد تستغرق العملية دقيقة — لا تغلق الصفحة.
               </div>
               <div className="flex gap-2">
                 <button onClick={() => setShowBulkImportConfirm(false)}
@@ -7283,8 +7297,8 @@ export default function Dashboard() {
                   إلغاء
                 </button>
                 <button onClick={handleBulkImportInventory}
-                  className="flex-1 bg-slate-800 hover:bg-slate-900 text-white rounded-xl py-2.5 text-xs font-extrabold transition cursor-pointer">
-                  ابدأ الاستيراد
+                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white rounded-xl py-2.5 text-xs font-extrabold transition cursor-pointer">
+                  استبدل المخزون الآن
                 </button>
               </div>
             </motion.div>
