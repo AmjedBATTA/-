@@ -54,3 +54,28 @@ export interface FAQItem {
   question: string;
   answer: string;
 }
+
+export interface ExtractedInvoiceItem {
+  id: string;
+  rawName: string;
+  arabicName: string;
+  company: string;
+  quantityBoxes: number;
+  pricePerBox: number;
+  stripsPerBox: number;
+  unitType: 'strip' | 'unit';
+  retailPrice: number;
+  officialPrice: number;
+  batchNo?: string;
+  expiry?: string;
+  matchedMedicine: Medicine | null;
+  matchScore: number;
+}
+
+export interface ExtractedInvoice {
+  supplierName: string;
+  invoiceNo?: string;
+  date?: string;
+  items: ExtractedInvoiceItem[];
+  totalAmount?: number;
+}
