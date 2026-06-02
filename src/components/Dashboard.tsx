@@ -648,8 +648,13 @@ export default function Dashboard() {
   const [newDrugExpiry, setNewDrugExpiry] = useState('2028-12-01');
   const [newDrugMinStock, setNewDrugMinStock] = useState<number>(15);
   const [isAddingDrug, setIsAddingDrug] = useState(false);
+  // --- تنبيه الصلاحية القريب (30 يوماً) — قابل للطي ---
+  const [showNearExpiry30, setShowNearExpiry30] = useState(true);
   // --- لوحة الصلاحيات الموسّعة (أفق 6 أشهر) ---
   const [showExpiryHorizon, setShowExpiryHorizon] = useState(false);
+  // تعديل الكمية المباشر من جدول المخزون: الـ id قيد التحرير + القيمة المؤقتة
+  const [editingQtyId, setEditingQtyId] = useState<string | null>(null);
+  const [editingQtyValue, setEditingQtyValue] = useState<string>('');
   // الشهر المختار للتصفية بصيغة 'YYYY-MM'؛ null = عرض كل الأشهر ضمن الأفق
   const [selectedExpiryMonth, setSelectedExpiryMonth] = useState<string | null>(null);
 
@@ -997,6 +1002,59 @@ export default function Dashboard() {
       months.push({ key, label: `${arMonths[d.getMonth()]} ${d.getFullYear()}`, count });
     }
     return months;
+  };
+
+  // فتح محرّر الكمية المباشر لصف في جدول المخزون
+  const startEditingQty = (med: Medicine) => {
+    setEditingQtyId(med.id);
+    setEditingQtyValue(String(med.availableQuantity));
+  };
+
+  // حفظ الكمية المعدّلة يدوياً: تحديث الحالة + المزامنة مع Firestore إن وُجد مستخدم
+  const saveEditingQty = (medId: string) => {
+    const parsed = Math.max(0, Math.round(Number(editingQtyValue)));
+    if (isNaN(parsed)) { setEditingQtyId(null); return; }
+    let updatedMed: Medicine | null = null;
+    setInventory(prev => prev.map(m => {
+      if (m.id === medId) {
+        updatedMed = {
+          ...m,
+          availableQuantity: parsed,
+          status: parsed <= 0 ? 'unavailable' : parsed < (m.minStock ?? 15) ? 'low' : 'available',
+          updatedAt: new Date().toISOString(),
+        } as Medicine;
+        return updatedMed;
+      }
+      return m;
+    }));
+    if (currentUser && updatedMed) {
+      setDoc(doc(db, 'users', currentUser.uid, 'inventory', medId), updatedMed)
+        .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${currentUser.uid}/inventory/${medId}`));
+    }
+    setEditingQtyId(null);
+    setEditingQtyValue('');
+  };
+
+  // تعديل سريع للكمية بمقدار ثابت (+/-) مع المزامنة مع Firestore
+  const adjustStockQty = (medId: string, delta: number) => {
+    let updatedMed: Medicine | null = null;
+    setInventory(prev => prev.map(m => {
+      if (m.id === medId) {
+        const nextQty = Math.max(0, m.availableQuantity + delta);
+        updatedMed = {
+          ...m,
+          availableQuantity: nextQty,
+          status: nextQty <= 0 ? 'unavailable' : nextQty < (m.minStock ?? 15) ? 'low' : 'available',
+          updatedAt: new Date().toISOString(),
+        } as Medicine;
+        return updatedMed;
+      }
+      return m;
+    }));
+    if (currentUser && updatedMed) {
+      setDoc(doc(db, 'users', currentUser.uid, 'inventory', medId), updatedMed)
+        .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${currentUser.uid}/inventory/${medId}`));
+    }
   };
 
   // --- STOCK MOVEMENT HELPERS (حركة المادة) ---
@@ -3544,10 +3602,14 @@ export default function Dashboard() {
                       </div>
                     )}
 
-                    {/* Automatic Alert: Near Expiry Medicines (30 days) */}
+                    {/* Automatic Alert: Near Expiry Medicines (30 days) — collapsible */}
                     {getNearExpiryMeds().length > 0 && (
                       <div className="bg-rose-50/50 border border-rose-100 rounded-2xl p-5 text-right space-y-3.5 shadow-sm">
-                        <div className="flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => setShowNearExpiry30(!showNearExpiry30)}
+                          className="w-full flex items-center justify-between cursor-pointer text-right"
+                        >
                           <div className="flex items-center space-x-reverse space-x-2.5">
                             <span className="flex h-3 w-3 relative">
                               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
@@ -3558,11 +3620,15 @@ export default function Dashboard() {
                               <p className="text-[9px] text-rose-500 font-bold mt-0.5 font-sans">يرجى اتخاذ تدابير الوقاية وتوريد كميات جديدة أو إبرام طلبية مرتجع مع المذخر المعني</p>
                             </div>
                           </div>
-                          <span className="text-[10px] bg-rose-100 text-rose-850 font-extrabold px-3 py-0.5 rounded-full border border-rose-200/50">
-                            {getNearExpiryMeds().length} {getNearExpiryMeds().length === 1 ? "مستحضر حرج" : "مستحضرات حرجة"}
-                          </span>
-                        </div>
-                        
+                          <div className="flex items-center space-x-reverse space-x-2">
+                            <span className="text-[10px] bg-rose-100 text-rose-850 font-extrabold px-3 py-0.5 rounded-full border border-rose-200/50">
+                              {getNearExpiryMeds().length} {getNearExpiryMeds().length === 1 ? "مستحضر حرج" : "مستحضرات حرجة"}
+                            </span>
+                            <ChevronDown className={`w-4 h-4 text-rose-400 transition-transform ${showNearExpiry30 ? 'rotate-180' : ''}`} />
+                          </div>
+                        </button>
+
+                        {showNearExpiry30 && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
                           {getNearExpiryMeds().map(med => {
                             const days = getDaysUntilExpiry(med.id);
@@ -3602,6 +3668,7 @@ export default function Dashboard() {
                             );
                           })}
                         </div>
+                        )}
                       </div>
                     )}
 
@@ -3896,39 +3963,64 @@ export default function Dashboard() {
                                     </div>
                                   </td>
                                   <td className="py-3 px-4">
-                                    <div className="flex items-center justify-center space-x-reverse space-x-1.5">
-                                      <button 
-                                        onClick={() => {
-                                          setInventory(prev => prev.map(m => {
-                                            if (m.id === med.id) {
-                                              const nextQty = m.availableQuantity + 10;
-                                              return { ...m, availableQuantity: nextQty, status: 'available' };
-                                            }
-                                            return m;
-                                          }));
-                                        }}
-                                        className="bg-slate-100 hover:bg-emerald-100 text-slate-600 hover:text-emerald-800 px-2 py-1 rounded font-bold transition cursor-pointer text-[10px]"
-                                        title="إضافة 10 علب"
-                                      >
-                                        +10 علب
-                                      </button>
-                                      
-                                      <button 
-                                        onClick={() => {
-                                          setInventory(prev => prev.map(m => {
-                                            if (m.id === med.id && m.availableQuantity >= 5) {
-                                              const nextQty = m.availableQuantity - 5;
-                                              return { ...m, availableQuantity: nextQty };
-                                            }
-                                            return m;
-                                          }));
-                                        }}
-                                        className="bg-slate-150 hover:bg-rose-100 text-slate-600 hover:text-rose-800 px-2 py-1 rounded font-bold transition cursor-pointer text-[10px]"
-                                        title="تخفيض 5 علب"
-                                      >
-                                        -5 علب
-                                      </button>
-                                    </div>
+                                    {editingQtyId === med.id ? (
+                                      <div className="flex items-center justify-center space-x-reverse space-x-1.5">
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          autoFocus
+                                          value={editingQtyValue}
+                                          onChange={(e) => setEditingQtyValue(e.target.value)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') saveEditingQty(med.id);
+                                            if (e.key === 'Escape') setEditingQtyId(null);
+                                          }}
+                                          className="w-20 bg-white border border-emerald-300 rounded-lg px-2 py-1 text-xs text-slate-800 font-mono font-bold text-center focus:outline-emerald-500"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => saveEditingQty(med.id)}
+                                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded-lg transition cursor-pointer"
+                                          title="حفظ"
+                                        >
+                                          <Check className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setEditingQtyId(null)}
+                                          className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded-lg transition cursor-pointer"
+                                          title="إلغاء"
+                                        >
+                                          <X className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center justify-center space-x-reverse space-x-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => startEditingQty(med)}
+                                          className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-lg font-bold transition cursor-pointer text-[10px] flex items-center gap-1 border border-emerald-150"
+                                          title="تعديل الكمية يدوياً"
+                                        >
+                                          <Pencil className="w-3 h-3" />
+                                          <span>تعديل</span>
+                                        </button>
+                                        <button
+                                          onClick={() => adjustStockQty(med.id, 10)}
+                                          className="bg-slate-100 hover:bg-emerald-100 text-slate-600 hover:text-emerald-800 px-2 py-1 rounded font-bold transition cursor-pointer text-[10px]"
+                                          title="إضافة 10 علب"
+                                        >
+                                          +10
+                                        </button>
+                                        <button
+                                          onClick={() => adjustStockQty(med.id, -5)}
+                                          className="bg-slate-150 hover:bg-rose-100 text-slate-600 hover:text-rose-800 px-2 py-1 rounded font-bold transition cursor-pointer text-[10px]"
+                                          title="تخفيض 5 علب"
+                                        >
+                                          -5
+                                        </button>
+                                      </div>
+                                    )}
                                   </td>
                                 </tr>
                               );
