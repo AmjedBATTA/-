@@ -91,167 +91,31 @@ interface AuditEntry {
 
 // مولّد مصاريف تشغيلية مبدئية لهذا الشهر (لإظهار حساب الربح الصافي)
 function generateSeedExpenses(): Expense[] {
-  const specs = [
-    { daysAgo: 12, category: 'كهرباء ومولّدة', amount: 35000, desc: 'فاتورة الكهرباء الوطنية + حصة المولّدة', paidBy: 'نقد' },
-    { daysAgo: 9, category: 'صيانة وتنظيف', amount: 12000, desc: 'صيانة الثلاجة الدوائية المبرّدة', paidBy: 'نقد' },
-    { daysAgo: 6, category: 'نقل وتوصيل', amount: 15000, desc: 'أجور توصيل طلبيات المذاخر', paidBy: 'نقد' },
-    { daysAgo: 3, category: 'قرطاسية وأكياس', amount: 8000, desc: 'أكياس وأشرطة طباعة الفواتير', paidBy: 'نقد' },
-  ];
-  return specs.map((s, idx) => {
-    const d = new Date();
-    d.setDate(d.getDate() - s.daysAgo);
-    return {
-      id: `EXP-${9100 + idx}`,
-      date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
-      category: s.category,
-      amount: s.amount,
-      description: s.desc,
-      paidBy: s.paidBy,
-    };
-  });
+  return []; // بدون مصاريف تجريبية
 }
 
 // مولّد ذمم دائنة مبدئية (ديون مستحقة للمذاخر والمكاتب العلمية) — المتبقّي يجمع إلى 1,850,000 د.ع
 function generateSeedPayables(): Payable[] {
-  const specs = [
-    { daysAgo: 18, supplierName: 'مذخر بغداد المركزي للأدوية', amount: 950000, paidAmount: 0, status: 'open' as const, description: 'فاتورة توريد أدوية مزمنة' },
-    { daysAgo: 11, supplierName: 'شركة الرافدين للتجهيزات الطبية', amount: 700000, paidAmount: 200000, status: 'partial' as const, description: 'مستلزمات ومحاليل' },
-    { daysAgo: 5, supplierName: 'مذخر دجلة للمستلزمات الطبية', amount: 400000, paidAmount: 0, status: 'open' as const, description: 'أدوية برّاد مبرّدة' },
-  ];
-  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  return specs.map((s, idx) => {
-    const d = new Date();
-    d.setDate(d.getDate() - s.daysAgo);
-    const due = new Date(d);
-    due.setDate(due.getDate() + 30);
-    return {
-      id: `PAY-${9300 + idx}`,
-      supplierName: s.supplierName,
-      amount: s.amount,
-      paidAmount: s.paidAmount,
-      date: fmt(d),
-      dueDate: fmt(due),
-      status: s.status,
-      description: s.description,
-    };
-  });
+  return []; // بدون ذمم دائنة تجريبية
 }
 
 // مولّد ذمم مدينة مبدئية (ديون مستحقة لنا على الزبائن والعيادات — البيع بالآجل)
 function generateSeedReceivables(): Receivable[] {
-  const specs = [
-    { daysAgo: 14, customerName: 'عيادة د. سرمد للأطفال', amount: 450000, paidAmount: 0, status: 'open' as const, description: 'أدوية ومستلزمات شهرية للعيادة' },
-    { daysAgo: 8, customerName: 'مختبر النور الطبي', amount: 300000, paidAmount: 100000, status: 'partial' as const, description: 'محاليل وكواشف مختبرية' },
-    { daysAgo: 4, customerName: 'الزبون أبو حيدر (آجل)', amount: 120000, paidAmount: 0, status: 'open' as const, description: 'علاج مزمن بالآجل' },
-  ];
-  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  return specs.map((s, idx) => {
-    const d = new Date();
-    d.setDate(d.getDate() - s.daysAgo);
-    const due = new Date(d);
-    due.setDate(due.getDate() + 30);
-    return {
-      id: `REC-${9400 + idx}`,
-      customerName: s.customerName,
-      amount: s.amount,
-      paidAmount: s.paidAmount,
-      date: fmt(d),
-      dueDate: fmt(due),
-      status: s.status,
-      description: s.description,
-    };
-  });
+  return []; // بدون ذمم مدينة تجريبية
 }
 
 // مولّد مرتجع تجريبي واحد (لإظهار قسم المرتجعات ممتلئاً عند أول تشغيل)
 function generateSeedReturns(): SalesReturn[] {
-  const d = new Date();
-  d.setDate(d.getDate() - 4);
-  const fmt = (dt: Date) =>
-    `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')} 11:30`;
-  return [{
-    returnId: 'RET-1001',
-    originalInvoiceId: 'INV-4820',
-    timestamp: fmt(d),
-    items: [{ name: 'بندول اكسترا (Panadol Extra)', quantity: 1, price: 3500, costPrice: 2500 }],
-    total: 3500,
-    reason: 'دواء منتهي الصلاحية',
-    refundMethod: 'cash',
-    customerName: 'أم سليم الكرخي',
-  }];
+  return []; // بدون مرتجعات تجريبية
 }
 
 function generateSeedAuditLog(): AuditEntry[] {
-  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-  const now = new Date();
-  const ago = (days: number, h = 10, m = 0) => { const d = new Date(now); d.setDate(d.getDate()-days); d.setHours(h,m,0); return d; };
-  const entries: AuditEntry[] = [
-    { id:'AUD-1001', timestamp:fmt(ago(12,9,15)),  action:'purchase',          actor:'مدير', amount:950000, description:'فاتورة شراء آجلة من مذخر بغداد المركزي (4 أصناف)', relatedId:'ORD-9300' },
-    { id:'AUD-1002', timestamp:fmt(ago(9,11,30)),  action:'expense',           actor:'مدير', amount:35000,  description:'مصروف كهرباء ومولّدة — فاتورة شهر أيار',          relatedId:'EXP-9100' },
-    { id:'AUD-1003', timestamp:fmt(ago(6,14,20)),  action:'sale',              actor:'كاشير',amount:54000,  description:'فاتورة بيع نقدي (5 أصناف) — أبو ليلى الساعدي',   relatedId:'INV-4705' },
-    { id:'AUD-1004', timestamp:fmt(ago(5,10,0)),   action:'payable_settle',    actor:'مدير', amount:200000, description:'تسديد جزئي لذمة شركة الرافدين للتجهيزات الطبية', relatedId:'PAY-9301' },
-    { id:'AUD-1005', timestamp:fmt(ago(4,11,30)),  action:'return',            actor:'صيدلاني',amount:3500, description:'مرتجع بندول اكسترا — سبب: منتهي الصلاحية',       relatedId:'RET-1001' },
-    { id:'AUD-1006', timestamp:fmt(ago(3,15,45)),  action:'receivable_add',    actor:'مدير', amount:450000, description:'ذمّة جديدة على عيادة د. سرمد للأطفال',           relatedId:'REC-9400' },
-    { id:'AUD-1007', timestamp:fmt(ago(2,9,0)),    action:'sale',              actor:'كاشير',amount:65200,  description:'فاتورة بيع بالآجل — محمد التميمي',               relatedId:'INV-4713' },
-    { id:'AUD-1008', timestamp:fmt(ago(1,13,10)),  action:'receivable_collect',actor:'مدير', amount:100000, description:'تحصيل جزئي من مختبر النور الطبي',               relatedId:'REC-9401' },
-  ];
-  return entries.reverse(); // الأحدث أولاً
+  return []; // بدون سجل تدقيق تجريبي
 }
 
-// مولّد مبيعات تاريخية تجريبية موزّعة على آخر ~80 يوماً (لإظهار تمايز الفترات والرسوم البيانية)
+// لا مبيعات تاريخية تجريبية — يبدأ سجلّ المبيعات فارغاً
 function generateHistoricalSales(): SaleRecord[] {
-  const MED_REF: Record<string, { name: string; price: number; cost: number }> = {
-    '1': { name: 'بندول اكسترا (Panadol Extra)', price: 3500, cost: 2500 },
-    '2': { name: 'اموكسيل 500 ملغ (Amoxil 500mg)', price: 7200, cost: 5200 },
-    '3': { name: 'ليبيتور 20 ملغ (Lipitor 20mg)', price: 18500, cost: 13300 },
-    '4': { name: 'فولتارين جيل 50 غرام (Voltaren Gel 50g)', price: 4800, cost: 3450 },
-    '5': { name: 'كونكور 5 ملغ (Concor 5mg)', price: 11000, cost: 7900 },
-    '6': { name: 'دياميكرون 60 ملغ (Diamicron 60mg MR)', price: 9500, cost: 6850 },
-    '7': { name: 'زاناكس 0.5 ملغ (Xanax 0.5mg)', price: 22000, cost: 15800 },
-  };
-  const specs: { daysAgo: number; hm: string; items: [string, number][]; discountPct: number; customer: string }[] = [
-    { daysAgo: 1, hm: '10:15', items: [['1', 5], ['5', 1]], discountPct: 0, customer: 'أبو محمد الجنابي' },
-    { daysAgo: 2, hm: '13:40', items: [['2', 3], ['7', 1]], discountPct: 5, customer: 'أم زينب العبيدي' },
-    { daysAgo: 3, hm: '09:05', items: [['6', 2], ['3', 1]], discountPct: 0, customer: 'حيدر عبد الله' },
-    { daysAgo: 5, hm: '16:25', items: [['1', 8]], discountPct: 0, customer: 'سارة كريم' },
-    { daysAgo: 6, hm: '11:50', items: [['4', 4], ['2', 2]], discountPct: 10, customer: 'أبو أحمد الدليمي' },
-    { daysAgo: 9, hm: '12:30', items: [['5', 3], ['1', 6]], discountPct: 0, customer: 'نور الهدى حسن' },
-    { daysAgo: 12, hm: '14:10', items: [['3', 2]], discountPct: 0, customer: 'مصطفى العامري' },
-    { daysAgo: 16, hm: '10:40', items: [['2', 5], ['6', 3]], discountPct: 5, customer: 'أم فاطمة الزبيدي' },
-    { daysAgo: 20, hm: '15:55', items: [['1', 10], ['4', 5]], discountPct: 0, customer: 'علي الركابي' },
-    { daysAgo: 25, hm: '13:15', items: [['7', 2]], discountPct: 0, customer: 'كرار الموسوي' },
-    { daysAgo: 34, hm: '09:45', items: [['5', 4], ['2', 3]], discountPct: 0, customer: 'زينب قاسم' },
-    { daysAgo: 45, hm: '17:05', items: [['3', 3], ['6', 2]], discountPct: 8, customer: 'أبو ليلى الساعدي' },
-    { daysAgo: 60, hm: '11:25', items: [['1', 12]], discountPct: 0, customer: 'هدى صبري' },
-    { daysAgo: 80, hm: '14:50', items: [['2', 6], ['5', 2]], discountPct: 0, customer: 'محمد التميمي' },
-  ];
-  return specs.map((spec, idx) => {
-    const d = new Date();
-    d.setDate(d.getDate() - spec.daysAgo);
-    const ts = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${spec.hm}`;
-    const items = spec.items.map(([id, qty]) => {
-      const m = MED_REF[id];
-      return { name: m.name, quantity: qty, price: m.price, costPrice: m.cost, lineProfit: (m.price - m.cost) * qty };
-    });
-    const subtotal = items.reduce((s, it) => s + it.price * it.quantity, 0);
-    const discount = Math.round(subtotal * (spec.discountPct / 100));
-    const total = subtotal - discount;
-    const totalCost = items.reduce((s, it) => s + it.costPrice * it.quantity, 0);
-    const grossProfit = total - totalCost;
-    const profitMargin = total > 0 ? Math.round((grossProfit / total) * 100) : 0;
-    return {
-      invoiceId: `INV-${4700 + idx}`,
-      timestamp: ts,
-      items,
-      subtotal,
-      discount,
-      total,
-      totalCost,
-      grossProfit,
-      profitMargin,
-      customerName: spec.customer,
-    };
-  });
+  return [];
 }
 
 function generateSeedSuppliers(): Supplier[] {
@@ -285,48 +149,11 @@ export default function Dashboard() {
   const [dismissedLowStock, setDismissedLowStock] = useState<Set<string>>(new Set());
 
   // B2B Supplier orders
-  const [b2bOrders, setB2bOrders] = useState<Order[]>([
-    {
-      id: 'CAP-28109',
-      date: '2026-05-29',
-      warehouseName: 'مكتب دجلة العلمي للأدوية (بغداد)',
-      itemsCount: 3,
-      totalAmount: 485000,
-      status: 'preparing',
-      items: [
-        { medicineName: 'بندول اكسترا (كرتون)', quantity: 5, price: 35000 },
-        { medicineName: 'كونكور 5 ملغ (علبة)', quantity: 10, price: 11000 },
-        { medicineName: 'اموكسيل 500 ملغ (علبة)', quantity: 20, price: 10000 }
-      ]
-    },
-    {
-      id: 'CAP-27941',
-      date: '2026-05-27',
-      warehouseName: 'مذخر قصر الشفاء الحديث (أربيل)',
-      itemsCount: 2,
-      totalAmount: 1240000,
-      status: 'on_way',
-      items: [
-        { medicineName: 'ليبيتور 20 ملغ (علبة كبيرة)', quantity: 50, price: 18500 },
-        { medicineName: 'دياميكرون 60 ملغ (علبة كبيرة)', quantity: 33, price: 9500 }
-      ]
-    },
-    {
-      id: 'CAP-26510',
-      date: '2026-05-20',
-      warehouseName: 'مذخر الرافدين للادوية (البصرة)',
-      itemsCount: 1,
-      totalAmount: 160000,
-      status: 'delivered',
-      items: [
-        { medicineName: 'بروفين 400 ملغ (علبة صغيرة)', quantity: 40, price: 4000 }
-      ]
-    }
-  ]);
+  const [b2bOrders, setB2bOrders] = useState<Order[]>([]); // بدون طلبيات شراء تجريبية
 
   // Financial States
-  const [walletBalance, setWalletBalance] = useState(3890000); // IQD cash in register
-  const [dailySalesRevenue, setDailySalesRevenue] = useState(729000); // Today's POS cash sum
+  const [walletBalance, setWalletBalance] = useState(0); // IQD cash in register — يبدأ صفراً
+  const [dailySalesRevenue, setDailySalesRevenue] = useState(0); // Today's POS cash sum — يبدأ صفراً
 
   // --- EXPENSES LEDGER STATES (دفتر المصاريف) ---
   const [expenses, setExpenses] = useState<Expense[]>(() => generateSeedExpenses());
@@ -429,36 +256,7 @@ export default function Dashboard() {
   const [plPeriod, setPlPeriod] = useState<'month' | 'year'>('month'); // فترة قائمة الأرباح والخسائر
 
   // --- SALES HISTORY LEDGER ---
-  const [salesLedger, setSalesLedger] = useState<SaleRecord[]>([
-    {
-      invoiceId: 'INV-4821',
-      timestamp: '2026-05-30 09:12',
-      items: [{ name: 'اموكسيل 500 ملغ', quantity: 2, price: 7200, costPrice: 5200, lineProfit: 4000 }],
-      subtotal: 14400,
-      discount: 0,
-      total: 14400,
-      totalCost: 10400,
-      grossProfit: 4000,
-      profitMargin: 28,
-      customerName: 'أبو سيف البغدادي',
-    },
-    {
-      invoiceId: 'INV-4820',
-      timestamp: '2026-05-30 08:34',
-      items: [
-        { name: 'بندول اكسترا', quantity: 3, price: 3500, costPrice: 2500, lineProfit: 3000 },
-        { name: 'كونكور 5 ملغ', quantity: 1, price: 11000, costPrice: 7900, lineProfit: 3100 }
-      ],
-      subtotal: 21500,
-      discount: 1500,
-      total: 20000,
-      totalCost: 15400,
-      grossProfit: 4600,
-      profitMargin: 23,
-      customerName: 'أم سليم الكرخي',
-    },
-    ...generateHistoricalSales()
-  ]);
+  const [salesLedger, setSalesLedger] = useState<SaleRecord[]>(() => generateHistoricalSales()); // يبدأ فارغاً
 
   // --- CONTROL REFRIGERATOR TEMPERATURE SIMULATOR ---
   const [fridgeTemp, setFridgeTemp] = useState<number>(4.2); // Celcius loop
@@ -1014,11 +812,7 @@ export default function Dashboard() {
 
 
   // --- TEAM MEMBER STATES ---
-  const [teamMembers, setTeamMembers] = useState([
-    { id: '1', name: 'د. أحمد الهاشمي', role: 'الصيدلاني المدير المسؤول', license: 'ص-94281', shift: 'مناوب نهاري', status: 'active' },
-    { id: '2', name: 'د. علي حسن الموسوي', role: 'صيدلاني مناوب', license: 'ص-78229', shift: 'مناوب مسائي', status: 'active' },
-    { id: '3', name: 'رنا جبار العقابي', role: 'مساعد صيدلي مرخص', license: 'ت-48220', shift: 'مناوب طوارئ', status: 'break' }
-  ]);
+  const [teamMembers, setTeamMembers] = useState<{ id: string; name: string; role: string; license: string; shift: string; status: string }[]>([]); // بدون موظفين تجريبيين
   const [newStaffName, setNewStaffName] = useState('');
   const [newStaffRole, setNewStaffRole] = useState('صيدلاني مناوب');
   const [newStaffLicense, setNewStaffLicense] = useState('');
@@ -1148,7 +942,7 @@ export default function Dashboard() {
         
         // Recalculate daily sales revenue and wallet cash sum based on live DB data
         const totalSalesSum = loadedSales.reduce((acc, curr) => acc + curr.total, 0);
-        setDailySalesRevenue(totalSalesSum > 0 ? totalSalesSum : 729000);
+        setDailySalesRevenue(totalSalesSum);
       }
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, `users/${userId}/salesLedger`);
