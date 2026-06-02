@@ -1719,6 +1719,25 @@ export default function Dashboard() {
     );
   });
 
+  // إيجاد أفضل مادة مطابقة لنص بحث/باركود (للإضافة المباشرة عند ضغط Enter أو مسح الباركود).
+  // الأولوية: مطابقة باركود تامة ← مطابقة اسم تامة ← أول نتيجة بحث جزئية.
+  const findScanMatch = (query: string): Medicine | null => {
+    const q = query.trim();
+    if (!q) return null;
+    const lower = q.toLowerCase();
+    return (
+      inventory.find(m => m.barcode && m.barcode.toLowerCase() === lower) ||
+      inventory.find(m => m.nameAr === q || (m.nameEn && m.nameEn.toLowerCase() === lower)) ||
+      inventory.find(m =>
+        m.nameAr.toLowerCase().includes(lower) ||
+        (m.nameEn && m.nameEn.toLowerCase().includes(lower)) ||
+        (m.scientificName && m.scientificName.toLowerCase().includes(lower)) ||
+        (m.barcode && m.barcode.toLowerCase().includes(lower))
+      ) ||
+      null
+    );
+  };
+
   const addToCart = (med: Medicine) => {
     if (med.availableQuantity <= 0) return;
     const existingIndex = currentCart.findIndex(item => item.medicine.id === med.id);
@@ -2943,8 +2962,15 @@ export default function Dashboard() {
                             value={searchPOSQuery}
                             onChange={(e) => setSearchPOSQuery(e.target.value)}
                             onFocus={() => setSearchPOSQuery('')}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                const match = findScanMatch(searchPOSQuery);
+                                if (match) { addToCart(match); setSearchPOSQuery(''); }
+                              }
+                            }}
                             className="bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-emerald-500 w-full sm:w-52"
-                            placeholder="ابحث بالاسم أو رمز الباركود..."
+                            placeholder="امسح الباركود أو اكتب الاسم ثم Enter..."
                           />
                         </div>
                         <button
@@ -4203,7 +4229,14 @@ export default function Dashboard() {
                               type="text"
                               value={purchaseSearchWord}
                               onChange={(e) => setPurchaseSearchWord(e.target.value)}
-                              placeholder="ابحث بالاسم أو الباركود..."
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  const match = findScanMatch(purchaseSearchWord);
+                                  if (match) { addToPurchaseDraft(match); setPurchaseSearchWord(''); }
+                                }
+                              }}
+                              placeholder="امسح الباركود أو اكتب الاسم ثم Enter..."
                               className="w-full bg-slate-50 hover:bg-slate-100/70 border border-slate-200 rounded-xl py-2.5 pr-9 pl-10 text-xs font-bold text-slate-850 placeholder:text-slate-400 transition focus:outline-emerald-500"
                             />
                             <button
