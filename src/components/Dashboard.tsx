@@ -255,52 +255,8 @@ function generateHistoricalSales(): SaleRecord[] {
 }
 
 function generateSeedSuppliers(): Supplier[] {
-  return [
-    {
-      id: 'SUP-1001',
-      name: 'مذخر بغداد المركزي للأدوية',
-      phone: '07701234567',
-      address: 'بغداد — الكرخ، شارع الصناعة',
-      contactPerson: 'أبو سامر الجنابي',
-      creditLimit: 5000000,
-      paymentTerms: 30,
-      notes: 'مورّد رئيسي للأدوية المزمنة والمضادات الحيوية',
-      createdAt: '2025-01-15',
-    },
-    {
-      id: 'SUP-1002',
-      name: 'شركة الرافدين للتجهيزات الطبية',
-      phone: '07809876543',
-      address: 'بغداد — الرصافة، المنصور',
-      contactPerson: 'م. حيدر الموسوي',
-      creditLimit: 3000000,
-      paymentTerms: 45,
-      notes: 'مستلزمات طبية ومحاليل وريدية',
-      createdAt: '2025-03-01',
-    },
-    {
-      id: 'SUP-1003',
-      name: 'مذخر دجلة للمستلزمات الطبية',
-      phone: '07701122334',
-      address: 'بغداد — الكرادة',
-      contactPerson: 'علي عبد الكريم',
-      creditLimit: 2000000,
-      paymentTerms: 21,
-      notes: 'أدوية التبريد والمستحضرات الحساسة للحرارة',
-      createdAt: '2025-04-10',
-    },
-    {
-      id: 'SUP-1004',
-      name: 'مكتب دجلة العلمي للأدوية (بغداد)',
-      phone: '07711223344',
-      address: 'بغداد — المدينة الطبية',
-      contactPerson: 'د. لؤي السامرائي',
-      creditLimit: 8000000,
-      paymentTerms: 60,
-      notes: 'مكتب علمي — أدوية متخصصة وجديدة في السوق',
-      createdAt: '2024-12-01',
-    },
-  ];
+  // يبدأ قسم الموردين فارغاً — لا موردين تجريبيين. تُضاف الموردون يدوياً.
+  return [];
 }
 
 export default function Dashboard() {
