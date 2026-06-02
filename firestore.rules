@@ -71,28 +71,12 @@ service cloud.firestore {
     function isValidSaleRecord(data, userId) {
       return data.invoiceId is string
         && data.invoiceId.size() <= 128
-        && data.total is int
+        && data.total is number
         && data.total >= 0
         && data.customerName is string
         && data.customerName.size() <= 256
-        && data.isControlled is bool
         && data.userId == userId
-        && data.keys().hasAll(['invoiceId', 'timestamp', 'total', 'customerName', 'isControlled', 'userId']);
-    }
-
-    function isValidControlledPrescription(data, userId) {
-      return data.id is string
-        && data.id.size() <= 128
-        && data.patientName is string
-        && data.patientName.size() <= 256
-        && data.doctorName is string
-        && data.doctorName.size() <= 256
-        && data.medicineName is string
-        && data.medicineName.size() <= 256
-        && data.quantity is int
-        && data.quantity >= 1
-        && data.userId == userId
-        && data.keys().hasAll(['id', 'patientName', 'doctorName', 'medicineName', 'quantity', 'userId']);
+        && data.keys().hasAll(['invoiceId', 'timestamp', 'total', 'customerName', 'userId']);
     }
 
     function isValidTeamMember(data, userId) {
@@ -122,6 +106,7 @@ service cloud.firestore {
         && data.supplierName is string && data.supplierName.size() <= 256
         && data.amount is number && data.amount >= 0
         && data.paidAmount is number && data.paidAmount >= 0
+        && data.paidAmount <= data.amount
         && data.status is string
         && data.userId == userId
         && data.keys().hasAll(['id', 'supplierName', 'amount', 'paidAmount', 'date', 'status', 'userId']);
@@ -132,6 +117,7 @@ service cloud.firestore {
         && data.customerName is string && data.customerName.size() <= 256
         && data.amount is number && data.amount >= 0
         && data.paidAmount is number && data.paidAmount >= 0
+        && data.paidAmount <= data.amount
         && data.status is string
         && data.userId == userId
         && data.keys().hasAll(['id', 'customerName', 'amount', 'paidAmount', 'date', 'status', 'userId']);
@@ -185,14 +171,6 @@ service cloud.firestore {
         allow delete: if false; // Ledger rules require zero deletions
       }
 
-      // --- CONTROLLED NARCOTIC PRESCRIPTIONS SUBCOLLECTION ---
-      match /narcoticPrescriptions/{prescriptionId} {
-        allow list, get: if isOwner(userId);
-        allow create: if isOwner(userId) && isValidId(prescriptionId) && isValidControlledPrescription(incoming(), userId);
-        allow update: if false; // Monitored narcotic records must never be altered once registered
-        allow delete: if false; // Controlled audits are immutable
-      }
-
       // --- TEAM MEMBERS SUBCOLLECTION ---
       match /teamMembers/{memberId} {
         allow list, get: if isOwner(userId);
@@ -237,9 +215,11 @@ service cloud.firestore {
         allow delete: if isOwner(userId);
       }
 
-      // --- AUDIT LOG SUBCOLLECTION (سجل التدقيق) ---
+      // --- AUDIT LOG SUBCOLLECTION (سجل التدقيق) — APPEND-ONLY ---
       match /auditLog/{entryId} {
-        allow read, write: if isOwner(userId) && isValidAuditEntry(request.resource.data);
+        allow list, get: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(entryId) && isValidAuditEntry(incoming());
+        allow update, delete: if false; // Audit trail is immutable — no edits, no deletions
       }
     }
   }
