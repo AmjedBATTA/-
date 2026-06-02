@@ -3,22 +3,32 @@ import { getAuth } from 'firebase/auth';
 import {
   initializeFirestore,
   persistentLocalCache,
-  persistentMultipleTabManager,
+  persistentSingleTabManager,
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json'; // Located in the root of the project folder
 
 const app = initializeApp(firebaseConfig);
 
+/* تنظيف مفاتيح localStorage القديمة لمدير التبويبات المتعدد.
+   كانت تسبب QuotaExceededError عند الاستيراد الكبير (آلاف الكتابات) لأنها
+   تُكدّس بيانات التنسيق في localStorage المحدود (~5MB). نزيلها مرة واحدة. */
+try {
+  Object.keys(localStorage)
+    .filter((k) => k.startsWith('firestore_clients_') || k.startsWith('firestore_mutations_') || k.startsWith('firestore_targets_'))
+    .forEach((k) => localStorage.removeItem(k));
+} catch { /* localStorage غير متاح — نتجاهل */ }
+
 /* CRITICAL: The app will break without passing the named database id.
    نفعّل الكاش الدائم (IndexedDB) ليعمل التطبيق دون اتصال:
-   - كل عمليات الإضافة/الحذف/التعديل تُحفظ محلياً فوراً.
-   - عند انقطاع الإنترنت تبقى البيانات محفوظة وتُرفع تلقائياً عند عودة الاتصال.
-   - persistentMultipleTabManager يسمح بفتح التطبيق في أكثر من تبويب دون تعارض. */
+   - كل عمليات الإضافة/الحذف/التعديل تُحفظ محلياً فوراً وتُرفع تلقائياً عند عودة الاتصال.
+   - نستخدم persistentSingleTabManager: يخزّن قائمة الانتظار في IndexedDB (سعة كبيرة)
+     بدل localStorage المحدود — وهذا يمنع QuotaExceededError عند الاستيراد الضخم.
+   - المزامنة بين الأجهزة المختلفة تتم عبر خوادم Firestore ولا تتأثر بهذا الخيار. */
 export const db = initializeFirestore(
   app,
   {
     localCache: persistentLocalCache({
-      tabManager: persistentMultipleTabManager(),
+      tabManager: persistentSingleTabManager(undefined),
     }),
   },
   firebaseConfig.firestoreDatabaseId
