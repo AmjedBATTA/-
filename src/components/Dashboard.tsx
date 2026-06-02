@@ -130,6 +130,11 @@ export default function Dashboard() {
   const [isSyncing, setIsSyncing] = useState(false);
   // رُفع عند فشل تهيئة خدمة المصادقة (مفتاح API غير صالح أو انقطاع الشبكة) — يُظهر شريط تنبيه غير معطِّل
   const [authInitFailed, setAuthInitFailed] = useState(false);
+  // حالة المزامنة الحقيقية مع خادم Firestore — مشتقّة من البيانات الوصفية للقطة (metadata)
+  // وليست مجرّد "هل يوجد مستخدم". 'synced' = وصلت للخادم، 'pending' = قيد الرفع، 'offline' = محلية فقط.
+  const [syncState, setSyncState] = useState<'synced' | 'pending' | 'offline'>('pending');
+  // آخر خطأ مزامنة (صلاحيات/اتصال) — يُعرض للمستخدم بشريط أحمر بدل كتمه في الـ console.
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   // --- CORE LIVING STATE OF THE PHARMACY (Saves in session-state) ---
   // يبدأ المخزون فارغاً — لا مواد تجريبية. تُضاف المواد عبر الاستيراد أو الإدخال اليدوي.
@@ -866,7 +871,15 @@ export default function Dashboard() {
 
     // 1. Sync Inventory Collection
     const inventoryCol = collection(db, 'users', userId, 'inventory');
-    const unsubInventory = onSnapshot(inventoryCol, (snapshot) => {
+    const unsubInventory = onSnapshot(inventoryCol, { includeMetadataChanges: true }, (snapshot) => {
+      // مؤشر المزامنة الحقيقي: fromCache=true يعني أن البيانات من الكاش المحلي ولم تتزامن
+      // مع الخادم بعد (أو الجهاز غير متصل). هذا هو ما كان "المؤشر الأخضر" القديم يُخفيه.
+      setSyncError(null);
+      setSyncState(
+        snapshot.metadata.fromCache ? 'offline'
+        : snapshot.metadata.hasPendingWrites ? 'pending'
+        : 'synced'
+      );
       if (snapshot.empty) {
         // Seed database inventory with initial local inventory states
         inventory.forEach(async (item) => {
@@ -888,7 +901,11 @@ export default function Dashboard() {
         setInventory(loadedInventory);
       }
     }, (error) => {
-      console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/inventory`);
+      // لم يعد الخطأ مكتوماً — نُظهره للمستخدم ليعرف أن المزامنة متوقفة وأن البيانات محلية فقط.
+      const msg = String((error as Error)?.message || error);
+      console.warn('[مزامنة] خطأ في الاستماع:', `users/${userId}/inventory`, msg);
+      setSyncState('offline');
+      setSyncError(/permission|insufficient/i.test(msg) ? 'صلاحيات مرفوضة' : 'انقطاع الاتصال بالخادم');
     });
 
     // 2. Sync B2B Orders Collection
@@ -2382,6 +2399,50 @@ export default function Dashboard() {
     setNewStaffLicense('');
   };
 
+  // ====== بوابة تسجيل الدخول الإلزامية ======
+  // لا يعمل التطبيق دون تسجيل دخول. هذا يمنع "وضع البيانات المحلية فقط" الذي كان يجعل
+  // كل جهاز جزيرة معزولة لا تتزامن مع غيرها. كل الأجهزة يجب أن تستخدم نفس حساب Google
+  // لتتوحّد البيانات (نفس uid ⇐ نفس مسار users/{uid}).
+  if (isAuthLoading) {
+    return (
+      <div className="bg-slate-50 min-h-screen flex flex-col items-center justify-center gap-4" dir="rtl">
+        <span className="w-10 h-10 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin" />
+        <p className="text-slate-500 text-sm font-bold">جارٍ التحقّق من تسجيل الدخول...</p>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <div className="bg-gradient-to-br from-emerald-50 via-slate-50 to-teal-50 min-h-screen flex items-center justify-center p-4" dir="rtl">
+        <div className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-slate-100 p-8 text-center">
+          <div className="w-16 h-16 mx-auto mb-5 rounded-2xl bg-emerald-600 flex items-center justify-center text-white text-2xl font-black">أ</div>
+          <h1 className="text-xl font-black text-slate-800 mb-1">صيدلية انوار الحسن</h1>
+          <p className="text-sm text-slate-500 mb-6">نظام إدارة الصيدلية — تسجيل الدخول مطلوب</p>
+
+          {authInitFailed && (
+            <div className="mb-4 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              تعذّر الاتصال بخدمة الحسابات. تحقّق من اتصال الإنترنت ثم أعد المحاولة.
+            </div>
+          )}
+
+          <button
+            onClick={handleGoogleSignIn}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-black transition shadow-sm cursor-pointer"
+          >
+            <svg className="w-5 h-5" viewBox="0 0 24 24"><path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/><path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
+            <span>تسجيل الدخول عبر Google</span>
+          </button>
+
+          <div className="mt-5 text-[11px] leading-relaxed text-slate-500 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5">
+            <span className="font-bold text-emerald-700">مهم لتوحيد البيانات بين الأجهزة:</span><br/>
+            سجّل الدخول بـ <span className="font-bold">نفس حساب Google</span> على كل أجهزة الكاشير. كل الأجهزة التي تستخدم نفس الحساب ترى نفس المخزون والمبيعات لحظياً.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-slate-50 min-h-screen text-right" dir="rtl">
 
@@ -2410,7 +2471,15 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* 
+      {/* شريط خطأ المزامنة — يظهر عند رفض الصلاحيات أو انقطاع الخادم (لم يعد مكتوماً في الـ console) */}
+      {syncError && (
+        <div role="alert" className="flex items-center gap-2 bg-red-50 border-b border-red-300 px-4 py-2.5 text-sm text-red-800" dir="rtl">
+          <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse flex-shrink-0" />
+          <span className="font-medium">تعذّرت المزامنة مع السحابة ({syncError}). بياناتك محفوظة على هذا الجهاز فقط ولم تُرفع بعد — تحقّق من الإنترنت ثم أعد المحاولة.</span>
+        </div>
+      )}
+
+      {/*
         =========================================================
         MATCH BRAND HEADER DIRECT FROM THE USER SCREENSHOT IMAGE
         =========================================================
@@ -2439,9 +2508,19 @@ export default function Dashboard() {
                   <span className="text-xs font-black text-slate-800 block leading-tight">
                     {currentUser.displayName || 'صيدلية شريكة'}
                   </span>
-                  <span className="text-[9px] text-emerald-600 font-bold block flex items-center space-x-reverse space-x-1">
-                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-                    <span>سحابة انوار الحسن نشطة ✓</span>
+                  {/* بريد الحساب المسجّل — للتأكد بصرياً أن كل الأجهزة تستخدم نفس الحساب */}
+                  <span className="text-[9px] text-slate-400 font-mono block leading-tight" dir="ltr">
+                    {currentUser.email}
+                  </span>
+                  {/* مؤشر المزامنة الحقيقي — مشتقّ من حالة الاتصال الفعلية بخادم Firestore */}
+                  <span className="text-[9px] font-bold block flex items-center space-x-reverse space-x-1">
+                    {syncState === 'synced' ? (
+                      <><span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" /><span className="text-emerald-600">متزامن مع السحابة ✓</span></>
+                    ) : syncState === 'pending' ? (
+                      <><span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse" /><span className="text-amber-600">جارٍ المزامنة...</span></>
+                    ) : (
+                      <><span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" /><span className="text-red-600">غير متصل — محلي فقط</span></>
+                    )}
                   </span>
                 </div>
                 <button 
