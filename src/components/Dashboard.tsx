@@ -3852,229 +3852,6 @@ export default function Dashboard() {
                       </form>
                     )}
 
-                    {/* شريط تحكم موحّد فوق الجدول: بحث + فلتر الفئة + أزرار الإجراءات */}
-                    <div className="bg-slate-50/70 border border-slate-150 rounded-2xl p-3 flex flex-wrap items-center gap-2">
-                      {/* بحث لحظي مع زر مسح */}
-                      <div className="relative flex-1 min-w-[180px]">
-                        <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
-                        <input
-                          type="text"
-                          value={searchInInventoryQuery}
-                          onChange={(e) => setSearchInInventoryQuery(e.target.value)}
-                          className="w-full bg-white border border-slate-200 rounded-xl pr-9 pl-8 py-2 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-emerald-500 font-medium"
-                          placeholder="بحث بالاسم أو الباركود أو الفئة..."
-                        />
-                        {searchInInventoryQuery && (
-                          <button
-                            type="button"
-                            onClick={() => setSearchInInventoryQuery('')}
-                            className="absolute left-2.5 top-2 text-slate-400 hover:text-rose-600 transition cursor-pointer"
-                            title="مسح البحث"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
-
-                      {/* فلتر الفئة */}
-                      <select
-                        value={inventoryCategoryFilter}
-                        onChange={(e) => setInventoryCategoryFilter(e.target.value)}
-                        className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 font-bold focus:outline-emerald-500 cursor-pointer max-w-[160px]"
-                      >
-                        <option value="">كل الفئات</option>
-                        {[...new Set(inventory.map(m => m.category).filter(Boolean))].sort().map(cat => (
-                          <option key={cat} value={cat}>{cat}</option>
-                        ))}
-                      </select>
-
-                      {/* مسح كل الفلاتر */}
-                      {(searchInInventoryQuery || inventoryCategoryFilter) && (
-                        <button
-                          type="button"
-                          onClick={() => { setSearchInInventoryQuery(''); setInventoryCategoryFilter(''); }}
-                          className="text-[10px] font-black text-slate-500 hover:text-rose-600 px-2 py-2 transition cursor-pointer"
-                          title="مسح كل الفلاتر"
-                        >
-                          مسح الفلاتر ✕
-                        </button>
-                      )}
-
-                      <div className="flex-1" />
-
-                      {/* أزرار الإجراءات */}
-                      <button
-                        type="button"
-                        onClick={() => startScanning('inventory')}
-                        className="bg-white border border-slate-200 hover:border-emerald-300 text-slate-600 hover:text-emerald-700 rounded-xl px-3 py-2 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-                        title="قراءة الباركود بالكاميرا (Scan Barcode)"
-                      >
-                        <Barcode className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => setIsAddingDrug(!isAddingDrug)}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5"
-                      >
-                        <Plus className="w-4 h-4" />
-                        <span>إضافة دواء</span>
-                      </button>
-                      {currentRole === 'admin' && (
-                        <button
-                          onClick={() => setShowBulkImportConfirm(true)}
-                          disabled={bulkImportStatus === 'loading' || bulkImportStatus === 'writing'}
-                          className="bg-slate-800 hover:bg-slate-900 text-white font-black text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-                          title="استيراد المخزون الكامل من برنامج ES-PRO"
-                        >
-                          <Download className="w-4 h-4" />
-                          <span>استيراد المخزون</span>
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Stock Table */}
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-right border-collapse text-xs">
-                        <thead>
-                          <tr className="bg-slate-50 text-slate-400 font-black border-b border-slate-100 text-[10px]">
-                            <th className="py-3 px-4">رقم الرف</th>
-                            <th className="py-3 px-4">الاسم والدواء</th>
-                            <th className="py-3 px-4">التصنيف</th>
-                            <th className="py-3 px-4">سعر البيع للجمهور</th>
-                            <th className="py-3 px-4">سعر البيع في قائمة المخزون (الرسمي)</th>
-                            <th className="py-3 px-4">الكمية المتوفرة حالياً</th>
-                            <th className="py-3 px-4">انتهاء الصلاحية</th>
-                            <th className="py-3 px-4 text-center">تعديل المخزون</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                          {inventory
-                            .filter(m => {
-                              // فلتر الفئة المنسدل
-                              if (inventoryCategoryFilter && m.category !== inventoryCategoryFilter) return false;
-                              // البحث النصي اللحظي
-                              const q = searchInInventoryQuery.toLowerCase().trim();
-                              if (!q) return true;
-                              return (
-                                m.nameAr.toLowerCase().includes(q) ||
-                                m.nameEn.toLowerCase().includes(q) ||
-                                m.scientificName.toLowerCase().includes(q) ||
-                                (m.category && m.category.toLowerCase().includes(q)) ||
-                                (m.barcode && m.barcode.toLowerCase().includes(q))
-                              );
-                            })
-                            .map((med, idx) => {
-                              const expDate = expiryDates[med.id] || '2028-01-01';
-                              const daysRemaining = getDaysUntilExpiry(med.id);
-                              const isNearExpiry30 = daysRemaining <= 30;
-
-                              return (
-                                <tr 
-                                  key={med.id} 
-                                  className={`transition border-b border-slate-100 ${
-                                    isNearExpiry30 
-                                      ? 'bg-rose-50/65 hover:bg-rose-100/70 text-rose-950' 
-                                      : 'hover:bg-slate-50/50'
-                                  }`}
-                                >
-                                  <td className="py-3 px-4 font-mono text-slate-400">REF-{1000 + idx}</td>
-                                  <td className="py-3 px-4 space-y-0.5">
-                                    <strong className="text-slate-900 block font-bold">{med.nameAr}</strong>
-                                    <span className="text-[10px] text-slate-400 font-mono block">{med.nameEn} • {med.scientificName}</span>
-                                  </td>
-                                  <td className="py-3 px-4 text-slate-500 font-semibold">{med.category}</td>
-                                  <td className="py-3 px-4 font-mono font-bold text-emerald-800">
-                                    {med.price.toLocaleString()} د.ع
-                                  </td>
-                                  <td className="py-3 px-4 font-mono font-bold text-slate-500/80">
-                                    {(med.secondaryPrice || (med.price + 500)).toLocaleString()} د.ع
-                                  </td>
-                                  <td className="py-3 px-4 font-mono">
-                                    <span className={`px-2 py-0.5 rounded-full font-bold ${
-                                      med.availableQuantity <= 0
-                                        ? 'bg-rose-100 text-rose-800 font-sans text-[10px]'
-                                        : med.availableQuantity < 15
-                                        ? 'bg-amber-100 text-amber-800 font-sans text-[10px]'
-                                        : 'text-slate-800'
-                                    }`}>
-                                      {med.availableQuantity <= 0 ? 'نفذ بالكامل' : `${med.availableQuantity} علبة`}
-                                    </span>
-                                    {med.availableQuantity <= (med.minStock ?? 15) && med.availableQuantity > 0 && (
-                                      <span className="text-[8px] bg-amber-500 text-white font-bold px-1.5 py-0.5 rounded mr-1">طلب عاجل</span>
-                                    )}
-                                  </td>
-                                  <td className={`py-3 px-4 font-mono font-bold ${isNearExpiry30 ? 'text-rose-600' : 'text-slate-400'}`}>
-                                    <div className="flex items-center space-x-reverse space-x-1">
-                                      {isNearExpiry30 && <AlertCircle className="w-3.5 h-3.5" />}
-                                      <span>{expDate}</span>
-                                    </div>
-                                  </td>
-                                  <td className="py-3 px-4">
-                                    {editingQtyId === med.id ? (
-                                      <div className="flex items-center justify-center space-x-reverse space-x-1.5">
-                                        <input
-                                          type="number"
-                                          min={0}
-                                          autoFocus
-                                          value={editingQtyValue}
-                                          onChange={(e) => setEditingQtyValue(e.target.value)}
-                                          onKeyDown={(e) => {
-                                            if (e.key === 'Enter') saveEditingQty(med.id);
-                                            if (e.key === 'Escape') setEditingQtyId(null);
-                                          }}
-                                          className="w-20 bg-white border border-emerald-300 rounded-lg px-2 py-1 text-xs text-slate-800 font-mono font-bold text-center focus:outline-emerald-500"
-                                        />
-                                        <button
-                                          type="button"
-                                          onClick={() => saveEditingQty(med.id)}
-                                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded-lg transition cursor-pointer"
-                                          title="حفظ"
-                                        >
-                                          <Check className="w-3.5 h-3.5" />
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => setEditingQtyId(null)}
-                                          className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded-lg transition cursor-pointer"
-                                          title="إلغاء"
-                                        >
-                                          <X className="w-3.5 h-3.5" />
-                                        </button>
-                                      </div>
-                                    ) : (
-                                      <div className="flex items-center justify-center space-x-reverse space-x-1.5">
-                                        <button
-                                          type="button"
-                                          onClick={() => startEditingQty(med)}
-                                          className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-lg font-bold transition cursor-pointer text-[10px] flex items-center gap-1 border border-emerald-150"
-                                          title="تعديل الكمية يدوياً"
-                                        >
-                                          <Pencil className="w-3 h-3" />
-                                          <span>تعديل</span>
-                                        </button>
-                                        <button
-                                          onClick={() => adjustStockQty(med.id, 10)}
-                                          className="bg-slate-100 hover:bg-emerald-100 text-slate-600 hover:text-emerald-800 px-2 py-1 rounded font-bold transition cursor-pointer text-[10px]"
-                                          title="إضافة 10 علب"
-                                        >
-                                          +10
-                                        </button>
-                                        <button
-                                          onClick={() => adjustStockQty(med.id, -5)}
-                                          className="bg-slate-150 hover:bg-rose-100 text-slate-600 hover:text-rose-800 px-2 py-1 rounded font-bold transition cursor-pointer text-[10px]"
-                                          title="تخفيض 5 علب"
-                                        >
-                                          -5
-                                        </button>
-                                      </div>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                        </tbody>
-                      </table>
-                    </div>
-
                   {/* ===================================================== */}
                   {/* حركة المادة — سجل الوارد (شراء) والصادر (بيع) لصنف معيّن */}
                   {/* ===================================================== */}
@@ -4413,7 +4190,167 @@ export default function Dashboard() {
                     );
                   })()}
 
-                  {/* Stock Movement Log */}
+                  {/* ===================================================== */}
+                  {/* قائمة الأدوية في المخزون — شريط تحكم + جدول (نهاية القائمة) */}
+                  {/* ===================================================== */}
+                  <div className="space-y-3">
+                    {/* شريط تحكم موحّد: بحث + فلتر الفئة + أزرار الإجراءات */}
+                    <div className="bg-slate-50/70 border border-slate-150 rounded-2xl p-3 flex flex-wrap items-center gap-2">
+                      <div className="relative flex-1 min-w-[180px]">
+                        <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
+                        <input
+                          type="text"
+                          value={searchInInventoryQuery}
+                          onChange={(e) => setSearchInInventoryQuery(e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded-xl pr-9 pl-8 py-2 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-emerald-500 font-medium"
+                          placeholder="بحث بالاسم أو الباركود أو الفئة..."
+                        />
+                        {searchInInventoryQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setSearchInInventoryQuery('')}
+                            className="absolute left-2.5 top-2 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                            title="مسح البحث"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                      <select
+                        value={inventoryCategoryFilter}
+                        onChange={(e) => setInventoryCategoryFilter(e.target.value)}
+                        className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 font-bold focus:outline-emerald-500 cursor-pointer max-w-[160px]"
+                      >
+                        <option value="">كل الفئات</option>
+                        {[...new Set(inventory.map(m => m.category).filter(Boolean))].sort().map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                      {(searchInInventoryQuery || inventoryCategoryFilter) && (
+                        <button
+                          type="button"
+                          onClick={() => { setSearchInInventoryQuery(''); setInventoryCategoryFilter(''); }}
+                          className="text-[10px] font-black text-slate-500 hover:text-rose-600 px-2 py-2 transition cursor-pointer"
+                        >
+                          مسح الفلاتر ✕
+                        </button>
+                      )}
+                      <div className="flex-1" />
+                      <button
+                        type="button"
+                        onClick={() => startScanning('inventory')}
+                        className="bg-white border border-slate-200 hover:border-emerald-300 text-slate-600 hover:text-emerald-700 rounded-xl px-3 py-2 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                        title="قراءة الباركود بالكاميرا"
+                      >
+                        <Barcode className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setIsAddingDrug(!isAddingDrug)}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>إضافة دواء</span>
+                      </button>
+                      {currentRole === 'admin' && (
+                        <button
+                          onClick={() => setShowBulkImportConfirm(true)}
+                          disabled={bulkImportStatus === 'loading' || bulkImportStatus === 'writing'}
+                          className="bg-slate-800 hover:bg-slate-900 text-white font-black text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Download className="w-4 h-4" />
+                          <span>استيراد المخزون</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {/* جدول المخزون */}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-right border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-400 font-black border-b border-slate-100 text-[10px]">
+                            <th className="py-3 px-4">رقم الرف</th>
+                            <th className="py-3 px-4">الاسم والدواء</th>
+                            <th className="py-3 px-4">التصنيف</th>
+                            <th className="py-3 px-4">سعر البيع للجمهور</th>
+                            <th className="py-3 px-4">سعر البيع الرسمي</th>
+                            <th className="py-3 px-4">الكمية المتوفرة</th>
+                            <th className="py-3 px-4">انتهاء الصلاحية</th>
+                            <th className="py-3 px-4 text-center">تعديل المخزون</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                          {inventory
+                            .filter(m => {
+                              if (inventoryCategoryFilter && m.category !== inventoryCategoryFilter) return false;
+                              const q = searchInInventoryQuery.toLowerCase().trim();
+                              if (!q) return true;
+                              return (
+                                m.nameAr.toLowerCase().includes(q) ||
+                                m.nameEn.toLowerCase().includes(q) ||
+                                m.scientificName.toLowerCase().includes(q) ||
+                                (m.category && m.category.toLowerCase().includes(q)) ||
+                                (m.barcode && m.barcode.toLowerCase().includes(q))
+                              );
+                            })
+                            .map((med, idx) => {
+                              const expDate = expiryDates[med.id] || '2028-01-01';
+                              const daysRemaining = getDaysUntilExpiry(med.id);
+                              const isNearExpiry30 = daysRemaining <= 30;
+                              return (
+                                <tr
+                                  key={med.id}
+                                  className={`transition border-b border-slate-100 ${isNearExpiry30 ? 'bg-rose-50/65 hover:bg-rose-100/70 text-rose-950' : 'hover:bg-slate-50/50'}`}
+                                >
+                                  <td className="py-3 px-4 font-mono text-slate-400">REF-{1000 + idx}</td>
+                                  <td className="py-3 px-4 space-y-0.5">
+                                    <strong className="text-slate-900 block font-bold">{med.nameAr}</strong>
+                                    <span className="text-[10px] text-slate-400 font-mono block">{med.nameEn} • {med.scientificName}</span>
+                                  </td>
+                                  <td className="py-3 px-4 text-slate-500 font-semibold">{med.category}</td>
+                                  <td className="py-3 px-4 font-mono font-bold text-emerald-800">{med.price.toLocaleString()} د.ع</td>
+                                  <td className="py-3 px-4 font-mono font-bold text-slate-500/80">{(med.secondaryPrice || (med.price + 500)).toLocaleString()} د.ع</td>
+                                  <td className="py-3 px-4 font-mono">
+                                    <span className={`px-2 py-0.5 rounded-full font-bold ${med.availableQuantity <= 0 ? 'bg-rose-100 text-rose-800 font-sans text-[10px]' : med.availableQuantity < 15 ? 'bg-amber-100 text-amber-800 font-sans text-[10px]' : 'text-slate-800'}`}>
+                                      {med.availableQuantity <= 0 ? 'نفذ بالكامل' : `${med.availableQuantity} علبة`}
+                                    </span>
+                                    {med.availableQuantity <= (med.minStock ?? 15) && med.availableQuantity > 0 && (
+                                      <span className="text-[8px] bg-amber-500 text-white font-bold px-1.5 py-0.5 rounded mr-1">طلب عاجل</span>
+                                    )}
+                                  </td>
+                                  <td className={`py-3 px-4 font-mono font-bold ${isNearExpiry30 ? 'text-rose-600' : 'text-slate-400'}`}>
+                                    <div className="flex items-center space-x-reverse space-x-1">
+                                      {isNearExpiry30 && <AlertCircle className="w-3.5 h-3.5" />}
+                                      <span>{expDate}</span>
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    {editingQtyId === med.id ? (
+                                      <div className="flex items-center justify-center space-x-reverse space-x-1.5">
+                                        <input
+                                          type="number" min={0} autoFocus
+                                          value={editingQtyValue}
+                                          onChange={(e) => setEditingQtyValue(e.target.value)}
+                                          onKeyDown={(e) => { if (e.key === 'Enter') saveEditingQty(med.id); if (e.key === 'Escape') setEditingQtyId(null); }}
+                                          className="w-20 bg-white border border-emerald-300 rounded-lg px-2 py-1 text-xs text-slate-800 font-mono font-bold text-center focus:outline-emerald-500"
+                                        />
+                                        <button type="button" onClick={() => saveEditingQty(med.id)} className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded-lg transition cursor-pointer" title="حفظ"><Check className="w-3.5 h-3.5" /></button>
+                                        <button type="button" onClick={() => setEditingQtyId(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded-lg transition cursor-pointer" title="إلغاء"><X className="w-3.5 h-3.5" /></button>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center justify-center space-x-reverse space-x-1.5">
+                                        <button type="button" onClick={() => startEditingQty(med)} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-lg font-bold transition cursor-pointer text-[10px] flex items-center gap-1 border border-emerald-150" title="تعديل الكمية يدوياً"><Pencil className="w-3 h-3" /><span>تعديل</span></button>
+                                        <button onClick={() => adjustStockQty(med.id, 10)} className="bg-slate-100 hover:bg-emerald-100 text-slate-600 hover:text-emerald-800 px-2 py-1 rounded font-bold transition cursor-pointer text-[10px]" title="إضافة 10 علب">+10</button>
+                                        <button onClick={() => adjustStockQty(med.id, -5)} className="bg-slate-150 hover:bg-rose-100 text-slate-600 hover:text-rose-800 px-2 py-1 rounded font-bold transition cursor-pointer text-[10px]" title="تخفيض 5 علب">-5</button>
+                                      </div>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
 
                   </div>
                 </motion.div>
