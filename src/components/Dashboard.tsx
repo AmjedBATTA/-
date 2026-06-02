@@ -648,13 +648,15 @@ export default function Dashboard() {
   const [newDrugExpiry, setNewDrugExpiry] = useState('2028-12-01');
   const [newDrugMinStock, setNewDrugMinStock] = useState<number>(15);
   const [isAddingDrug, setIsAddingDrug] = useState(false);
-  // --- تنبيه الصلاحية القريب (30 يوماً) — قابل للطي ---
-  const [showNearExpiry30, setShowNearExpiry30] = useState(true);
-  // --- لوحة الصلاحيات الموسّعة (أفق 6 أشهر) ---
-  const [showExpiryHorizon, setShowExpiryHorizon] = useState(false);
+  // --- تنبيهات الصلاحية: مفتوحة في أول زيارة فقط، ثم مطوية افتراضياً (محفوظة في localStorage) ---
+  const inventoryFirstVisit = typeof localStorage !== 'undefined' && !localStorage.getItem('anwar_inventory_visited');
+  const [showNearExpiry30, setShowNearExpiry30] = useState(inventoryFirstVisit);
+  const [showExpiryHorizon, setShowExpiryHorizon] = useState(inventoryFirstVisit);
   // تعديل الكمية المباشر من جدول المخزون: الـ id قيد التحرير + القيمة المؤقتة
   const [editingQtyId, setEditingQtyId] = useState<string | null>(null);
   const [editingQtyValue, setEditingQtyValue] = useState<string>('');
+  // فلتر الفئة في جدول المخزون ('' = كل الفئات)
+  const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState<string>('');
   // الشهر المختار للتصفية بصيغة 'YYYY-MM'؛ null = عرض كل الأشهر ضمن الأفق
   const [selectedExpiryMonth, setSelectedExpiryMonth] = useState<string | null>(null);
 
@@ -929,6 +931,13 @@ export default function Dashboard() {
       setFinancialUnlocked(false);
       setPinEntry('');
       setPinError(false);
+    }
+  }, [activeTab]);
+
+  // علّم أن المستخدم زار المخزون مرة، حتى تُطوى تنبيهات الصلاحية في الزيارات اللاحقة
+  useEffect(() => {
+    if (activeTab === 'inventory') {
+      localStorage.setItem('anwar_inventory_visited', '1');
     }
   }, [activeTab]);
 
@@ -3520,55 +3529,9 @@ export default function Dashboard() {
                   className="space-y-6"
                 >
                   <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
-                    <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-                      <div>
-                        <h3 className="font-extrabold text-slate-900 text-sm">مستودع الأدوية والمخزون الداخلي</h3>
-                        <p className="text-[10px] text-slate-400 font-bold mt-0.5">تحرير الأسعار ونسب المخزون وإدارة فترات انتهاء صلاحية الأدوية العضوية والمبردة</p>
-                      </div>
-
-                      <div className="flex gap-2 flex-wrap">
-                        <button
-                          onClick={() => setIsAddingDrug(!isAddingDrug)}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-4 py-2.5 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5"
-                        >
-                          <Plus className="w-4 h-4" />
-                          <span>إضافة دواء جديد للمنظومة</span>
-                        </button>
-
-                        {currentRole === 'admin' && (
-                          <button
-                            onClick={() => setShowBulkImportConfirm(true)}
-                            disabled={bulkImportStatus === 'loading' || bulkImportStatus === 'writing'}
-                            className="bg-slate-800 hover:bg-slate-900 text-white font-black text-xs px-4 py-2.5 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-                            title="استيراد المخزون الكامل من برنامج ES-PRO"
-                          >
-                            <Download className="w-4 h-4" />
-                            <span>استيراد المخزون الكامل</span>
-                          </button>
-                        )}
-
-                        {/* Search in Inventory */}
-                        <div className="flex items-center gap-2">
-                          <div className="relative">
-                            <Search className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
-                            <input 
-                              type="text" 
-                              value={searchInInventoryQuery}
-                              onChange={(e) => setSearchInInventoryQuery(e.target.value)}
-                              className="bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-3 py-2 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-emerald-500 w-44 font-medium"
-                              placeholder="بحث بالاسم أو الباركود..."
-                            />
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => startScanning('inventory')}
-                            className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-850 text-white rounded-xl px-3 py-2 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
-                            title="قراءة الباركود بالكاميرا (Scan Barcode)"
-                          >
-                            <Barcode className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
+                    <div>
+                      <h3 className="font-extrabold text-slate-900 text-sm">مستودع الأدوية والمخزون الداخلي</h3>
+                      <p className="text-[10px] text-slate-400 font-bold mt-0.5">تحرير الأسعار ونسب المخزون وإدارة فترات انتهاء صلاحية الأدوية العضوية والمبردة</p>
                     </div>
 
                     {/* Bulk import status banner */}
@@ -3889,6 +3852,85 @@ export default function Dashboard() {
                       </form>
                     )}
 
+                    {/* شريط تحكم موحّد فوق الجدول: بحث + فلتر الفئة + أزرار الإجراءات */}
+                    <div className="bg-slate-50/70 border border-slate-150 rounded-2xl p-3 flex flex-wrap items-center gap-2">
+                      {/* بحث لحظي مع زر مسح */}
+                      <div className="relative flex-1 min-w-[180px]">
+                        <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
+                        <input
+                          type="text"
+                          value={searchInInventoryQuery}
+                          onChange={(e) => setSearchInInventoryQuery(e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded-xl pr-9 pl-8 py-2 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-emerald-500 font-medium"
+                          placeholder="بحث بالاسم أو الباركود أو الفئة..."
+                        />
+                        {searchInInventoryQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setSearchInInventoryQuery('')}
+                            className="absolute left-2.5 top-2 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                            title="مسح البحث"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* فلتر الفئة */}
+                      <select
+                        value={inventoryCategoryFilter}
+                        onChange={(e) => setInventoryCategoryFilter(e.target.value)}
+                        className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 font-bold focus:outline-emerald-500 cursor-pointer max-w-[160px]"
+                      >
+                        <option value="">كل الفئات</option>
+                        {[...new Set(inventory.map(m => m.category).filter(Boolean))].sort().map(cat => (
+                          <option key={cat} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+
+                      {/* مسح كل الفلاتر */}
+                      {(searchInInventoryQuery || inventoryCategoryFilter) && (
+                        <button
+                          type="button"
+                          onClick={() => { setSearchInInventoryQuery(''); setInventoryCategoryFilter(''); }}
+                          className="text-[10px] font-black text-slate-500 hover:text-rose-600 px-2 py-2 transition cursor-pointer"
+                          title="مسح كل الفلاتر"
+                        >
+                          مسح الفلاتر ✕
+                        </button>
+                      )}
+
+                      <div className="flex-1" />
+
+                      {/* أزرار الإجراءات */}
+                      <button
+                        type="button"
+                        onClick={() => startScanning('inventory')}
+                        className="bg-white border border-slate-200 hover:border-emerald-300 text-slate-600 hover:text-emerald-700 rounded-xl px-3 py-2 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                        title="قراءة الباركود بالكاميرا (Scan Barcode)"
+                      >
+                        <Barcode className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setIsAddingDrug(!isAddingDrug)}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>إضافة دواء</span>
+                      </button>
+                      {currentRole === 'admin' && (
+                        <button
+                          onClick={() => setShowBulkImportConfirm(true)}
+                          disabled={bulkImportStatus === 'loading' || bulkImportStatus === 'writing'}
+                          className="bg-slate-800 hover:bg-slate-900 text-white font-black text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="استيراد المخزون الكامل من برنامج ES-PRO"
+                        >
+                          <Download className="w-4 h-4" />
+                          <span>استيراد المخزون</span>
+                        </button>
+                      )}
+                    </div>
+
                     {/* Stock Table */}
                     <div className="overflow-x-auto">
                       <table className="w-full text-right border-collapse text-xs">
@@ -3907,12 +3949,16 @@ export default function Dashboard() {
                         <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                           {inventory
                             .filter(m => {
+                              // فلتر الفئة المنسدل
+                              if (inventoryCategoryFilter && m.category !== inventoryCategoryFilter) return false;
+                              // البحث النصي اللحظي
                               const q = searchInInventoryQuery.toLowerCase().trim();
                               if (!q) return true;
                               return (
-                                m.nameAr.includes(q) ||
+                                m.nameAr.toLowerCase().includes(q) ||
                                 m.nameEn.toLowerCase().includes(q) ||
                                 m.scientificName.toLowerCase().includes(q) ||
+                                (m.category && m.category.toLowerCase().includes(q)) ||
                                 (m.barcode && m.barcode.toLowerCase().includes(q))
                               );
                             })
