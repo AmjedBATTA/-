@@ -1,4 +1,4 @@
-﻿import { useState, FormEvent, useEffect, useRef } from 'react';
+﻿import React, { useState, FormEvent, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ShoppingBag, Wallet, Info, CheckCircle2, AlertCircle, Clock, 
@@ -13,7 +13,7 @@ import InvoiceImportModal from './InvoiceImportModal';
 // Firebase Authentication & Remote Firestore Synchronizer hooks
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { collection, doc, getDoc, setDoc, onSnapshot, deleteDoc, writeBatch } from 'firebase/firestore';
+import { collection, doc, getDoc, setDoc, onSnapshot, deleteDoc, writeBatch, getCountFromServer, query, orderBy, limit } from 'firebase/firestore';
 
 // Let's declare our reactive state types inside the component
 interface POSItem {
@@ -130,6 +130,8 @@ export default function Dashboard() {
   const [isSyncing, setIsSyncing] = useState(false);
   // رُفع عند فشل تهيئة خدمة المصادقة (مفتاح API غير صالح أو انقطاع الشبكة) — يُظهر شريط تنبيه غير معطِّل
   const [authInitFailed, setAuthInitFailed] = useState(false);
+  const [signInError, setSignInError] = useState('');
+  const [devBypass, setDevBypass] = useState(false);
   // حالة المزامنة الحقيقية مع خادم Firestore — مشتقّة من البيانات الوصفية للقطة (metadata)
   // وليست مجرّد "هل يوجد مستخدم". 'synced' = وصلت للخادم، 'pending' = قيد الرفع، 'offline' = محلية فقط.
   const [syncState, setSyncState] = useState<'synced' | 'pending' | 'offline'>('pending');
@@ -222,6 +224,7 @@ export default function Dashboard() {
   // --- FINANCIAL TAB PIN LOCK ---
   const [financialPin, setFinancialPin] = useState<string>(() => localStorage.getItem('fin_pin') || '0000');
   const [financialUnlocked, setFinancialUnlocked] = useState(false);
+  const [showTodaySales, setShowTodaySales] = useState(false);
   const [pinEntry, setPinEntry] = useState('');
   const [pinError, setPinError] = useState(false);
   // تغيير الباسوورد من داخل التبويب المالي
@@ -250,7 +253,12 @@ export default function Dashboard() {
   const [posCustomerName, setPosCustomerName] = useState('زبون نقدي / خارجي');
   const [posDiscountPercent, setPosDiscountPercent] = useState<number>(0);
   const [posOnCredit, setPosOnCredit] = useState(false); // بيع بالآجل: تسجيل ذمّة على الزبون بدل القبض النقدي
-  const [searchPOSQuery, setSearchPOSQuery] = useState('');
+  const [searchPOSInput, setSearchPOSInput] = useState('');   // القيمة الفورية في الحقل
+  const [searchPOSQuery, setSearchPOSQuery] = useState('');   // القيمة المستخدمة للفلترة (مؤجّلة 150ms)
+  useEffect(() => {
+    const t = setTimeout(() => setSearchPOSQuery(searchPOSInput), 150);
+    return () => clearTimeout(t);
+  }, [searchPOSInput]);
   const [lastPrintedInvoice, setLastPrintedInvoice] = useState<SaleRecord | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [showVirtualPriceInPOS, setShowVirtualPriceInPOS] = useState(false);
@@ -264,17 +272,6 @@ export default function Dashboard() {
   const [salesLedger, setSalesLedger] = useState<SaleRecord[]>(() => generateHistoricalSales()); // يبدأ فارغاً
 
   // --- CONTROL REFRIGERATOR TEMPERATURE SIMULATOR ---
-  const [fridgeTemp, setFridgeTemp] = useState<number>(4.2); // Celcius loop
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setFridgeTemp(prev => {
-        const drift = (Math.random() - 0.5) * 0.4;
-        const next = parseFloat((prev + drift).toFixed(1));
-        return next < 2.5 ? 2.5 : next > 6.5 ? 6.5 : next;
-      });
-    }, 6000);
-    return () => clearInterval(interval);
-  }, []);
 
   // --- DYNAMIC INVENTORY ACTIONS ---
   const [searchInInventoryQuery, setSearchInInventoryQuery] = useState('');
@@ -288,7 +285,6 @@ export default function Dashboard() {
   const [newDrugAr, setNewDrugAr] = useState('');
   const [newDrugEn, setNewDrugEn] = useState('');
   const [newDrugSci, setNewDrugSci] = useState('');
-  const [newDrugCat, setNewDrugCat] = useState('مسكنات الألم');
   const [newDrugPrice, setNewDrugPrice] = useState<number>(5000);
   const [newDrugSecondaryPrice, setNewDrugSecondaryPrice] = useState<number>(5500);
   const [newDrugQty, setNewDrugQty] = useState<number>(100);
@@ -299,6 +295,7 @@ export default function Dashboard() {
   const inventoryFirstVisit = typeof localStorage !== 'undefined' && !localStorage.getItem('anwar_inventory_visited');
   const [showNearExpiry30, setShowNearExpiry30] = useState(inventoryFirstVisit);
   const [showExpiryHorizon, setShowExpiryHorizon] = useState(inventoryFirstVisit);
+  const [showLowStock, setShowLowStock] = useState(false);
   // تعديل الكمية المباشر من جدول المخزون: الـ id قيد التحرير + القيمة المؤقتة
   const [editingQtyId, setEditingQtyId] = useState<string | null>(null);
   const [editingQtyValue, setEditingQtyValue] = useState<string>('');
@@ -306,10 +303,17 @@ export default function Dashboard() {
   const [editingPriceId, setEditingPriceId] = useState<string | null>(null);
   const [editingPriceValue, setEditingPriceValue] = useState<string>('');
   const [editingSecondaryPriceValue, setEditingSecondaryPriceValue] = useState<string>('');
+  // جرد سريع — الصف المفتوح + حقول التعديل
+  const [quickAuditId, setQuickAuditId] = useState<string | null>(null);
+  const [qaNameAr, setQaNameAr] = useState('');
+  const [qaNameEn, setQaNameEn] = useState('');
+  const [qaPrice, setQaPrice] = useState('');
+  const [qaCostPrice, setQaCostPrice] = useState('');
+  const [qaQty, setQaQty] = useState('');
+  const [qaExpiry, setQaExpiry] = useState('');
   // المادة المطلوب حذفها (يظهر نافذة تأكيد قبل الحذف النهائي)
   const [deleteMedTarget, setDeleteMedTarget] = useState<Medicine | null>(null);
   // فلتر الفئة في جدول المخزون ('' = كل الفئات)
-  const [inventoryCategoryFilter, setInventoryCategoryFilter] = useState<string>('');
   // الشهر المختار للتصفية بصيغة 'YYYY-MM'؛ null = عرض كل الأشهر ضمن الأفق
   const [selectedExpiryMonth, setSelectedExpiryMonth] = useState<string | null>(null);
 
@@ -328,7 +332,6 @@ export default function Dashboard() {
   const [purchaseNewProdAr, setPurchaseNewProdAr] = useState('');
   const [purchaseNewProdEn, setPurchaseNewProdEn] = useState('');
   const [purchaseNewProdSci, setPurchaseNewProdSci] = useState('');
-  const [purchaseNewProdCat, setPurchaseNewProdCat] = useState('مسكنات الألم');
   const [purchaseNewProdPrice, setPurchaseNewProdPrice] = useState<number>(3000);
   const [purchaseNewProdQty, setPurchaseNewProdQty] = useState<number>(50);
   const [purchaseNewProdExpiry, setPurchaseNewProdExpiry] = useState('2028-12-01');
@@ -485,7 +488,7 @@ export default function Dashboard() {
     
     // Fill the corresponding search query or field depending on scanTarget
     if (scanTarget === 'pos') {
-      setSearchPOSQuery(code);
+      setSearchPOSInput(code); setSearchPOSQuery(code);
     } else if (scanTarget === 'inventory') {
       setSearchInInventoryQuery(code);
     } else if (scanTarget === 'add-drug') {
@@ -513,7 +516,6 @@ export default function Dashboard() {
             nameAr: match.nameAr,
             nameEn: match.nameEn,
             scientificName: match.scientificName,
-            category: match.category,
             price: Math.floor(match.price * 0.72) || 3000,
             retailPrice: match.price || 0,
             officialPrice: match.secondaryPrice || (match.price ? match.price + 500 : 0),
@@ -544,7 +546,7 @@ export default function Dashboard() {
   // RBAC: reset activeTab when role changes
   useEffect(() => {
     const allowed: Record<typeof currentRole, string[]> = {
-      admin: ['home', 'pos', 'inventory', 'b2b', 'financial', 'team'],
+      admin: ['home', 'pos', 'inventory', 'b2b', 'financial'],
       pharmacist: ['home', 'pos', 'inventory', 'b2b'],
       cashier: ['home', 'pos', 'inventory'],
     };
@@ -583,17 +585,19 @@ export default function Dashboard() {
     }
   }, []);
 
-  const getDaysUntilExpiry = (id: string) => {
-    const expDateStr = expiryDates[id];
-    if (!expDateStr) return 9999;
-    // اليوم الفعلي من تاريخ الجهاز (بدل تاريخ ثابت). نوحّد الأساس: نأخذ التاريخ المحلي كـ YYYY-MM-DD
-    // ثم نعيد تحليله مثل تاريخ الصلاحية (منتصف ليل UTC) لحساب فرق أيام صحيح بلا انزياح المناطق الزمنية.
-    const todayStr = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD بالتقويم المحلي
-    const currentDate = new Date(todayStr);
-    const expiryDate = new Date(expDateStr);
-    const diffTime = expiryDate.getTime() - currentDate.getTime();
-    return Math.round(diffTime / (1000 * 60 * 60 * 24));
-  };
+  // خريطة أيام الصلاحية — تُحسب مرة واحدة عند تغيّر expiryDates فقط
+  const expiryDaysMap = useMemo(() => {
+    const todayMs = new Date(new Date().toLocaleDateString('en-CA')).getTime();
+    const map: Record<string, number> = {};
+    for (const id in expiryDates) {
+      const expDateStr = expiryDates[id];
+      if (!expDateStr) { map[id] = 9999; continue; }
+      map[id] = Math.round((new Date(expDateStr).getTime() - todayMs) / 86400000);
+    }
+    return map;
+  }, [expiryDates]);
+
+  const getDaysUntilExpiry = useCallback((id: string) => expiryDaysMap[id] ?? 9999, [expiryDaysMap]);
 
   const getNearExpiryMeds = () => {
     return inventory.filter(m => {
@@ -690,6 +694,51 @@ export default function Dashboard() {
       setDoc(doc(db, 'users', currentUser.uid, 'inventory', medId), updatedMed)
         .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${currentUser.uid}/inventory/${medId}`));
     }
+  };
+
+  // جرد سريع — فتح الصف
+  const startQuickAudit = (med: Medicine) => {
+    setQuickAuditId(med.id);
+    setQaNameAr(med.nameAr);
+    setQaNameEn(med.nameEn || '');
+    setQaPrice(String(med.price));
+    setQaCostPrice(String(med.costPrice || ''));
+    setQaQty(String(med.availableQuantity));
+    setQaExpiry(expiryDates[med.id] || '');
+  };
+
+  // جرد سريع — حفظ كل الحقول دفعةً
+  const saveQuickAudit = (medId: string) => {
+    const price = Math.max(0, Math.round(Number(qaPrice)));
+    const cost  = Math.max(0, Math.round(Number(qaCostPrice)));
+    const qty   = Math.max(0, Math.round(Number(qaQty)));
+    if (isNaN(price) || isNaN(qty)) { setQuickAuditId(null); return; }
+    let updatedMed: Medicine | null = null;
+    setInventory(prev => prev.map(m => {
+      if (m.id !== medId) return m;
+      updatedMed = {
+        ...m,
+        nameAr: qaNameAr.trim() || m.nameAr,
+        nameEn: qaNameEn.trim() || m.nameEn,
+        price,
+        costPrice: cost > 0 ? cost : m.costPrice,
+        availableQuantity: qty,
+        status: qty <= 0 ? 'unavailable' : qty < (m.minStock ?? 15) ? 'low' : 'available',
+      } as Medicine;
+      return updatedMed!;
+    }));
+    if (qaExpiry) setExpiryDates(prev => ({ ...prev, [medId]: qaExpiry }));
+    if (currentUser) {
+      const uid = currentUser.uid;
+      if (updatedMed)
+        setDoc(doc(db, 'users', uid, 'inventory', medId), updatedMed)
+          .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${uid}/inventory/${medId}`));
+      if (qaExpiry)
+        setDoc(doc(db, 'users', uid, 'expiryDates', medId), { expiry: qaExpiry, userId: uid })
+          .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${uid}/expiryDates/${medId}`));
+    }
+    addAuditEntry({ action: 'inventory_import', amount: 0, description: `جرد سريع: ${qaNameAr.trim()} — كمية: ${qty}، سعر: ${price.toLocaleString()} د.ع` });
+    setQuickAuditId(null);
   };
 
   // فتح محرّر السعر المباشر لصف في جدول المخزون
@@ -816,11 +865,6 @@ export default function Dashboard() {
   };
 
 
-  // --- TEAM MEMBER STATES ---
-  const [teamMembers, setTeamMembers] = useState<{ id: string; name: string; role: string; license: string; shift: string; status: string }[]>([]); // بدون موظفين تجريبيين
-  const [newStaffName, setNewStaffName] = useState('');
-  const [newStaffRole, setNewStaffRole] = useState('صيدلاني مناوب');
-  const [newStaffLicense, setNewStaffLicense] = useState('');
 
   // --- REMOTE CLOUD FIREBASE SYNC OBSERVERS & TRIGGERS ---
   useEffect(() => {
@@ -839,6 +883,22 @@ export default function Dashboard() {
       setCurrentUser(null);
     }
     return () => { if (unsubscribe) unsubscribe(); };
+  }, []);
+
+  // مراقبة فشل عمليات الكتابة في السحابة (setDoc/deleteDoc).
+  // handleFirestoreError يرمي خطأً عند فشل أي كتابة، فيظهر كـ unhandledrejection —
+  // نلتقطه هنا ونُظهره للمستخدم بشريط أحمر بدل أن يُفقد بصمت في الـ console.
+  // هذا يكشف فوراً إن كانت فاتورة بيع (أو أي بيان) تفشل في الوصول لبقية الأجهزة.
+  useEffect(() => {
+    const onRejection = (ev: PromiseRejectionEvent) => {
+      const msg = String((ev.reason as { message?: string })?.message ?? ev.reason ?? '');
+      if (/operationType|firestore|permission|insufficient|offline|unavailable/i.test(msg)) {
+        setSyncError('فشل حفظ بعض التغييرات في السحابة — لم تصل لبقية الأجهزة. تحقّق من الاتصال وأعد المحاولة.');
+        console.error('[مزامنة] فشل كتابة في السحابة:', msg);
+      }
+    };
+    window.addEventListener('unhandledrejection', onRejection);
+    return () => window.removeEventListener('unhandledrejection', onRejection);
   }, []);
 
   useEffect(() => {
@@ -965,34 +1025,7 @@ export default function Dashboard() {
       console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/salesLedger`);
     });
 
-    // 5. Sync Team Members Collection
-    const teamCol = collection(db, 'users', userId, 'teamMembers');
-    const unsubTeam = onSnapshot(teamCol, (snapshot) => {
-      if (snapshot.empty) {
-        teamMembers.forEach(async (member) => {
-          try {
-            await setDoc(doc(db, 'users', userId, 'teamMembers', String(member.id)), {
-              ...member,
-              id: String(member.id),
-              userId
-            });
-          } catch (e) {
-            handleFirestoreError(e, OperationType.CREATE, `users/${userId}/teamMembers/${member.id}`);
-          }
-        });
-      } else {
-        const loadedTeam: any[] = [];
-        snapshot.forEach((doc) => {
-          loadedTeam.push(doc.data());
-        });
-        loadedTeam.sort((a, b) => Number(a.id) - Number(b.id));
-        setTeamMembers(loadedTeam);
-      }
-    }, (error) => {
-      console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/teamMembers`);
-    });
-
-    // 6. Sync Expenses Collection
+    // 5. Sync Expenses Collection
     const expensesCol = collection(db, 'users', userId, 'expenses');
     const unsubExpenses = onSnapshot(expensesCol, (snapshot) => {
       if (snapshot.empty) {
@@ -1099,13 +1132,17 @@ export default function Dashboard() {
     });
 
     // 10. Sync Audit Log Collection (سجل التدقيق)
+    // تحسين الحصة: نقرأ آخر 300 سجلّ فقط من الخادم بدل المجموعة كاملةً.
+    // سجل التدقيق ينمو مع كل عملية (بيع/تعديل/حذف...)، والتطبيق لا يعرض أكثر من 300 أصلاً —
+    // فقراءة الكل كانت إهداراً صافياً للحصة. هذا يخفّض القراءات بشكل كبير دون أي تأثير على الميزات.
     const auditLogCol = collection(db, 'users', userId, 'auditLog');
-    const unsubAuditLog = onSnapshot(auditLogCol, (snapshot) => {
+    const auditLogQuery = query(auditLogCol, orderBy('timestamp', 'desc'), limit(300));
+    const unsubAuditLog = onSnapshot(auditLogQuery, (snapshot) => {
       if (!snapshot.empty) {
         const loaded: AuditEntry[] = [];
         snapshot.forEach(d => loaded.push(d.data() as AuditEntry));
         loaded.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-        setAuditLog(loaded.slice(0, 300));
+        setAuditLog(loaded);
       }
     }, (error) => {
       console.warn('[AuditLog] onSnapshot error:', error);
@@ -1150,7 +1187,6 @@ export default function Dashboard() {
       unsubInventory();
       unsubB2bOrders();
       unsubSalesLedger();
-      unsubTeam();
       unsubExpenses();
       unsubPayables();
       unsubReceivables();
@@ -1550,11 +1586,58 @@ export default function Dashboard() {
 
   // Handle Google OAuth Action
   const handleGoogleSignIn = async () => {
+    setSignInError('');
     try {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Sign-in failed:", err);
+      const code = err?.code ?? '';
+      if (code === 'auth/popup-blocked') {
+        setSignInError('المتصفح حجب نافذة تسجيل الدخول — أذن للنوافذ المنبثقة من إعدادات المتصفح ثم أعد المحاولة.');
+      } else if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        setSignInError('أُغلقت نافذة الدخول قبل اكتمال العملية — حاول مجدداً.');
+      } else if (code === 'auth/unauthorized-domain') {
+        setSignInError('هذا النطاق غير مصرّح به في إعدادات Firebase — تواصل مع المشرف.');
+      } else if (code === 'auth/network-request-failed') {
+        setSignInError('تعذّر الاتصال بالإنترنت — تحقّق من الشبكة وأعد المحاولة.');
+      } else {
+        setSignInError('فشل تسجيل الدخول — أعد المحاولة أو تحقّق من الإنترنت.');
+      }
+    }
+  };
+
+  // فحص قاطع للمزامنة: يقرأ العدد الفعلي للبيانات مباشرةً من خادم Firestore
+  // (getCountFromServer يتجاوز الكاش المحلي دائماً) ويقارنه بالظاهر على هذا الجهاز.
+  // شغّله على كل جهاز ليكشف بدقّة: هل البيانات وصلت للسحابة؟ وهل هذا الجهاز يقرؤها؟
+  const handleCloudCheck = async () => {
+    if (!currentUser) return;
+    const uid = currentUser.uid;
+    try {
+      const [salesSnap, invSnap] = await Promise.all([
+        getCountFromServer(collection(db, 'users', uid, 'salesLedger')),
+        getCountFromServer(collection(db, 'users', uid, 'inventory')),
+      ]);
+      const serverSales = salesSnap.data().count;
+      const serverInv = invSnap.data().count;
+      const ok = serverSales === salesLedger.length && serverInv === inventory.length;
+      alert(
+        '🔍 فحص السحابة (قراءة مباشرة من الخادم)\n\n' +
+        'الحساب: ' + (currentUser.email || '—') + '\n' +
+        'معرّف الحساب (uid): ' + uid + '\n\n' +
+        '— الفواتير —\n' +
+        'على الخادم: ' + serverSales + '\n' +
+        'ظاهرة على هذا الجهاز: ' + salesLedger.length + '\n\n' +
+        '— المخزون —\n' +
+        'على الخادم: ' + serverInv + '\n' +
+        'ظاهر على هذا الجهاز: ' + inventory.length + '\n\n' +
+        (ok
+          ? '✅ متطابق — هذا الجهاز متزامن تماماً مع السحابة.'
+          : '⚠️ يوجد فرق — بعض البيانات لم تتزامن مع هذا الجهاز.')
+      );
+    } catch (e) {
+      const msg = String((e as Error)?.message || e);
+      alert('تعذّر فحص السحابة:\n' + msg + '\n\nقد يعني هذا أن هذا الجهاز لا يصل لخادم Firestore (مشكلة اتصال/صلاحيات).');
     }
   };
 
@@ -1725,48 +1808,51 @@ export default function Dashboard() {
   const totalReceivables = receivables.reduce((sum, r) => sum + Math.max(0, (r.amount || 0) - (r.paidAmount || 0)), 0);
 
   // Search filter for POS select
-  const filteredPOSMeds = inventory.filter(m => {
-    const q = searchPOSQuery.toLowerCase().trim();
-    if (!q) return true;
-    return (
-      m.nameAr.includes(q) ||
-      m.nameEn.toLowerCase().includes(q) ||
-      m.scientificName.toLowerCase().includes(q) ||
-      (m.barcode && m.barcode.toLowerCase().includes(q))
-    );
-  });
+  // فهرس المخزون المُسبق الحساب — يُعاد بناؤه عند تغيّر inventory فقط
+  const inventoryIndex = useMemo(() => inventory.map(m => ({
+    m,
+    nameAr:  m.nameAr.toLowerCase(),
+    nameEn:  (m.nameEn || '').toLowerCase(),
+    sci:     (m.scientificName || '').toLowerCase(),
+    barcode: (m.barcode || '').toLowerCase(),
+  })), [inventory]);
 
-  // إيجاد أفضل مادة مطابقة لنص بحث/باركود (للإضافة المباشرة عند ضغط Enter أو مسح الباركود).
-  // الأولوية: مطابقة باركود تامة ← مطابقة اسم تامة ← أول نتيجة بحث جزئية.
-  const findScanMatch = (query: string): Medicine | null => {
+  const filteredPOSMeds = useMemo(() => {
+    const q = searchPOSQuery.toLowerCase().trim();
+    if (!q) return inventory;
+    return inventoryIndex
+      .filter(({ nameAr, nameEn, sci, barcode }) =>
+        nameAr.includes(q) || nameEn.includes(q) || sci.includes(q) || barcode.includes(q)
+      )
+      .map(({ m }) => m);
+  }, [searchPOSQuery, inventory, inventoryIndex]);
+
+  // مطابقة باركود/اسم في مرور واحد فقط (بدل 3 مرورات متتالية)
+  const findScanMatch = useCallback((query: string): Medicine | null => {
     const q = query.trim();
     if (!q) return null;
     const lower = q.toLowerCase();
-    return (
-      inventory.find(m => m.barcode && m.barcode.toLowerCase() === lower) ||
-      inventory.find(m => m.nameAr === q || (m.nameEn && m.nameEn.toLowerCase() === lower)) ||
-      inventory.find(m =>
-        m.nameAr.toLowerCase().includes(lower) ||
-        (m.nameEn && m.nameEn.toLowerCase().includes(lower)) ||
-        (m.scientificName && m.scientificName.toLowerCase().includes(lower)) ||
-        (m.barcode && m.barcode.toLowerCase().includes(lower))
-      ) ||
-      null
-    );
-  };
+    let exact: Medicine | null = null;
+    let partial: Medicine | null = null;
+    for (const { m, nameAr, nameEn, sci, barcode } of inventoryIndex) {
+      if (barcode === lower || nameAr === lower || nameEn === lower) return m;
+      if (!exact && (nameAr.includes(lower) || nameEn.includes(lower) || sci.includes(lower) || barcode.includes(lower)))
+        exact = m;
+    }
+    return exact || partial;
+  }, [inventoryIndex]);
 
   const addToCart = (med: Medicine) => {
     if (med.availableQuantity <= 0) return;
     const existingIndex = currentCart.findIndex(item => item.medicine.id === med.id);
     if (existingIndex !== -1) {
-      const alreadyInCart = currentCart[existingIndex].quantity;
-      if (alreadyInCart < med.availableQuantity) {
-        const nextCart = [...currentCart];
-        nextCart[existingIndex].quantity += 1;
-        setCurrentCart(nextCart);
+      const existing = currentCart[existingIndex];
+      if (existing.quantity < med.availableQuantity) {
+        const rest = currentCart.filter(item => item.medicine.id !== med.id);
+        setCurrentCart([{ ...existing, quantity: existing.quantity + 1 }, ...rest]);
       }
     } else {
-      setCurrentCart([...currentCart, { medicine: med, quantity: 1 }]);
+      setCurrentCart([{ medicine: med, quantity: 1 }, ...currentCart]);
     }
   };
 
@@ -1964,7 +2050,7 @@ export default function Dashboard() {
       nameEn: newDrugEn,
       scientificName: newDrugSci || 'N/A',
       activeIngredient: newDrugSci || 'N/A',
-      category: newDrugCat,
+      category: '',
       warehouse: 'أدخلت يدويا في صيدلية انوار الحسن',
       price: newDrugPrice,
       secondaryPrice: newDrugSecondaryPrice,
@@ -2079,7 +2165,6 @@ export default function Dashboard() {
         nameAr: med.nameAr,
         nameEn: med.nameEn,
         scientificName: med.scientificName || 'N/A',
-        category: med.category || 'مسكنات الألم',
         price: Math.floor(med.price * 0.72) || 3000, // Wholesale discount!
         retailPrice: med.price || 0,
         officialPrice: med.secondaryPrice || (med.price ? med.price + 500 : 0),
@@ -2159,7 +2244,7 @@ export default function Dashboard() {
           nameEn: draftItem.nameEn,
           activeIngredient: draftItem.scientificName || 'مركب فعال نشط',
           scientificName: draftItem.scientificName,
-          category: draftItem.category,
+          category: '',
           warehouse: 'مكتب علمي (توريد طلبيات الشراء)',
           price: draftItem.retailPrice && Number(draftItem.retailPrice) > 0
             ? Number(draftItem.retailPrice)
@@ -2371,33 +2456,6 @@ export default function Dashboard() {
     document.body.removeChild(link);
   };
 
-  // Add staff employee
-  const handleAddStaff = (e: FormEvent) => {
-    e.preventDefault();
-    if (!newStaffName) return;
-    const newId = String(teamMembers.length + 1);
-    const newMember = {
-      id: newId,
-      name: newStaffName,
-      role: newStaffRole,
-      license: newStaffLicense || `ص-${Math.floor(Math.random() * 90000 + 10000)}`,
-      shift: 'دوام مرن',
-      status: 'active'
-    };
-
-    if (currentUser) {
-      const userId = currentUser.uid;
-      setDoc(doc(db, 'users', userId, 'teamMembers', newId), {
-        ...newMember,
-        userId
-      }).catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${userId}/teamMembers/${newId}`));
-    } else {
-      setTeamMembers([...teamMembers, newMember]);
-    }
-
-    setNewStaffName('');
-    setNewStaffLicense('');
-  };
 
   // ====== بوابة تسجيل الدخول الإلزامية ======
   // لا يعمل التطبيق دون تسجيل دخول. هذا يمنع "وضع البيانات المحلية فقط" الذي كان يجعل
@@ -2412,7 +2470,7 @@ export default function Dashboard() {
     );
   }
 
-  if (!currentUser) {
+  if (!currentUser && !devBypass) {
     return (
       <div className="bg-gradient-to-br from-emerald-50 via-slate-50 to-teal-50 min-h-screen flex items-center justify-center p-4" dir="rtl">
         <div className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-slate-100 p-8 text-center">
@@ -2423,6 +2481,12 @@ export default function Dashboard() {
           {authInitFailed && (
             <div className="mb-4 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
               تعذّر الاتصال بخدمة الحسابات. تحقّق من اتصال الإنترنت ثم أعد المحاولة.
+            </div>
+          )}
+
+          {signInError && (
+            <div className="mb-4 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-right font-semibold">
+              {signInError}
             </div>
           )}
 
@@ -2438,6 +2502,15 @@ export default function Dashboard() {
             <span className="font-bold text-emerald-700">مهم لتوحيد البيانات بين الأجهزة:</span><br/>
             سجّل الدخول بـ <span className="font-bold">نفس حساب Google</span> على كل أجهزة الكاشير. كل الأجهزة التي تستخدم نفس الحساب ترى نفس المخزون والمبيعات لحظياً.
           </div>
+
+          {import.meta.env.DEV && (
+            <button
+              onClick={() => setDevBypass(true)}
+              className="mt-3 w-full px-4 py-2.5 border border-dashed border-slate-300 text-slate-400 hover:text-slate-600 hover:border-slate-400 rounded-xl text-xs font-bold transition cursor-pointer"
+            >
+              متابعة بدون حساب (وضع المعاينة فقط — بيانات مؤقتة)
+            </button>
+          )}
         </div>
       </div>
     );
@@ -2523,7 +2596,14 @@ export default function Dashboard() {
                     )}
                   </span>
                 </div>
-                <button 
+                <button
+                  onClick={handleCloudCheck}
+                  className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-lg transition cursor-pointer border border-emerald-200"
+                  title="قراءة العدد الفعلي من خادم Firestore ومقارنته بهذا الجهاز"
+                >
+                  🔍 فحص السحابة
+                </button>
+                <button
                   onClick={handleSignOut}
                   className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-bold rounded-lg transition cursor-pointer"
                 >
@@ -2643,10 +2723,10 @@ export default function Dashboard() {
 
           {/* MIDDLE: Quick Refrigerator temp readout */}
           <div className="hidden sm:flex items-center space-x-reverse space-x-4 bg-slate-50 border border-slate-100 px-4 py-1.5 rounded-full text-xs font-semibold">
-            <span className="text-slate-500">مستشعر التبريد الذكي:</span>
+            <span className="text-slate-500">المستشعر الذكي:</span>
             <div className="flex items-center space-x-reverse space-x-1.5">
               <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-ping" />
-              <strong className="text-slate-900 font-mono">{fridgeTemp}°C</strong>
+              <strong className="text-slate-900 font-mono">4.7°C</strong>
               <span className="text-slate-400 text-[10px]">(المطابقة الدوائية ✓)</span>
             </div>
           </div>
@@ -2664,10 +2744,17 @@ export default function Dashboard() {
             {/* The white tile squircle with an emerald-green hardware chip circuit icon */}
             <div className="w-11 h-11 bg-white rounded-2xl border border-slate-100 shadow-sm flex items-center justify-center text-emerald-600 font-black">
               <span className="relative">
-                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="4" y="4" width="16" height="16" rx="2" />
-                  <rect x="9" y="9" width="6" height="6" rx="1" />
-                  <path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 15h3M1 9h3M1 15h3" />
+                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                  {/* جسم البطة */}
+                  <ellipse cx="13" cy="15" rx="7" ry="5" />
+                  {/* الرأس */}
+                  <circle cx="19" cy="9" r="3.2" />
+                  {/* المنقار */}
+                  <ellipse cx="22.5" cy="9.5" rx="1.8" ry="1" />
+                  {/* الذيل */}
+                  <ellipse cx="6.5" cy="14" rx="2" ry="1.2" transform="rotate(-20 6.5 14)" />
+                  {/* العين */}
+                  <circle cx="20" cy="8.2" r="0.55" fill="white" />
                 </svg>
                 <div className="absolute -top-1 -left-1 w-2.5 h-2.5 bg-emerald-500 rounded-full border border-white" />
               </span>
@@ -2789,29 +2876,6 @@ export default function Dashboard() {
                 </button>
               )}
 
-              {/* Team */}
-              {currentRole === 'admin' && (
-                <button
-                  onClick={() => setActiveTab('team')}
-                  className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-slate-400 transition-all cursor-pointer text-right space-y-4 group"
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-slate-100 text-slate-600 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-slate-200 transition">
-                      <Users className="w-6 h-6" />
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="font-black text-slate-800 text-sm">الصيادلة والدوام</h3>
-                      <p className="text-[10px] text-slate-500 font-semibold mt-0.5">إدارة فريق العمل والجداول</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] bg-slate-100 text-slate-700 px-2.5 py-1 rounded-full font-black">
-                      {teamMembers.length} موظف
-                    </span>
-                    <span className="text-[10px] text-slate-400 font-bold group-hover:text-slate-700 transition">دخول ←</span>
-                  </div>
-                </button>
-              )}
 
             </div>
 
@@ -2849,8 +2913,7 @@ export default function Dashboard() {
                 {activeTab === 'pos' ? 'نقطة البيع السريعة (POS)'
                   : activeTab === 'inventory' ? 'المخزن وتنبيهات الصلاحية'
                   : activeTab === 'b2b' ? 'طلبيات المذاخر (انوار الحسن B2B)'
-                  : activeTab === 'financial' ? 'الحسابات المالية وجرد الذمم'
-                  : activeTab === 'team' ? 'الصيادلة والدوام' : ''}
+                  : activeTab === 'financial' ? 'الحسابات المالية وجرد الذمم' : ''}
               </span>
             </div>
             {/* محتوى القسم — كامل العرض */}
@@ -2872,150 +2935,125 @@ export default function Dashboard() {
                   className="grid grid-cols-1 lg:grid-cols-12 gap-6"
                 >
                   
-                  {/* Left Column: Register checkout & current Cart - order-first on mobile */}
-                  <div className="lg:col-span-5 order-first lg:order-none bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
-                    <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-                      <h3 className="font-extrabold text-slate-900 text-sm">سلة البيع الحالية</h3>
-                      <button 
-                        onClick={() => setCurrentCart([])} 
-                        className="text-slate-400 hover:text-rose-600 transition text-[10px] font-bold flex items-center space-x-reverse space-x-1 cursor-pointer"
+                  {/* Left Column: POS Register — dark theme */}
+                  <div className="lg:col-span-5 order-first lg:order-none bg-slate-900 rounded-3xl p-5 shadow-lg flex flex-col gap-4">
+
+                    {/* Header */}
+                    <div className="flex justify-between items-center border-b border-slate-700 pb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
+                        <h3 className="font-extrabold text-white text-sm">سلة البيع</h3>
+                        {currentCart.length > 0 && (
+                          <span className="bg-emerald-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">
+                            {currentCart.length}
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => setCurrentCart([])}
+                        className="text-slate-500 hover:text-rose-400 transition text-[10px] font-bold flex items-center gap-1 cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
-                        <span>مسح السلة</span>
+                        <span>مسح</span>
                       </button>
                     </div>
 
                     {currentCart.length === 0 ? (
-                      <div className="text-center py-16 space-y-3">
-                        <ShoppingBag className="w-10 h-10 text-slate-300 mx-auto" />
-                        <p className="text-xs text-slate-400 font-semibold">سلة الكاش فارغة حالياً. اختر دواء من اليسار لبيعه وصرفه.</p>
+                      <div className="text-center py-14 space-y-3 flex-1 flex flex-col items-center justify-center">
+                        <ShoppingBag className="w-10 h-10 text-slate-600 mx-auto" />
+                        <p className="text-xs text-slate-500 font-semibold">السلة فارغة — اختر دواءً من اليمين</p>
                       </div>
                     ) : (
-                      <form onSubmit={handleCheckoutPOS} className="space-y-5">
-                        
-                        {/* Cart Items list */}
-                        <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1">
-                          {currentCart.map((item) => (
-                            <div key={item.medicine.id} className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between text-xs">
-                              <div className="space-y-1">
-                                <span className="font-extrabold text-slate-900 block">{item.medicine.nameAr}</span>
-                                {showVirtualPriceInPOS ? (
-                                  <span className="text-[9px] text-purple-650 block font-bold font-mono">
-                                    {item.medicine.nameEn} • {(item.medicine.secondaryPrice || (item.medicine.price + 500)).toLocaleString()} د.ع
-                                  </span>
-                                ) : (
-                                  <span className="text-[9px] text-slate-400 block font-mono">
-                                    {item.medicine.nameEn} • {item.medicine.price.toLocaleString()} د.ع
-                                  </span>
-                                )}
-                              </div>
-                              
-                              <div className="flex items-center space-x-reverse space-x-2">
-                                <button 
-                                  type="button"
-                                  onClick={() => updateCartQty(item.medicine.id, -1)}
-                                  className="w-6 h-6 bg-white border border-slate-200 text-slate-600 rounded-lg flex items-center justify-center font-bold font-mono text-sm hover:bg-slate-100 cursor-pointer"
-                                >
-                                  -
-                                </button>
-                                <span className="font-bold text-slate-800 font-mono w-6 text-center">{item.quantity}</span>
-                                <button 
-                                  type="button"
-                                  onClick={() => updateCartQty(item.medicine.id, 1)}
-                                  className="w-6 h-6 bg-white border border-slate-200 text-slate-600 rounded-lg flex items-center justify-center font-bold font-mono text-sm hover:bg-slate-100 cursor-pointer"
-                                >
-                                  +
-                                </button>
+                      <form onSubmit={handleCheckoutPOS} className="flex flex-col gap-4 flex-1">
 
-                                <button 
-                                  type="button"
-                                  onClick={() => removeFromCart(item.medicine.id)}
-                                  className="text-slate-400 hover:text-rose-600 p-1 cursor-pointer mr-2"
-                                  title="حذف"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                        {/* Cart Items */}
+                        <div className="space-y-2 max-h-[260px] overflow-y-auto pl-1">
+                          {currentCart.map((item) => {
+                            const unitPrice = showVirtualPriceInPOS
+                              ? (item.medicine.secondaryPrice || (item.medicine.price + 500))
+                              : item.medicine.price;
+                            const lineTotal = unitPrice * item.quantity;
+                            return (
+                              <div key={item.medicine.id} className="bg-slate-800 border border-slate-700 rounded-2xl p-3 flex items-center justify-between gap-2">
+                                <div className="flex-1 min-w-0 space-y-0.5">
+                                  <span className="font-extrabold text-white text-xs block truncate">{item.medicine.nameAr}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-emerald-400 font-mono font-bold">{unitPrice.toLocaleString()} د.ع</span>
+                                    {item.medicine.costPrice && (
+                                      <span className="text-[9px] text-slate-500 font-mono">شراء: {item.medicine.costPrice.toLocaleString()}</span>
+                                    )}
+                                  </div>
+                                  <span className="text-[9px] text-slate-400 font-mono">× {item.quantity} = {lineTotal.toLocaleString()} د.ع</span>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button type="button" onClick={() => updateCartQty(item.medicine.id, -1)}
+                                    className="w-7 h-7 bg-slate-700 hover:bg-slate-600 text-white rounded-lg flex items-center justify-center font-bold text-base cursor-pointer transition">−</button>
+                                  <span className="font-black text-white font-mono w-6 text-center text-sm">{item.quantity}</span>
+                                  <button type="button" onClick={() => updateCartQty(item.medicine.id, 1)}
+                                    className="w-7 h-7 bg-slate-700 hover:bg-emerald-700 text-white rounded-lg flex items-center justify-center font-bold text-base cursor-pointer transition">+</button>
+                                  <button type="button" onClick={() => removeFromCart(item.medicine.id)}
+                                    className="w-7 h-7 text-slate-600 hover:text-rose-400 flex items-center justify-center cursor-pointer transition mr-1">
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
 
-                        {/* Customer detail input & Discount */}
-                        <div className="space-y-3 pt-3 border-t border-slate-100">
-                          <div className="space-y-1">
-                            <label className="block text-[10px] font-extrabold text-slate-500">اسم المريض / المشتري:</label>
-                            <input 
-                              type="text" 
-                              value={posCustomerName}
-                              onChange={(e) => setPosCustomerName(e.target.value)}
-                              className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-xs font-semibold text-slate-800 focus:outline-emerald-500" 
-                              placeholder="أدخل اسم المريض للتاريخ الطبي"
-                            />
-                          </div>
-
-                          <div className="space-y-1">
-                            <label className="block text-[10px] font-extrabold text-slate-500">تطبيق خصم مباشر (%):</label>
-                            <select 
-                              value={posDiscountPercent}
-                              onChange={(e) => setPosDiscountPercent(Number(e.target.value))}
-                              className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2 px-3 text-xs font-semibold text-slate-700"
-                            >
-                              <option value="0">بدون خصم (خصم 0%)</option>
-                              <option value="5">خصم عوائل الشهداء والفقراء (5%)</option>
-                              <option value="10">الخصم النقابي المعتمد (10%)</option>
-                              <option value="15">تصفية خصم خاص للصيادلة (15%)</option>
-                            </select>
-                          </div>
-
-                          {/* بيع بالآجل: تسجيل ذمّة على الزبون بدل القبض النقدي */}
-                          <div className="space-y-2 pt-1">
-                            <label className="flex items-center gap-2 cursor-pointer select-none">
-                              <input
-                                type="checkbox"
-                                checked={posOnCredit}
-                                onChange={(e) => setPosOnCredit(e.target.checked)}
-                                className="w-4 h-4 accent-amber-600 cursor-pointer"
-                              />
-                              <span className="text-[11px] font-black text-amber-700">بيع بالآجل (تسجيل ذمّة على الزبون)</span>
-                            </label>
-                            {posOnCredit && (
-                              <p className="text-[10px] text-amber-600 font-bold leading-relaxed">
-                                سيُسجَّل المبلغ كذمّة مستحقة على «{posCustomerName}» ولن يُضاف لصندوق الكاش حتى التحصيل.
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Calculated totals */}
-                        <div className="bg-emerald-50/60 p-4 rounded-2xl border border-emerald-100/50 space-y-2.5 text-xs font-semibold text-slate-700">
-                          <p className="flex justify-between">
-                            <span>المجموع الفرعي:</span>
-                            <span className="font-mono text-slate-900">{posSubtotal.toLocaleString()} د.ع</span>
-                          </p>
-                          {posDiscountAmount > 0 && (
-                            <p className="flex justify-between text-rose-700">
-                              <span>قيمة الخصم:</span>
-                              <span className="font-mono">-{posDiscountAmount.toLocaleString()} د.ع</span>
-                            </p>
+                        {/* Customer & Discount */}
+                        <div className="space-y-2.5 border-t border-slate-700 pt-3">
+                          <input
+                            type="text"
+                            value={posCustomerName}
+                            onChange={(e) => setPosCustomerName(e.target.value)}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-xl py-2.5 px-3 text-xs font-semibold text-white placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 transition"
+                            placeholder="اسم المريض / المشتري"
+                          />
+                          <select
+                            value={posDiscountPercent}
+                            onChange={(e) => setPosDiscountPercent(Number(e.target.value))}
+                            className="w-full bg-slate-800 border border-slate-700 rounded-xl py-2.5 px-3 text-xs font-semibold text-slate-300"
+                          >
+                            <option value="0">بدون خصم</option>
+                            <option value="5">خصم عوائل الشهداء (5%)</option>
+                            <option value="10">الخصم النقابي (10%)</option>
+                            <option value="15">خصم خاص (15%)</option>
+                          </select>
+                          <label className="flex items-center gap-2 cursor-pointer select-none">
+                            <input type="checkbox" checked={posOnCredit} onChange={(e) => setPosOnCredit(e.target.checked)}
+                              className="w-4 h-4 accent-amber-500 cursor-pointer" />
+                            <span className="text-[11px] font-black text-amber-400">بيع بالآجل — تسجيل ذمّة</span>
+                          </label>
+                          {posOnCredit && (
+                            <p className="text-[10px] text-amber-500 font-bold">سيُسجَّل على «{posCustomerName}» ولن يُضاف للكاش حتى التحصيل.</p>
                           )}
-                          <p className="flex justify-between border-t border-emerald-200/50 pt-2.5 text-sm font-black">
-                            <span className="text-slate-900">الصافي المطلوب:</span>
-                            <span className="text-emerald-700 font-mono">{posTotal.toLocaleString()} د.ع</span>
-                          </p>
+                        </div>
 
-                          {/* Currency Parallel exchange rate IQD to Dollar simulator */}
-                          <div className="border-t border-dashed border-emerald-200/50 pt-2.5 flex justify-between items-center text-[10px] text-slate-400">
-                            <span>السعر التفصيلي بمعدل الدولار الموازي:</span>
-                            <span className="font-mono font-bold text-slate-600 bg-white px-2 py-0.5 rounded border border-emerald-100">
-                              ${(posTotal / 1500).toFixed(2)} USD
-                            </span>
+                        {/* Totals */}
+                        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 space-y-2 text-xs font-semibold">
+                          <div className="flex justify-between text-slate-400">
+                            <span>المجموع الفرعي</span>
+                            <span className="font-mono text-slate-200">{posSubtotal.toLocaleString()} د.ع</span>
+                          </div>
+                          {posDiscountAmount > 0 && (
+                            <div className="flex justify-between text-rose-400">
+                              <span>الخصم</span>
+                              <span className="font-mono">−{posDiscountAmount.toLocaleString()} د.ع</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between border-t border-slate-600 pt-2 text-base font-black">
+                            <span className="text-white">الصافي</span>
+                            <span className="text-emerald-400 font-mono">{posTotal.toLocaleString()} د.ع</span>
+                          </div>
+                          <div className="flex justify-between text-[10px] text-slate-600 pt-1 border-t border-slate-700">
+                            <span>بالدولار الموازي</span>
+                            <span className="font-mono">${(posTotal / 1500).toFixed(2)}</span>
                           </div>
                         </div>
 
-                        <button
-                          type="submit"
-                          className="w-full bg-gradient-to-l from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600 text-white py-3 px-4 rounded-xl text-xs font-black shadow-md shadow-emerald-200 transition cursor-pointer flex items-center justify-center space-x-reverse space-x-2"
-                        >
+                        <button type="submit"
+                          className="w-full bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-white py-3.5 rounded-2xl text-sm font-black shadow-lg shadow-emerald-900/40 transition cursor-pointer flex items-center justify-center gap-2">
                           <Check className="w-4 h-4" />
                           <span>{posOnCredit ? 'تسجيل البيع كذمّة آجلة' : 'إتمام البيع وصرف الفاتورة'}</span>
                         </button>
@@ -3038,14 +3076,14 @@ export default function Dashboard() {
                           <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
                           <input
                             type="text"
-                            value={searchPOSQuery}
-                            onChange={(e) => setSearchPOSQuery(e.target.value)}
-                            onFocus={() => setSearchPOSQuery('')}
+                            value={searchPOSInput}
+                            onChange={(e) => setSearchPOSInput(e.target.value)}
+                            onFocus={() => { setSearchPOSInput(''); setSearchPOSQuery(''); }}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
                                 e.preventDefault();
-                                const match = findScanMatch(searchPOSQuery);
-                                if (match) { addToCart(match); setSearchPOSQuery(''); }
+                                const match = findScanMatch(searchPOSInput);
+                                if (match) { addToCart(match); setSearchPOSInput(''); setSearchPOSQuery(''); }
                               }
                             }}
                             className="bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-emerald-500 w-full sm:w-52"
@@ -3064,110 +3102,110 @@ export default function Dashboard() {
                       </div>
                     </div>
 
-                    {/* Price Mode Toggle Control */}
-                    <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-slate-50 border border-slate-200/80 rounded-2xl">
-                      <div className="flex items-center space-x-reverse space-x-2">
-                        <span className="w-2.5 h-2.5 bg-purple-500 rounded-full animate-pulse" />
-                        <span className="text-xs font-black text-slate-700">تخصيص نظام التسعير السريع للعرض:</span>
-                      </div>
-                      
+                    {/* Price Mode Toggle — زر دائري */}
+                    <div className="flex justify-end">
                       <button
                         type="button"
+                        title={showVirtualPriceInPOS ? 'السعر الرسمي (مفعّل)' : 'السعر الجمهوري (مفعّل)'}
                         onClick={() => setShowVirtualPriceInPOS(!showVirtualPriceInPOS)}
-                        className={`flex items-center space-x-reverse space-x-2 px-3 py-1.5 rounded-xl border text-[10px] font-black transition cursor-pointer ${
+                        className={`w-7 h-7 rounded-full border-2 transition-all cursor-pointer shadow-sm ${
                           showVirtualPriceInPOS
-                            ? 'bg-purple-100 border-purple-300 text-purple-800 shadow-sm'
-                            : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-600'
+                            ? 'bg-purple-500 border-purple-400 shadow-purple-200'
+                            : 'bg-slate-200 border-slate-300 hover:bg-purple-200 hover:border-purple-300'
                         }`}
-                      >
-                        <span className={`w-2.5 h-2.5 rounded-full border transition-all ${
-                          showVirtualPriceInPOS ? 'bg-purple-600 border-purple-705' : 'bg-slate-300 border-slate-400'
-                        }`} />
-                        <span>{showVirtualPriceInPOS ? "معروض: السعر الرسمي لقائمة المخزون 🏷️" : "عرض السعر الرسمي لقائمة المخزون بدلاً من الجمهور"}</span>
-                      </button>
+                      />
                     </div>
 
                     {/* Inventory grid for POS shelf */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[460px] overflow-y-auto pr-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 max-h-[480px] overflow-y-auto pl-1">
                       {filteredPOSMeds.map((med) => {
                         const isLow = med.availableQuantity < 15;
                         const isOut = med.availableQuantity <= 0;
-                        const expDate = expiryDates[med.id] || '';
                         const isExpiringSoon = getDaysUntilExpiry(med.id) <= 30;
+                        const sellPrice = showVirtualPriceInPOS
+                          ? (med.secondaryPrice || (med.price + 500))
+                          : med.price;
+                        const margin = med.costPrice && med.costPrice > 0
+                          ? Math.round(((sellPrice - med.costPrice) / sellPrice) * 100)
+                          : null;
 
                         return (
-                          <div 
+                          <div
                             key={med.id}
                             onClick={() => !isOut && addToCart(med)}
-                            className={`p-4 rounded-2xl border text-right transition-all flex flex-col justify-between ${
-                              isOut 
-                                ? 'bg-slate-50 border-slate-100 opacity-60 cursor-not-allowed'
-                                : 'bg-white hover:bg-emerald-50/20 border-slate-200/80 hover:border-emerald-500/50 cursor-pointer shadow-sm hover:shadow'
+                            className={`p-3.5 rounded-2xl border text-right transition-all flex flex-col gap-2 relative ${
+                              isOut
+                                ? 'bg-slate-50 border-slate-100 opacity-50 cursor-not-allowed'
+                                : 'bg-white border-slate-200 hover:border-emerald-400 hover:shadow-md cursor-pointer shadow-sm active:scale-[0.98]'
                             }`}
                           >
-                            <div className="space-y-1.5">
-                              {/* Tags */}
-                              <div className="flex justify-between items-center gap-2">
-                                <span className={`text-[8px] font-bold px-2 py-0.5 rounded-full ${
-                                  isOut 
-                                    ? 'bg-rose-100 text-rose-800' 
-                                    : isLow 
-                                    ? 'bg-amber-100 text-amber-800' 
-                                    : 'bg-emerald-50 text-emerald-800'
-                                }`}>
-                                  {isOut ? 'نفذ المخزون' : isLow ? 'مخزون حرج شحيح' : 'متوفر ✓'}
-                                </span>
-                                
-                                {isExpiringSoon && (
-                                  <span className="text-[7px] bg-rose-600 text-white px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
-                                    <ShieldAlert className="w-2.5 h-2.5" />
-                                    <span>قريب الصلاحية</span>
-                                  </span>
-                                )}
-                              </div>
-
-                              <h4 className="font-extrabold text-slate-900 text-xs leading-snug">{med.nameAr}</h4>
-                              <p className="text-[9px] text-slate-500 font-mono font-medium">{med.nameEn}</p>
-                              
-                              <p className="text-[9px] text-slate-400 truncate">
-                                المادة: <span className="font-serif font-semibold">{med.scientificName}</span>
-                              </p>
+                            {/* Status badge */}
+                            <div className="flex justify-between items-start gap-1">
+                              <span className={`text-[8px] font-black px-2 py-0.5 rounded-full ${
+                                isOut ? 'bg-rose-100 text-rose-700'
+                                  : isLow ? 'bg-amber-100 text-amber-700'
+                                  : 'bg-emerald-50 text-emerald-700'
+                              }`}>
+                                {isOut ? 'نفذ' : isLow ? 'حرج' : '✓'}
+                              </span>
+                              {isExpiringSoon && (
+                                <span className="text-[7px] bg-rose-600 text-white px-1.5 py-0.5 rounded-full font-bold">منتهٍ قريباً</span>
+                              )}
+                              <span className="text-[9px] font-mono font-bold text-slate-400 mr-auto">{med.availableQuantity}</span>
                             </div>
 
-                            <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center">
-                              <div className="flex flex-col text-right">
-                                {showVirtualPriceInPOS ? (
-                                  <span className="text-xs font-black text-purple-700 font-serif">
-                                    {(med.secondaryPrice || (med.price + 500)).toLocaleString()} د.ع
-                                  </span>
-                                ) : (
-                                  <span className="text-xs font-black text-emerald-800 font-serif">
-                                    {med.price.toLocaleString()} د.ع
+                            {/* Name */}
+                            <div>
+                              <h4 className="font-extrabold text-slate-900 text-xs leading-snug line-clamp-2">{med.nameAr}</h4>
+                              <p className="text-[9px] text-slate-400 font-mono truncate mt-0.5">{med.nameEn}</p>
+                            </div>
+
+                            {/* Prices */}
+                            <div className="border-t border-slate-100 pt-2 flex justify-between items-end">
+                              <div className="space-y-0.5">
+                                <span className={`text-sm font-black font-mono block ${showVirtualPriceInPOS ? 'text-purple-700' : 'text-emerald-700'}`}>
+                                  {sellPrice.toLocaleString()}
+                                  <span className="text-[9px] font-bold text-slate-400 mr-0.5">د.ع</span>
+                                </span>
+                                {med.costPrice && med.costPrice > 0 && (
+                                  <span className="text-[9px] text-slate-400 font-mono block">
+                                    شراء: <span className="text-slate-500 font-bold">{med.costPrice.toLocaleString()}</span>
                                   </span>
                                 )}
                               </div>
-                              <span className="text-[9px] font-mono font-bold text-slate-400">
-                                علبة: {med.availableQuantity}
-                              </span>
+                              {margin !== null && (
+                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
+                                  margin >= 20 ? 'bg-emerald-50 text-emerald-700'
+                                    : margin >= 10 ? 'bg-amber-50 text-amber-700'
+                                    : 'bg-rose-50 text-rose-700'
+                                }`}>
+                                  {margin}%
+                                </span>
+                              )}
                             </div>
                           </div>
                         );
                       })}
                     </div>
 
-                    {/* حركة مبيع اليوم — جميع المواد والأدوية المباعة اليوم بالوقت والكمية */}
+                    {/* حركة مبيع اليوم — مسندلة */}
                     <div className="pt-4 border-t border-slate-100">
-                      <h4 className="font-extrabold text-slate-800 text-xs mb-3 flex items-center gap-2">
-                        <TrendingUp className="w-4 h-4 text-blue-500" />
-                        <span>حركة مبيع اليوم</span>
+                      <button
+                        onClick={() => setShowTodaySales(p => !p)}
+                        className="w-full font-extrabold text-slate-800 text-xs flex items-center gap-2 cursor-pointer hover:text-blue-600 transition text-right"
+                      >
+                        <TrendingUp className="w-4 h-4 text-blue-500 shrink-0" />
+                        <span className="flex-1">حركة مبيع اليوم</span>
                         <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
                           {salesLedger.filter(s => {
                             const d = new Date(String(s.timestamp).replace(' ','T'));
                             return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` === finTodayStr;
                           }).reduce((sum, s) => sum + s.items.length, 0)} صنف
                         </span>
-                      </h4>
-                      {(() => {
+                        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 shrink-0 ${showTodaySales ? 'rotate-180' : ''}`} />
+                      </button>
+
+                      {showTodaySales && (() => {
                         const todayItems = salesLedger
                           .filter(s => {
                             const d = new Date(String(s.timestamp).replace(' ','T'));
@@ -3183,10 +3221,10 @@ export default function Dashboard() {
                             }))
                           );
                         if (todayItems.length === 0) return (
-                          <p className="text-[10px] text-slate-400 font-bold text-center py-4">لا توجد مبيعات مسجّلة اليوم بعد</p>
+                          <p className="text-[10px] text-slate-400 font-bold text-center py-4 mt-3">لا توجد مبيعات مسجّلة اليوم بعد</p>
                         );
                         return (
-                          <div className="overflow-x-auto rounded-xl border border-slate-100">
+                          <div className="overflow-x-auto rounded-xl border border-slate-100 mt-3">
                             <table className="w-full text-[10px] font-bold border-collapse">
                               <thead>
                                 <tr className="bg-slate-50 text-slate-500 text-[9px] border-b border-slate-100">
@@ -3759,7 +3797,7 @@ export default function Dashboard() {
                                 >
                                   <div className="min-w-0">
                                     <span className="block text-[11px] font-black text-slate-800 truncate">{m.nameAr} <span className="text-slate-400 font-mono text-[9px]">{m.nameEn}</span></span>
-                                    <span className="block text-[9px] text-slate-400 font-mono">{m.barcode || '—'} • {m.category}</span>
+                                    <span className="block text-[9px] text-slate-400 font-mono">{m.barcode || '—'}</span>
                                   </div>
                                   <span className="text-[9px] text-slate-400 font-bold shrink-0 whitespace-nowrap">{m.availableQuantity} علبة</span>
                                 </button>
@@ -3915,13 +3953,18 @@ export default function Dashboard() {
 
                     return (
                       <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">
-                        {/* رأس القسم */}
+                        {/* رأس القسم — قابل للطي */}
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <AlertCircle className="w-4 h-4 text-amber-600" />
+                          <button
+                            type="button"
+                            onClick={() => setShowLowStock(p => !p)}
+                            className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition text-right"
+                          >
+                            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
                             <span className="text-xs font-black text-amber-900">أصناف نفدت أو شارفت على النفاد</span>
                             <span className="text-[10px] bg-amber-200 text-amber-900 font-extrabold px-2.5 py-0.5 rounded-full">{lowItems.length} صنف</span>
-                          </div>
+                            <ChevronDown className={`w-3.5 h-3.5 text-amber-600 transition-transform duration-200 ${showLowStock ? 'rotate-180' : ''}`} />
+                          </button>
                           {/* زر الطباعة */}
                           <button
                             type="button"
@@ -3952,7 +3995,7 @@ export default function Dashboard() {
                         </div>
 
                         {/* قائمة الأصناف */}
-                        <div className="space-y-2">
+                        {showLowStock && <div className="space-y-2">
                           {lowItems.map(m => {
                             const suggestedQty = getSuggestedQty(m);
                             const maxPast = getMaxPurchasedQty(m);
@@ -3996,8 +4039,8 @@ export default function Dashboard() {
                               </div>
                             );
                           })}
-                        </div>
-                        {dismissedLowStock.size > 0 && (
+                        </div>}
+                        {showLowStock && dismissedLowStock.size > 0 && (
                           <button
                             type="button"
                             onClick={() => setDismissedLowStock(new Set())}
@@ -4037,23 +4080,13 @@ export default function Dashboard() {
                           </button>
                         )}
                       </div>
-                      <select
-                        value={inventoryCategoryFilter}
-                        onChange={(e) => setInventoryCategoryFilter(e.target.value)}
-                        className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-700 font-bold focus:outline-emerald-500 cursor-pointer max-w-[160px]"
-                      >
-                        <option value="">كل الفئات</option>
-                        {[...new Set(inventory.map(m => m.category).filter(Boolean))].sort().map(cat => (
-                          <option key={cat} value={cat}>{cat}</option>
-                        ))}
-                      </select>
-                      {(searchInInventoryQuery || inventoryCategoryFilter) && (
+                      {searchInInventoryQuery && (
                         <button
                           type="button"
-                          onClick={() => { setSearchInInventoryQuery(''); setInventoryCategoryFilter(''); }}
+                          onClick={() => setSearchInInventoryQuery('')}
                           className="text-[10px] font-black text-slate-500 hover:text-rose-600 px-2 py-2 transition cursor-pointer"
                         >
-                          مسح الفلاتر ✕
+                          مسح ✕
                         </button>
                       )}
                       <div className="flex-1" />
@@ -4091,7 +4124,6 @@ export default function Dashboard() {
                           <tr className="bg-slate-50 text-slate-400 font-black border-b border-slate-100 text-[10px]">
                             <th className="py-3 px-4">رقم الرف</th>
                             <th className="py-3 px-4">الاسم والدواء</th>
-                            <th className="py-3 px-4">التصنيف</th>
                             <th className="py-3 px-4">سعر البيع للجمهور</th>
                             <th className="py-3 px-4">سعر البيع الرسمي</th>
                             <th className="py-3 px-4">الكمية المتوفرة</th>
@@ -4103,14 +4135,12 @@ export default function Dashboard() {
                         <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                           {inventory
                             .filter(m => {
-                              if (inventoryCategoryFilter && m.category !== inventoryCategoryFilter) return false;
                               const q = searchInInventoryQuery.toLowerCase().trim();
                               if (!q) return true;
                               return (
                                 m.nameAr.toLowerCase().includes(q) ||
                                 m.nameEn.toLowerCase().includes(q) ||
                                 m.scientificName.toLowerCase().includes(q) ||
-                                (m.category && m.category.toLowerCase().includes(q)) ||
                                 (m.barcode && m.barcode.toLowerCase().includes(q))
                               );
                             })
@@ -4119,8 +4149,8 @@ export default function Dashboard() {
                               const daysRemaining = getDaysUntilExpiry(med.id);
                               const isNearExpiry30 = daysRemaining <= 30;
                               return (
+                                <React.Fragment key={med.id}>
                                 <tr
-                                  key={med.id}
                                   className={`transition border-b border-slate-100 ${isNearExpiry30 ? 'bg-rose-50/65 hover:bg-rose-100/70 text-rose-950' : 'hover:bg-slate-50/50'}`}
                                 >
                                   <td className="py-3 px-4 font-mono text-slate-400">REF-{1000 + idx}</td>
@@ -4128,7 +4158,6 @@ export default function Dashboard() {
                                     <strong className="text-slate-900 block font-bold">{med.nameAr}</strong>
                                     <span className="text-[10px] text-slate-400 font-mono block">{med.nameEn} • {med.scientificName}</span>
                                   </td>
-                                  <td className="py-3 px-4 text-slate-500 font-semibold">{med.category}</td>
                                   {editingPriceId === med.id ? (
                                     <>
                                       <td className="py-3 px-4 font-mono">
@@ -4201,16 +4230,77 @@ export default function Dashboard() {
                                     )}
                                   </td>
                                   <td className="py-3 px-4 text-center">
-                                    <button
-                                      type="button"
-                                      onClick={() => setDeleteMedTarget(med)}
-                                      className="text-slate-400 hover:text-white hover:bg-rose-600 p-1.5 rounded-lg transition cursor-pointer border border-transparent hover:border-rose-600"
-                                      title="حذف المادة نهائياً"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
+                                    <div className="flex items-center justify-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => quickAuditId === med.id ? setQuickAuditId(null) : startQuickAudit(med)}
+                                        className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition cursor-pointer border ${quickAuditId === med.id ? 'bg-violet-600 text-white border-violet-600' : 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'}`}
+                                        title="جرد سريع"
+                                      >
+                                        جرد
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setDeleteMedTarget(med)}
+                                        className="text-slate-400 hover:text-white hover:bg-rose-600 p-1.5 rounded-lg transition cursor-pointer border border-transparent hover:border-rose-600"
+                                        title="حذف المادة نهائياً"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
                                   </td>
                                 </tr>
+
+                                {/* صف الجرد السريع الموسّع */}
+                                {quickAuditId === med.id && (
+                                  <tr className="bg-violet-50/80 border-b border-violet-100">
+                                    <td colSpan={8} className="px-4 py-4">
+                                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
+                                        <div className="space-y-1">
+                                          <label className="block text-[10px] font-black text-violet-700">الاسم عربي</label>
+                                          <input value={qaNameAr} onChange={e => setQaNameAr(e.target.value)}
+                                            className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-800 focus:outline-violet-500" />
+                                        </div>
+                                        <div className="space-y-1">
+                                          <label className="block text-[10px] font-black text-violet-700">الاسم إنجليزي</label>
+                                          <input value={qaNameEn} onChange={e => setQaNameEn(e.target.value)}
+                                            className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-800 focus:outline-violet-500" />
+                                        </div>
+                                        <div className="space-y-1">
+                                          <label className="block text-[10px] font-black text-violet-700">سعر البيع (د.ع)</label>
+                                          <input type="number" min={0} step={250} value={qaPrice} onChange={e => setQaPrice(e.target.value)}
+                                            className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs font-mono font-bold text-slate-800 focus:outline-violet-500" />
+                                        </div>
+                                        <div className="space-y-1">
+                                          <label className="block text-[10px] font-black text-violet-700">سعر الشراء (د.ع)</label>
+                                          <input type="number" min={0} step={250} value={qaCostPrice} onChange={e => setQaCostPrice(e.target.value)}
+                                            className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs font-mono font-bold text-slate-800 focus:outline-violet-500" />
+                                        </div>
+                                        <div className="space-y-1">
+                                          <label className="block text-[10px] font-black text-violet-700">الكمية الفعلية</label>
+                                          <input type="number" min={0} value={qaQty} onChange={e => setQaQty(e.target.value)}
+                                            className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs font-mono font-bold text-slate-800 focus:outline-violet-500" />
+                                        </div>
+                                        <div className="space-y-1">
+                                          <label className="block text-[10px] font-black text-violet-700">انتهاء الصلاحية</label>
+                                          <input type="date" value={qaExpiry} onChange={e => setQaExpiry(e.target.value)}
+                                            className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs font-mono font-bold text-slate-800 focus:outline-violet-500" />
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-2 mt-3">
+                                        <button type="button" onClick={() => saveQuickAudit(med.id)}
+                                          className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-1.5">
+                                          <Check className="w-3.5 h-3.5" />حفظ الجرد
+                                        </button>
+                                        <button type="button" onClick={() => setQuickAuditId(null)}
+                                          className="bg-white hover:bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 transition cursor-pointer">
+                                          إلغاء
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                                </React.Fragment>
                               );
                             })}
                         </tbody>
@@ -4434,22 +4524,6 @@ export default function Dashboard() {
 
                               <div className="grid grid-cols-2 gap-2">
                                 <div className="space-y-1 text-xs text-slate-600 font-bold">
-                                  <label className="block text-[10px]">التصنيف الدوائي:</label>
-                                  <select
-                                    value={purchaseNewProdCat}
-                                    onChange={(e) => setPurchaseNewProdCat(e.target.value)}
-                                    className="w-full bg-slate-50 p-2 border border-slate-200 rounded-lg text-slate-800 focus:outline-emerald-500 font-bold"
-                                  >
-                                    <option value="مسكنات الألم">مسكنات الألم</option>
-                                    <option value="المضادات الحيوية">المضادات الحيوية</option>
-                                    <option value="أمراض القلب والضغط">أمراض القلب والضغط</option>
-                                    <option value="السكري والغدد">السكري والغدد</option>
-                                    <option value="الفيتامينات والمكملات">الفيتامينات والمكملات</option>
-
-                                  </select>
-                                </div>
-
-                                <div className="space-y-1 text-xs text-slate-600 font-bold">
                                   <label className="block text-[10px]">تاريخ انتهاء الصلاحية:</label>
                                   <input
                                     type="date"
@@ -4506,7 +4580,7 @@ export default function Dashboard() {
                                     nameAr: `${purchaseNewProdAr} (جديد 🆕)`,
                                     nameEn: purchaseNewProdEn,
                                     scientificName: purchaseNewProdSci || 'N/A',
-                                    category: purchaseNewProdCat,
+                                    category: '',
                                     price: purchaseNewProdPrice,
                                     qty: purchaseNewProdQty,
                                     expiryDate: purchaseNewProdExpiry,
@@ -4601,9 +4675,6 @@ export default function Dashboard() {
                                               {item.nameEn} • {item.scientificName}
                                             </span>
                                             <div className="flex flex-wrap items-center gap-1">
-                                              <span className="text-[8px] bg-slate-100 border border-slate-200/50 text-slate-500 px-1.5 py-0.2 rounded font-sans uppercase">
-                                                {item.category}
-                                              </span>
                                               <input
                                                 type="text"
                                                 value={item.barcode}
@@ -6516,112 +6587,6 @@ export default function Dashboard() {
                 </motion.div>
               )}
 
-              {/*
-                =========================================================
-                VIEWPORT SECTION 6: PHARMACY TEAM MANAGMENT
-                =========================================================
-              */}
-              {activeTab === 'team' && (
-                <motion.div
-                  key="team"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="space-y-6"
-                >
-                  <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
-                    <div className="border-b border-slate-100 pb-4">
-                      <span className="text-xs text-emerald-600 font-extrabold bg-emerald-50 px-3 py-1 rounded-full uppercase">إدارة الطاقم انوار الحسن</span>
-                      <h3 className="font-extrabold text-slate-900 text-sm mt-3">سجل الصيادلة، الموظفين والمساعدين المرخصين</h3>
-                      <p className="text-[10px] text-slate-400 font-bold mt-1">
-                        توزيع الصلاحيات للشفت المناوب ومتابعة تراخيص الصيادلة التابعين للمؤسسة والملحقين بنقابة صيادلة جمهورية العراق
-                      </p>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-12 gap-8 text-xs font-semibold">
-                      
-                      {/* Left Add Team member form */}
-                      <div className="md:col-span-4 bg-slate-50 p-5 rounded-2xl border border-slate-100 space-y-4">
-                        <span className="text-[10px] text-slate-400 font-black block">إضافة صيدلاني أو مساعد للصيدلية</span>
-                        
-                        <form onSubmit={handleAddStaff} className="space-y-3.5 text-xs font-semibold">
-                          <div className="space-y-1">
-                            <label className="block text-slate-500">اسم الموظف الكامل دكتور:</label>
-                            <input 
-                              type="text" required
-                              value={newStaffName} onChange={(e) => setNewStaffName(e.target.value)}
-                              className="w-full bg-white border border-slate-200 rounded-lg p-2 focus:outline-emerald-500" 
-                              placeholder="د. ياسين كمال الموسوي"
-                            />
-                          </div>
-
-                          <div className="space-y-1">
-                            <label className="block text-slate-500">المبلغ والرصة أو المسمى الوظيفي:</label>
-                            <select 
-                              value={newStaffRole} onChange={(e) => setNewStaffRole(e.target.value)}
-                              className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700"
-                            >
-                              <option value="صيدلاني مناوب">صيدلاني مناوب</option>
-                              <option value="مساعد صيدلي مرخص">مساعد صيدلي مرخص</option>
-                              <option value="محاسب الصيدلية">محاسب الصيدلية</option>
-                            </select>
-                          </div>
-
-                          <div className="space-y-1">
-                            <label className="block text-slate-500">رقم ترخيص الممارسة (نقابة الصيادلة):</label>
-                            <input 
-                              type="text"
-                              value={newStaffLicense} onChange={(e) => setNewStaffLicense(e.target.value)}
-                              className="w-full bg-white border border-slate-200 rounded-lg p-2 focus:outline-emerald-500 font-mono text-center font-bold" 
-                              placeholder="مثال: ص-48220"
-                            />
-                          </div>
-
-                          <button 
-                            type="submit"
-                            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2.5 rounded-xl text-center cursor-pointer transition shadow-sm"
-                          >
-                            حفظ وتسجيل الموظف
-                          </button>
-                        </form>
-                      </div>
-
-                      {/* Team lists */}
-                      <div className="md:col-span-8 space-y-4">
-                        <span className="text-[10px] text-slate-400 font-black block">الكادر والمناوبات المسجلين</span>
-                        
-                        <div className="space-y-3">
-                          {teamMembers.map((member) => (
-                            <div key={member.id} className="p-4 bg-white border border-slate-100 rounded-2xl flex justify-between items-center text-xs font-semibold hover:bg-slate-50/50 transition">
-                              <div className="flex items-center space-x-reverse space-x-3 text-right">
-                                <div className="w-10 h-10 bg-emerald-100 text-emerald-800 rounded-full flex items-center justify-center font-extrabold text-sm">
-                                  {member.name.charAt(2)}
-                                </div>
-                                <div className="space-y-0.5">
-                                  <strong className="text-slate-900 font-black block text-xs">{member.name}</strong>
-                                  <p className="text-slate-500 text-[10px] font-bold">{member.role} • النقابة: {member.license}</p>
-                                </div>
-                              </div>
-
-                              <div className="text-left space-y-1">
-                                <span className="bg-slate-100 text-slate-700 py-1 px-3 rounded-full text-[9px] font-bold block w-max">
-                                  شفت: {member.shift}
-                                </span>
-                                <span className={`text-[9px] font-bold px-2.5 py-0.5 rounded-full block w-max text-left mr-auto ${
-                                  member.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
-                                }`}>
-                                  {member.status === 'active' ? 'دوام متصل' : 'في استراحة'}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                    </div>
-                  </div>
-                </motion.div>
-              )}
 
             </AnimatePresence>
 
