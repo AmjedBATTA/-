@@ -1,4 +1,4 @@
-﻿import React, { useState, FormEvent, useEffect, useRef, useMemo, useCallback } from 'react';
+﻿import React, { useState, FormEvent, useEffect, useRef, useMemo, useCallback, useDeferredValue, forwardRef, useImperativeHandle } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ShoppingBag, Wallet, Info, CheckCircle2, AlertCircle, Clock, 
@@ -122,6 +122,68 @@ function generateSeedSuppliers(): Supplier[] {
   // يبدأ قسم الموردين فارغاً — لا موردين تجريبيين. تُضاف الموردون يدوياً.
   return [];
 }
+
+// =========================================================
+// POS SEARCH BAR — مكوّن معزول بحالة محلية
+// السبب: حقل بحث POS كان داخل مكوّن Dashboard العملاق (آلاف الأسطر)، فكل ضغطة
+// مفتاح كانت تُعيد تصيير الشجرة كاملةً = بطء محسوس. بعزله، الكتابة تُحدّث هذا
+// المكوّن الصغير فقط، ويُبلّغ الأب بالقيمة المُلتزَمة بعد debounce (150ms) فقط.
+// =========================================================
+export type POSSearchHandle = { setValue: (v: string) => void };
+
+interface POSSearchBarProps {
+  onQueryChange: (q: string) => void;   // تُستدعى بالقيمة المؤجّلة (debounced) لفلترة الرف
+  onEnter: (value: string) => boolean;  // عند Enter/الباركود — ترجع true إذا طوبقت مادة (لتفريغ الحقل)
+  onScanClick: () => void;              // فتح قارئ الباركود بالكاميرا
+}
+
+const POSSearchBar = forwardRef<POSSearchHandle, POSSearchBarProps>(
+  ({ onQueryChange, onEnter, onScanClick }, ref) => {
+    const [input, setInput] = useState('');
+
+    // debounce: تأخير الفلترة 150ms بعد آخر ضغطة — يمنع إعادة تصيير الأب لكل حرف
+    useEffect(() => {
+      const t = setTimeout(() => onQueryChange(input), 150);
+      return () => clearTimeout(t);
+    }, [input, onQueryChange]);
+
+    // يسمح لقارئ الباركود (في الأب) بدفع قيمة ممسوحة إلى الحقل مباشرةً
+    useImperativeHandle(ref, () => ({
+      setValue: (v: string) => { setInput(v); onQueryChange(v); },
+    }), [onQueryChange]);
+
+    return (
+      <div className="flex items-center gap-2 w-full sm:w-auto">
+        <div className="relative flex-1 sm:flex-initial">
+          <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onFocus={() => { setInput(''); onQueryChange(''); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                if (onEnter(input)) { setInput(''); onQueryChange(''); }
+              }
+            }}
+            className="bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-emerald-500 w-full sm:w-52"
+            placeholder="امسح الباركود أو اكتب الاسم ثم Enter..."
+          />
+        </div>
+        <button
+          type="button"
+          onClick={onScanClick}
+          className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-850 text-white rounded-xl px-3 py-1.5 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+          title="قراءة الباركود بالكاميرا (Scan Barcode)"
+        >
+          <Barcode className="w-3.5 h-3.5" />
+          <span className="hidden md:inline">قارئ باركود</span>
+        </button>
+      </div>
+    );
+  }
+);
 
 export default function Dashboard() {
   // --- FIREBASE AUTH & SYNCHRONIZER METRIC REGISTERS ---
@@ -253,12 +315,12 @@ export default function Dashboard() {
   const [posCustomerName, setPosCustomerName] = useState('زبون نقدي / خارجي');
   const [posDiscountPercent, setPosDiscountPercent] = useState<number>(0);
   const [posOnCredit, setPosOnCredit] = useState(false); // بيع بالآجل: تسجيل ذمّة على الزبون بدل القبض النقدي
-  const [searchPOSInput, setSearchPOSInput] = useState('');   // القيمة الفورية في الحقل
-  const [searchPOSQuery, setSearchPOSQuery] = useState('');   // القيمة المستخدمة للفلترة (مؤجّلة 150ms)
-  useEffect(() => {
-    const t = setTimeout(() => setSearchPOSQuery(searchPOSInput), 150);
-    return () => clearTimeout(t);
-  }, [searchPOSInput]);
+  // القيمة المُلتزَمة للفلترة — تُحدَّث من POSSearchBar بعد debounce فقط (لا تتغيّر مع كل ضغطة)
+  const [searchPOSQuery, setSearchPOSQuery] = useState('');
+  // useDeferredValue: يمنح React صلاحية تأجيل/مقاطعة إعادة بناء رف المخزون الكبير دون تجميد الواجهة
+  const deferredPOSQuery = useDeferredValue(searchPOSQuery);
+  // مرجع لـ POSSearchBar حتى يستطيع قارئ الباركود دفع القيمة الممسوحة إلى الحقل
+  const posSearchRef = useRef<POSSearchHandle>(null);
   const [lastPrintedInvoice, setLastPrintedInvoice] = useState<SaleRecord | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [showVirtualPriceInPOS, setShowVirtualPriceInPOS] = useState(false);
@@ -488,7 +550,7 @@ export default function Dashboard() {
     
     // Fill the corresponding search query or field depending on scanTarget
     if (scanTarget === 'pos') {
-      setSearchPOSInput(code); setSearchPOSQuery(code);
+      posSearchRef.current?.setValue(code); setSearchPOSQuery(code);
     } else if (scanTarget === 'inventory') {
       setSearchInInventoryQuery(code);
     } else if (scanTarget === 'add-drug') {
@@ -1818,14 +1880,14 @@ export default function Dashboard() {
   })), [inventory]);
 
   const filteredPOSMeds = useMemo(() => {
-    const q = searchPOSQuery.toLowerCase().trim();
+    const q = deferredPOSQuery.toLowerCase().trim();
     if (!q) return inventory;
     return inventoryIndex
       .filter(({ nameAr, nameEn, sci, barcode }) =>
         nameAr.includes(q) || nameEn.includes(q) || sci.includes(q) || barcode.includes(q)
       )
       .map(({ m }) => m);
-  }, [searchPOSQuery, inventory, inventoryIndex]);
+  }, [deferredPOSQuery, inventory, inventoryIndex]);
 
   // مطابقة باركود/اسم في مرور واحد فقط (بدل 3 مرورات متتالية)
   const findScanMatch = useCallback((query: string): Medicine | null => {
@@ -1842,19 +1904,29 @@ export default function Dashboard() {
     return exact || partial;
   }, [inventoryIndex]);
 
-  const addToCart = (med: Medicine) => {
+  // مُثبّت بـ useCallback + functional update — حتى تبقى هويته مستقرة (يعتمد عليه POSSearchBar)
+  const addToCart = useCallback((med: Medicine) => {
     if (med.availableQuantity <= 0) return;
-    const existingIndex = currentCart.findIndex(item => item.medicine.id === med.id);
-    if (existingIndex !== -1) {
-      const existing = currentCart[existingIndex];
-      if (existing.quantity < med.availableQuantity) {
-        const rest = currentCart.filter(item => item.medicine.id !== med.id);
-        setCurrentCart([{ ...existing, quantity: existing.quantity + 1 }, ...rest]);
+    setCurrentCart(prev => {
+      const idx = prev.findIndex(item => item.medicine.id === med.id);
+      if (idx !== -1) {
+        const existing = prev[idx];
+        if (existing.quantity >= med.availableQuantity) return prev;
+        const rest = prev.filter(item => item.medicine.id !== med.id);
+        return [{ ...existing, quantity: existing.quantity + 1 }, ...rest];
       }
-    } else {
-      setCurrentCart([{ medicine: med, quantity: 1 }, ...currentCart]);
-    }
-  };
+      return [{ medicine: med, quantity: 1 }, ...prev];
+    });
+  }, []);
+
+  // Callbacks مستقرّة تُمرَّر إلى POSSearchBar (حتى لا يُعاد ضبط مؤقّت الـ debounce بلا داعٍ)
+  const handlePOSQueryChange = useCallback((q: string) => setSearchPOSQuery(q), []);
+  const handlePOSEnter = useCallback((value: string) => {
+    const match = findScanMatch(value);
+    if (match) { addToCart(match); return true; }
+    return false;
+  }, [findScanMatch, addToCart]);
+  const handlePOSScanClick = useCallback(() => startScanning('pos'), []);
 
   const removeFromCart = (medId: string) => {
     setCurrentCart(currentCart.filter(item => item.medicine.id !== medId));
@@ -3070,36 +3142,13 @@ export default function Dashboard() {
                         <p className="text-[10px] text-slate-400 font-semibold mt-0.5">انقر على الدواء المتوفر لإضافته إلى فاتورة العميل مباشرة</p>
                       </div>
                       
-                      {/* Search Input POS */}
-                      <div className="flex items-center gap-2 w-full sm:w-auto">
-                        <div className="relative flex-1 sm:flex-initial">
-                          <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
-                          <input
-                            type="text"
-                            value={searchPOSInput}
-                            onChange={(e) => setSearchPOSInput(e.target.value)}
-                            onFocus={() => { setSearchPOSInput(''); setSearchPOSQuery(''); }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                const match = findScanMatch(searchPOSInput);
-                                if (match) { addToCart(match); setSearchPOSInput(''); setSearchPOSQuery(''); }
-                              }
-                            }}
-                            className="bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-emerald-500 w-full sm:w-52"
-                            placeholder="امسح الباركود أو اكتب الاسم ثم Enter..."
-                          />
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => startScanning('pos')}
-                          className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-850 text-white rounded-xl px-3 py-1.5 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
-                          title="قراءة الباركود بالكاميرا (Scan Barcode)"
-                        >
-                          <Barcode className="w-3.5 h-3.5" />
-                          <span className="hidden md:inline">قارئ باركود</span>
-                        </button>
-                      </div>
+                      {/* Search Input POS — مكوّن معزول (حالة محلية، لا يُعيد تصيير Dashboard أثناء الكتابة) */}
+                      <POSSearchBar
+                        ref={posSearchRef}
+                        onQueryChange={handlePOSQueryChange}
+                        onEnter={handlePOSEnter}
+                        onScanClick={handlePOSScanClick}
+                      />
                     </div>
 
                     {/* Price Mode Toggle — زر دائري */}
