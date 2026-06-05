@@ -185,6 +185,135 @@ const POSSearchBar = forwardRef<POSSearchHandle, POSSearchBarProps>(
   }
 );
 
+// =========================================================
+// MEDICINE CARD — مكوّن معزول بـ React.memo لرف POS
+// السبب: كل إضافة لسلة كانت تُعيد تصيير كلّ بطاقة دواء لأنها
+// داخل Dashboard. باستخراجها، تتجمّد البطاقات ما دامت props ثابتة
+// (filteredPOSMeds + addToCart مستقران عند تغيّر السلة فقط).
+// =========================================================
+interface MedicineCardProps {
+  med: Medicine;
+  showVirtualPrice: boolean;
+  daysUntilExpiry: number;   // محسوب مسبقاً في الأب — لا استدعاء دالة داخل المكوّن
+  onAdd: (med: Medicine) => void;
+}
+
+const MedicineCard = React.memo(({ med, showVirtualPrice, daysUntilExpiry, onAdd }: MedicineCardProps) => {
+  const isLow = med.availableQuantity < 15;
+  const isOut = med.availableQuantity <= 0;
+  const isExpiringSoon = daysUntilExpiry <= 30;
+  const sellPrice = showVirtualPrice
+    ? (med.secondaryPrice || (med.price + 500))
+    : med.price;
+  const margin = med.costPrice && med.costPrice > 0
+    ? Math.round(((sellPrice - med.costPrice) / sellPrice) * 100)
+    : null;
+
+  return (
+    <div
+      onClick={() => !isOut && onAdd(med)}
+      className={`p-3.5 rounded-2xl border text-right transition-all flex flex-col gap-2 relative ${
+        isOut
+          ? 'bg-slate-50 border-slate-100 opacity-50 cursor-not-allowed'
+          : 'bg-white border-slate-200 hover:border-emerald-400 hover:shadow-md cursor-pointer shadow-sm active:scale-[0.98]'
+      }`}
+    >
+      {/* Status badge */}
+      <div className="flex justify-between items-start gap-1">
+        <span className={`text-[8px] font-black px-2 py-0.5 rounded-full ${
+          isOut ? 'bg-rose-100 text-rose-700'
+            : isLow ? 'bg-amber-100 text-amber-700'
+            : 'bg-emerald-50 text-emerald-700'
+        }`}>
+          {isOut ? 'نفذ' : isLow ? 'حرج' : '✓'}
+        </span>
+        {isExpiringSoon && (
+          <span className="text-[7px] bg-rose-600 text-white px-1.5 py-0.5 rounded-full font-bold">منتهٍ قريباً</span>
+        )}
+        <span className="text-[9px] font-mono font-bold text-slate-400 mr-auto">{med.availableQuantity}</span>
+      </div>
+
+      {/* Name */}
+      <div>
+        <h4 className="font-extrabold text-slate-900 text-xs leading-snug line-clamp-2">{med.nameAr}</h4>
+        <p className="text-[9px] text-slate-400 font-mono truncate mt-0.5">{med.nameEn}</p>
+      </div>
+
+      {/* Prices */}
+      <div className="border-t border-slate-100 pt-2 flex justify-between items-end">
+        <div className="space-y-0.5">
+          <span className={`text-sm font-black font-mono block ${showVirtualPrice ? 'text-purple-700' : 'text-emerald-700'}`}>
+            {sellPrice.toLocaleString()}
+            <span className="text-[9px] font-bold text-slate-400 mr-0.5">د.ع</span>
+          </span>
+          {med.costPrice && med.costPrice > 0 && (
+            <span className="text-[9px] text-slate-400 font-mono block">
+              شراء: <span className="text-slate-500 font-bold">{med.costPrice.toLocaleString()}</span>
+            </span>
+          )}
+        </div>
+        {margin !== null && (
+          <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
+            margin >= 20 ? 'bg-emerald-50 text-emerald-700'
+              : margin >= 10 ? 'bg-amber-50 text-amber-700'
+              : 'bg-rose-50 text-rose-700'
+          }`}>
+            {margin}%
+          </span>
+        )}
+      </div>
+    </div>
+  );
+});
+
+// =========================================================
+// CART ITEM ROW — مكوّن معزول بـ React.memo لصفوف السلة
+// السبب: إضافة عنصر N كانت تُعيد تصيير الصفوف 1..N-1 لأن
+// updateCartQty / removeFromCart لم تكن مستقرّة (closure على
+// currentCart). بعد تحويلهما إلى useCallback مع functional update،
+// هويتهما ثابتة → React.memo يُوقف إعادة التصيير غير الضرورية.
+// =========================================================
+interface CartItemRowProps {
+  item: POSItem;
+  showVirtualPrice: boolean;
+  onInc: (medId: string) => void;
+  onDec: (medId: string) => void;
+  onRemove: (medId: string) => void;
+}
+
+const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove }: CartItemRowProps) => {
+  const unitPrice = showVirtualPrice
+    ? (item.medicine.secondaryPrice || (item.medicine.price + 500))
+    : item.medicine.price;
+  const lineTotal = unitPrice * item.quantity;
+
+  return (
+    <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 flex items-center justify-between gap-3">
+      <div className="flex-1 min-w-0 space-y-1">
+        <span className="font-extrabold text-white text-sm block truncate">{item.medicine.nameAr}</span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-emerald-400 font-mono font-bold">{unitPrice.toLocaleString()} د.ع</span>
+          {item.medicine.costPrice && (
+            <span className="text-xs text-slate-400 font-mono">شراء: {item.medicine.costPrice.toLocaleString()} د.ع</span>
+          )}
+        </div>
+        <span className="text-xs text-slate-300 font-mono font-semibold">× {item.quantity} = <span className="text-amber-400 font-bold">{lineTotal.toLocaleString()} د.ع</span></span>
+      </div>
+      <div className="flex items-center gap-1.5 shrink-0">
+        <button type="button" onClick={() => onDec(item.medicine.id)}
+          className="w-9 h-9 bg-slate-700 hover:bg-slate-600 text-white rounded-xl flex items-center justify-center font-bold text-lg cursor-pointer transition">−</button>
+        <span className="font-black text-white font-mono w-8 text-center text-base">{item.quantity}</span>
+        <button type="button" onClick={() => onInc(item.medicine.id)}
+          className="w-9 h-9 bg-slate-700 hover:bg-emerald-700 text-white rounded-xl flex items-center justify-center font-bold text-lg cursor-pointer transition">+</button>
+        <button type="button" onClick={() => onRemove(item.medicine.id)}
+          className="w-9 h-9 text-slate-600 hover:text-rose-400 flex items-center justify-center cursor-pointer transition mr-1">
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+});
+
 export default function Dashboard() {
   // --- FIREBASE AUTH & SYNCHRONIZER METRIC REGISTERS ---
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -1938,12 +2067,13 @@ export default function Dashboard() {
   }, [findScanMatch, addToCart]);
   const handlePOSScanClick = useCallback(() => startScanning('pos'), []);
 
-  const removeFromCart = (medId: string) => {
-    setCurrentCart(currentCart.filter(item => item.medicine.id !== medId));
-  };
+  // مُثبّتتان بـ useCallback + functional update — هويتهما مستقرّة فلا تكسران React.memo على CartItemRow
+  const removeFromCart = useCallback((medId: string) => {
+    setCurrentCart(prev => prev.filter(item => item.medicine.id !== medId));
+  }, []);
 
-  const updateCartQty = (medId: string, delta: number) => {
-    const nextCart = currentCart.map(item => {
+  const updateCartQty = useCallback((medId: string, delta: number) => {
+    setCurrentCart(prev => prev.map(item => {
       if (item.medicine.id === medId) {
         const nextQty = item.quantity + delta;
         const maxQty = item.medicine.availableQuantity;
@@ -1952,9 +2082,12 @@ export default function Dashboard() {
         }
       }
       return item;
-    });
-    setCurrentCart(nextCart);
-  };
+    }));
+  }, []);
+
+  // مغلّفان لتثبيت الإشارة المُمرَّرة إلى CartItemRow (onInc/onDec لا تقبل delta)
+  const incCartQty = useCallback((medId: string) => updateCartQty(medId, 1), [updateCartQty]);
+  const decCartQty = useCallback((medId: string) => updateCartQty(medId, -1), [updateCartQty]);
 
   // COMPLETE SALE DISPATCH
   const handleCheckoutPOS = (e: FormEvent) => {
@@ -3060,37 +3193,16 @@ export default function Dashboard() {
 
                         {/* Cart Items */}
                         <div className="space-y-2.5 max-h-[380px] overflow-y-auto pl-1">
-                          {currentCart.map((item) => {
-                            const unitPrice = showVirtualPriceInPOS
-                              ? (item.medicine.secondaryPrice || (item.medicine.price + 500))
-                              : item.medicine.price;
-                            const lineTotal = unitPrice * item.quantity;
-                            return (
-                              <div key={item.medicine.id} className="bg-slate-800 border border-slate-700 rounded-2xl p-4 flex items-center justify-between gap-3">
-                                <div className="flex-1 min-w-0 space-y-1">
-                                  <span className="font-extrabold text-white text-sm block truncate">{item.medicine.nameAr}</span>
-                                  <div className="flex items-center gap-3">
-                                    <span className="text-sm text-emerald-400 font-mono font-bold">{unitPrice.toLocaleString()} د.ع</span>
-                                    {item.medicine.costPrice && (
-                                      <span className="text-xs text-slate-400 font-mono">شراء: {item.medicine.costPrice.toLocaleString()} د.ع</span>
-                                    )}
-                                  </div>
-                                  <span className="text-xs text-slate-300 font-mono font-semibold">× {item.quantity} = <span className="text-amber-400 font-bold">{lineTotal.toLocaleString()} د.ع</span></span>
-                                </div>
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  <button type="button" onClick={() => updateCartQty(item.medicine.id, -1)}
-                                    className="w-9 h-9 bg-slate-700 hover:bg-slate-600 text-white rounded-xl flex items-center justify-center font-bold text-lg cursor-pointer transition">−</button>
-                                  <span className="font-black text-white font-mono w-8 text-center text-base">{item.quantity}</span>
-                                  <button type="button" onClick={() => updateCartQty(item.medicine.id, 1)}
-                                    className="w-9 h-9 bg-slate-700 hover:bg-emerald-700 text-white rounded-xl flex items-center justify-center font-bold text-lg cursor-pointer transition">+</button>
-                                  <button type="button" onClick={() => removeFromCart(item.medicine.id)}
-                                    className="w-9 h-9 text-slate-600 hover:text-rose-400 flex items-center justify-center cursor-pointer transition mr-1">
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
+                          {currentCart.map((item) => (
+                            <CartItemRow
+                              key={item.medicine.id}
+                              item={item}
+                              showVirtualPrice={showVirtualPriceInPOS}
+                              onInc={incCartQty}
+                              onDec={decCartQty}
+                              onRemove={removeFromCart}
+                            />
+                          ))}
                         </div>
 
                         {/* Customer & Discount */}
@@ -3177,74 +3289,15 @@ export default function Dashboard() {
 
                     {/* Inventory grid for POS shelf */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 max-h-[480px] overflow-y-auto pl-1">
-                      {filteredPOSMeds.map((med) => {
-                        const isLow = med.availableQuantity < 15;
-                        const isOut = med.availableQuantity <= 0;
-                        const isExpiringSoon = getDaysUntilExpiry(med.id) <= 30;
-                        const sellPrice = showVirtualPriceInPOS
-                          ? (med.secondaryPrice || (med.price + 500))
-                          : med.price;
-                        const margin = med.costPrice && med.costPrice > 0
-                          ? Math.round(((sellPrice - med.costPrice) / sellPrice) * 100)
-                          : null;
-
-                        return (
-                          <div
-                            key={med.id}
-                            onClick={() => !isOut && addToCart(med)}
-                            className={`p-3.5 rounded-2xl border text-right transition-all flex flex-col gap-2 relative ${
-                              isOut
-                                ? 'bg-slate-50 border-slate-100 opacity-50 cursor-not-allowed'
-                                : 'bg-white border-slate-200 hover:border-emerald-400 hover:shadow-md cursor-pointer shadow-sm active:scale-[0.98]'
-                            }`}
-                          >
-                            {/* Status badge */}
-                            <div className="flex justify-between items-start gap-1">
-                              <span className={`text-[8px] font-black px-2 py-0.5 rounded-full ${
-                                isOut ? 'bg-rose-100 text-rose-700'
-                                  : isLow ? 'bg-amber-100 text-amber-700'
-                                  : 'bg-emerald-50 text-emerald-700'
-                              }`}>
-                                {isOut ? 'نفذ' : isLow ? 'حرج' : '✓'}
-                              </span>
-                              {isExpiringSoon && (
-                                <span className="text-[7px] bg-rose-600 text-white px-1.5 py-0.5 rounded-full font-bold">منتهٍ قريباً</span>
-                              )}
-                              <span className="text-[9px] font-mono font-bold text-slate-400 mr-auto">{med.availableQuantity}</span>
-                            </div>
-
-                            {/* Name */}
-                            <div>
-                              <h4 className="font-extrabold text-slate-900 text-xs leading-snug line-clamp-2">{med.nameAr}</h4>
-                              <p className="text-[9px] text-slate-400 font-mono truncate mt-0.5">{med.nameEn}</p>
-                            </div>
-
-                            {/* Prices */}
-                            <div className="border-t border-slate-100 pt-2 flex justify-between items-end">
-                              <div className="space-y-0.5">
-                                <span className={`text-sm font-black font-mono block ${showVirtualPriceInPOS ? 'text-purple-700' : 'text-emerald-700'}`}>
-                                  {sellPrice.toLocaleString()}
-                                  <span className="text-[9px] font-bold text-slate-400 mr-0.5">د.ع</span>
-                                </span>
-                                {med.costPrice && med.costPrice > 0 && (
-                                  <span className="text-[9px] text-slate-400 font-mono block">
-                                    شراء: <span className="text-slate-500 font-bold">{med.costPrice.toLocaleString()}</span>
-                                  </span>
-                                )}
-                              </div>
-                              {margin !== null && (
-                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
-                                  margin >= 20 ? 'bg-emerald-50 text-emerald-700'
-                                    : margin >= 10 ? 'bg-amber-50 text-amber-700'
-                                    : 'bg-rose-50 text-rose-700'
-                                }`}>
-                                  {margin}%
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
+                      {filteredPOSMeds.map((med) => (
+                        <MedicineCard
+                          key={med.id}
+                          med={med}
+                          showVirtualPrice={showVirtualPriceInPOS}
+                          daysUntilExpiry={getDaysUntilExpiry(med.id)}
+                          onAdd={addToCart}
+                        />
+                      ))}
                     </div>
 
                     {/* حركة مبيع اليوم — مسندلة */}
