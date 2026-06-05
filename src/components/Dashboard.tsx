@@ -5,7 +5,7 @@ import {
   Truck, HelpCircle, PlusCircle, Search, Trash2, ArrowLeft, 
   MapPin, UserCheck, ShieldCheck, Users, Sparkles, Plus, Check,
   TrendingUp, FileText, Ban, DollarSign, Calendar, RefreshCw, BarChart3, Pill, ClipboardList, ShieldAlert, Heart,
-  Barcode, X, Volume2, VolumeX, Camera, Download, Bell, Moon, Sun, Pencil, ScanLine, ChevronDown, CalendarClock
+  Barcode, X, Volume2, VolumeX, Camera, Download, Bell, Moon, Sun, Pencil, ScanLine, ChevronDown, CalendarClock, Palette
 } from 'lucide-react';
 import { Medicine, Order, Supplier } from '../types';
 import InvoiceImportModal from './InvoiceImportModal';
@@ -325,9 +325,16 @@ export default function Dashboard() {
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [showVirtualPriceInPOS, setShowVirtualPriceInPOS] = useState(false);
   const [chartRange, setChartRange] = useState<7 | 30 | 90>(30); // مدى الرسم البياني للمبيعات
-  const [darkMode, setDarkMode] = useState<boolean>(() => {
-    try { return localStorage.getItem('darkMode') === 'true'; } catch { return false; }
+  const [theme, setTheme] = useState<'pastel' | 'light' | 'dark'>(() => {
+    try {
+      const saved = localStorage.getItem('theme') as 'pastel' | 'light' | 'dark' | null;
+      if (saved === 'pastel' || saved === 'light' || saved === 'dark') return saved;
+      // migrate old darkMode flag
+      if (localStorage.getItem('darkMode') === 'true') return 'dark';
+      return 'pastel';
+    } catch { return 'pastel'; }
   });
+  const darkMode = theme === 'dark';
   const [plPeriod, setPlPeriod] = useState<'month' | 'year'>('month'); // فترة قائمة الأرباح والخسائر
 
   // --- SALES HISTORY LEDGER ---
@@ -599,11 +606,14 @@ export default function Dashboard() {
     }, 1500);
   };
 
-  // Dark mode: sync .dark class on <html> + persist to localStorage
+  // Theme: sync class on <html> + persist to localStorage
   useEffect(() => {
-    document.documentElement.classList.toggle('dark', darkMode);
-    try { localStorage.setItem('darkMode', String(darkMode)); } catch {}
-  }, [darkMode]);
+    const html = document.documentElement;
+    html.classList.remove('dark', 'pastel');
+    if (theme === 'dark') html.classList.add('dark');
+    else if (theme === 'pastel') html.classList.add('pastel');
+    try { localStorage.setItem('theme', theme); } catch {}
+  }, [theme]);
 
   // RBAC: reset activeTab when role changes
   useEffect(() => {
@@ -2736,13 +2746,15 @@ export default function Dashboard() {
                 تفعيل الإشعارات
               </button>
             )}
-            {/* Dark / Light mode toggle */}
+            {/* Theme toggle: pastel → light → dark → pastel */}
             <button
-              onClick={() => setDarkMode(prev => !prev)}
-              title={darkMode ? 'الوضع النهاري' : 'الوضع الليلي'}
+              onClick={() => setTheme(prev => prev === 'pastel' ? 'light' : prev === 'light' ? 'dark' : 'pastel')}
+              title={theme === 'pastel' ? 'الوضع النهاري' : theme === 'light' ? 'الوضع الليلي' : 'الوضع الباستيل'}
               className="w-8 h-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 transition cursor-pointer"
             >
-              {darkMode ? <Sun className="w-4 h-4 text-amber-500" /> : <Moon className="w-4 h-4" />}
+              {theme === 'dark'   ? <Palette className="w-4 h-4 text-violet-400" /> :
+               theme === 'light'  ? <Moon    className="w-4 h-4" /> :
+                                    <Sun     className="w-4 h-4 text-amber-500" />}
             </button>
 
             {/* Notification Bell */}
@@ -3010,6 +3022,14 @@ export default function Dashboard() {
                   {/* Left Column: POS Register — dark theme */}
                   <div className="lg:col-span-5 order-first lg:order-none bg-slate-900 rounded-3xl p-5 shadow-lg flex flex-col gap-4">
 
+                    {/* Search bar — فوق سلة البيع */}
+                    <POSSearchBar
+                      ref={posSearchRef}
+                      onQueryChange={handlePOSQueryChange}
+                      onEnter={handlePOSEnter}
+                      onScanClick={handlePOSScanClick}
+                    />
+
                     {/* Header */}
                     <div className="flex justify-between items-center border-b border-slate-700 pb-3">
                       <div className="flex items-center gap-2">
@@ -3136,19 +3156,9 @@ export default function Dashboard() {
 
                   {/* Right Column: Searchable fast-add medicines shelf */}
                   <div className="lg:col-span-7 bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
-                    <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
-                      <div>
-                        <h3 className="font-extrabold text-slate-900 text-sm">أدوية ومخازن الصيدلة الحاضرة</h3>
-                        <p className="text-[10px] text-slate-400 font-semibold mt-0.5">انقر على الدواء المتوفر لإضافته إلى فاتورة العميل مباشرة</p>
-                      </div>
-                      
-                      {/* Search Input POS — مكوّن معزول (حالة محلية، لا يُعيد تصيير Dashboard أثناء الكتابة) */}
-                      <POSSearchBar
-                        ref={posSearchRef}
-                        onQueryChange={handlePOSQueryChange}
-                        onEnter={handlePOSEnter}
-                        onScanClick={handlePOSScanClick}
-                      />
+                    <div>
+                      <h3 className="font-extrabold text-slate-900 text-sm">أدوية ومخازن الصيدلة الحاضرة</h3>
+                      <p className="text-[10px] text-slate-400 font-semibold mt-0.5">انقر على الدواء المتوفر لإضافته إلى فاتورة العميل مباشرة</p>
                     </div>
 
                     {/* Price Mode Toggle — زر دائري */}

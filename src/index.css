@@ -54,6 +54,157 @@ body {
 .print-financial { display: none; }
 
 /* =====================================================
+   PASTEL MODE — Pharmacy Depth (Navy × Teal × Amber)
+   Fusion of image-1 soft 3D cards + image-2 dark organic
+   waves. Embedded pharmacy SVG decorations in background.
+   Default theme on first visit.
+   ===================================================== */
+
+@keyframes pharma-float {
+  0%,100% { transform: translate(0,0)    scale(1);    border-radius: 42% 58% 54% 46% / 52% 44% 56% 48%; }
+  38%     { transform: translate(2%,4%)  scale(1.05); border-radius: 56% 44% 42% 58% / 62% 54% 46% 38%; }
+  72%     { transform: translate(-2%,2%) scale(0.97); border-radius: 62% 38% 60% 40% / 38% 62% 38% 62%; }
+}
+
+/* ── Base ── */
+.pastel body {
+  background-color: #06101E;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='260'%3E%3Cellipse cx='50' cy='35' rx='22' ry='9' fill='none' stroke='rgba(0,190,215,0.10)' stroke-width='1.5'/%3E%3Cline x1='50' y1='26' x2='50' y2='44' stroke='rgba(0,190,215,0.07)' stroke-width='1'/%3E%3Cellipse cx='210' cy='165' rx='19' ry='8' fill='none' stroke='rgba(109,40,217,0.09)' stroke-width='1.5'/%3E%3Cline x1='210' y1='157' x2='210' y2='173' stroke='rgba(109,40,217,0.06)' stroke-width='1'/%3E%3Crect x='230' y='48' width='32' height='12' rx='6' fill='none' stroke='rgba(245,166,35,0.08)' stroke-width='1.5'/%3E%3Cline x1='246' y1='48' x2='246' y2='60' stroke='rgba(245,166,35,0.06)' stroke-width='1'/%3E%3Crect x='140' y='73' width='11' height='40' rx='3' fill='rgba(0,190,215,0.05)'/%3E%3Crect x='132' y='85' width='27' height='16' rx='3' fill='rgba(0,190,215,0.05)'/%3E%3Ccircle cx='75' cy='200' r='4.5' fill='rgba(0,190,215,0.08)'/%3E%3Ccircle cx='93' cy='187' r='3' fill='rgba(0,190,215,0.07)'/%3E%3Ccircle cx='60' cy='188' r='2.5' fill='rgba(109,40,217,0.07)'/%3E%3Cline x1='75' y1='200' x2='93' y2='187' stroke='rgba(0,190,215,0.06)' stroke-width='1'/%3E%3Cline x1='75' y1='200' x2='60' y2='188' stroke='rgba(0,190,215,0.05)' stroke-width='1'/%3E%3Ccircle cx='20' cy='130' r='2' fill='rgba(0,190,215,0.08)'/%3E%3Ccircle cx='185' cy='22' r='1.5' fill='rgba(109,40,217,0.09)'/%3E%3Ccircle cx='250' cy='225' r='2' fill='rgba(245,166,35,0.07)'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse 65% 45% at 88%  5%, rgba(0,190,215,0.14)  0%, transparent 58%),
+    radial-gradient(ellipse 50% 42% at  9% 92%, rgba(109,40,217,0.12) 0%, transparent 58%),
+    radial-gradient(ellipse 35% 28% at 50% 46%, rgba(245,166,35,0.04) 0%, transparent 65%);
+  background-size: 260px 260px, 100%, 100%, 100%;
+  color: #E2E8F0;
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Floating teal glow blob — top-right */
+.pastel body::before {
+  content: '';
+  position: fixed;
+  top: -30vh; right: -22vw;
+  width: 68vw; height: 78vh;
+  background: radial-gradient(ellipse at 45% 45%, rgba(0,190,215,0.11) 0%, transparent 62%);
+  border-radius: 42% 58% 54% 46% / 52% 44% 56% 48%;
+  animation: pharma-float 22s ease-in-out infinite;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Floating violet glow blob — bottom-left */
+.pastel body::after {
+  content: '';
+  position: fixed;
+  bottom: -25vh; left: -18vw;
+  width: 58vw; height: 68vh;
+  background: radial-gradient(ellipse at 50% 50%, rgba(109,40,217,0.10) 0%, transparent 62%);
+  border-radius: 62% 38% 40% 60% / 60% 56% 44% 40%;
+  animation: pharma-float 28s ease-in-out infinite reverse;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* ── Cards — glassmorphism 3D ── */
+.pastel .bg-white {
+  background-color: rgba(14,26,54,0.74);
+  backdrop-filter: blur(18px) saturate(1.7);
+  -webkit-backdrop-filter: blur(18px) saturate(1.7);
+  box-shadow:
+    0 22px 64px rgba(0,0,0,0.55),
+    0  4px 18px rgba(0,0,0,0.38),
+    0  0  40px rgba(0,190,215,0.04),
+    inset 0 1px 0 rgba(255,255,255,0.07),
+    inset 0 -1px 0 rgba(0,0,0,0.20);
+}
+.pastel .bg-slate-50  { background-color: rgba(9,18,42,0.62); }
+.pastel .bg-slate-100 { background-color: rgba(18,34,66,0.70); }
+.pastel .bg-slate-200 { background-color: rgba(28,50,88,0.76); }
+
+/* Header glassmorphic strip */
+.pastel header {
+  border-bottom-color: rgba(0,190,215,0.22) !important;
+}
+
+/* ── Text — light palette for dark bg ── */
+.pastel .text-slate-900 { color: #F1F5F9; }
+.pastel .text-slate-800 { color: #E2E8F0; }
+.pastel .text-slate-700 { color: #CBD5E1; }
+.pastel .text-slate-600 { color: #94A3B8; }
+.pastel .text-slate-500 { color: #64748B; }
+.pastel .text-slate-400 { color: #475569; }
+
+/* ── Text — vibrant accents (glow-ready) ── */
+.pastel .text-emerald-800 { color: #2DD4BF; }
+.pastel .text-emerald-700 { color: #34D399; }
+.pastel .text-emerald-600 { color: #6EE7B7; }
+.pastel .text-rose-700    { color: #FB7185; }
+.pastel .text-rose-600    { color: #FDA4AF; }
+.pastel .text-amber-800   { color: #FCD34D; }
+.pastel .text-amber-700   { color: #FBBF24; }
+.pastel .text-amber-600   { color: #FDE68A; }
+.pastel .text-blue-700    { color: #38BDF8; }
+.pastel .text-blue-600    { color: #7DD3FC; }
+.pastel .text-violet-700  { color: #A78BFA; }
+.pastel .text-violet-600  { color: #C4B5FD; }
+
+/* ── Borders ── */
+.pastel .border-slate-100  { border-color: rgba(255,255,255,0.07); }
+.pastel .border-slate-200  { border-color: rgba(255,255,255,0.11); }
+.pastel .border-slate-300  { border-color: rgba(255,255,255,0.17); }
+
+/* Borders — accent tints */
+.pastel .border-emerald-100 { border-color: rgba(45,212,191,0.28); }
+.pastel .border-emerald-200 { border-color: rgba(45,212,191,0.42); }
+.pastel .border-blue-100    { border-color: rgba(56,189,248,0.24); }
+.pastel .border-rose-100    { border-color: rgba(244,63,94,0.28);  }
+.pastel .border-amber-100   { border-color: rgba(251,191,36,0.28); }
+.pastel .border-amber-200   { border-color: rgba(251,191,36,0.42); }
+.pastel .border-violet-100  { border-color: rgba(167,139,250,0.28);}
+
+/* ── Background accent tints — glow style ── */
+.pastel .bg-emerald-50 { background-color: rgba(45,212,191,0.12); }
+.pastel .bg-blue-50    { background-color: rgba(56,189,248,0.12); }
+.pastel .bg-rose-50    { background-color: rgba(244,63,94,0.12);  }
+.pastel .bg-amber-50   { background-color: rgba(251,191,36,0.12); }
+.pastel .bg-violet-50  { background-color: rgba(167,139,250,0.12);}
+
+/* ── Hover ── */
+.pastel .hover\:bg-slate-50:hover  { background-color: rgba(10,20,44,0.66); }
+.pastel .hover\:bg-slate-100:hover { background-color: rgba(20,38,74,0.74); }
+.pastel .hover\:bg-slate-200:hover { background-color: rgba(32,56,98,0.80); }
+.pastel .hover\:bg-emerald-700:hover { background-color: rgba(45,212,191,0.22); }
+
+/* ── Table dividers ── */
+.pastel .divide-slate-100 > :not([hidden]) ~ :not([hidden]) { border-color: rgba(255,255,255,0.05); }
+.pastel .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-color: rgba(255,255,255,0.09); }
+
+/* ── Form elements ── */
+.pastel input, .pastel select, .pastel textarea {
+  background-color: rgba(8,18,42,0.82);
+  border-color: rgba(0,190,215,0.24);
+  color: #E2E8F0;
+}
+.pastel input::placeholder,
+.pastel textarea::placeholder { color: #475569; }
+
+/* Notification bell dot */
+.pastel .border-white { border-color: rgba(6,16,30,0.95); }
+
+/* ── Scrollbar — teal accent ── */
+.pastel ::-webkit-scrollbar-track { background: rgba(6,16,30,0.60); }
+.pastel ::-webkit-scrollbar-thumb { background: rgba(0,190,215,0.35); border-radius: 4px; }
+.pastel ::-webkit-scrollbar-thumb:hover { background: rgba(0,190,215,0.55); }
+
+/* ── LARGE CLEAR NUMBERS — pastel mode ── */
+.pastel .text-xl  { font-size: 1.35rem; font-weight: 700; }
+.pastel .text-2xl { font-size: 1.65rem; font-weight: 800; letter-spacing: -0.01em; }
+.pastel .text-3xl { font-size: 2.10rem; font-weight: 800; letter-spacing: -0.02em; }
+.pastel .text-4xl { font-size: 2.75rem; font-weight: 900; letter-spacing: -0.02em; }
+
+/* =====================================================
    DARK MODE  — class-based (.dark on <html>)
    Overrides Tailwind utilities without !important because
    these selectors (2 classes) outrank utility layers.
