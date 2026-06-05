@@ -3020,7 +3020,7 @@ export default function Dashboard() {
                 >
                   
                   {/* Left Column: POS Register — dark theme */}
-                  <div className="lg:col-span-5 order-first lg:order-none bg-slate-900 rounded-3xl p-5 shadow-lg flex flex-col gap-4">
+                  <div className="lg:col-span-7 order-first lg:order-none bg-slate-900 rounded-3xl p-5 shadow-lg flex flex-col gap-4">
 
                     {/* Search bar — فوق سلة البيع */}
                     <POSSearchBar
@@ -3059,33 +3059,33 @@ export default function Dashboard() {
                       <form onSubmit={handleCheckoutPOS} className="flex flex-col gap-4 flex-1">
 
                         {/* Cart Items */}
-                        <div className="space-y-2 max-h-[260px] overflow-y-auto pl-1">
+                        <div className="space-y-2.5 max-h-[380px] overflow-y-auto pl-1">
                           {currentCart.map((item) => {
                             const unitPrice = showVirtualPriceInPOS
                               ? (item.medicine.secondaryPrice || (item.medicine.price + 500))
                               : item.medicine.price;
                             const lineTotal = unitPrice * item.quantity;
                             return (
-                              <div key={item.medicine.id} className="bg-slate-800 border border-slate-700 rounded-2xl p-3 flex items-center justify-between gap-2">
-                                <div className="flex-1 min-w-0 space-y-0.5">
-                                  <span className="font-extrabold text-white text-xs block truncate">{item.medicine.nameAr}</span>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-[10px] text-emerald-400 font-mono font-bold">{unitPrice.toLocaleString()} د.ع</span>
+                              <div key={item.medicine.id} className="bg-slate-800 border border-slate-700 rounded-2xl p-4 flex items-center justify-between gap-3">
+                                <div className="flex-1 min-w-0 space-y-1">
+                                  <span className="font-extrabold text-white text-sm block truncate">{item.medicine.nameAr}</span>
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-sm text-emerald-400 font-mono font-bold">{unitPrice.toLocaleString()} د.ع</span>
                                     {item.medicine.costPrice && (
-                                      <span className="text-[9px] text-slate-500 font-mono">شراء: {item.medicine.costPrice.toLocaleString()}</span>
+                                      <span className="text-xs text-slate-400 font-mono">شراء: {item.medicine.costPrice.toLocaleString()} د.ع</span>
                                     )}
                                   </div>
-                                  <span className="text-[9px] text-slate-400 font-mono">× {item.quantity} = {lineTotal.toLocaleString()} د.ع</span>
+                                  <span className="text-xs text-slate-300 font-mono font-semibold">× {item.quantity} = <span className="text-amber-400 font-bold">{lineTotal.toLocaleString()} د.ع</span></span>
                                 </div>
-                                <div className="flex items-center gap-1 shrink-0">
+                                <div className="flex items-center gap-1.5 shrink-0">
                                   <button type="button" onClick={() => updateCartQty(item.medicine.id, -1)}
-                                    className="w-7 h-7 bg-slate-700 hover:bg-slate-600 text-white rounded-lg flex items-center justify-center font-bold text-base cursor-pointer transition">−</button>
-                                  <span className="font-black text-white font-mono w-6 text-center text-sm">{item.quantity}</span>
+                                    className="w-9 h-9 bg-slate-700 hover:bg-slate-600 text-white rounded-xl flex items-center justify-center font-bold text-lg cursor-pointer transition">−</button>
+                                  <span className="font-black text-white font-mono w-8 text-center text-base">{item.quantity}</span>
                                   <button type="button" onClick={() => updateCartQty(item.medicine.id, 1)}
-                                    className="w-7 h-7 bg-slate-700 hover:bg-emerald-700 text-white rounded-lg flex items-center justify-center font-bold text-base cursor-pointer transition">+</button>
+                                    className="w-9 h-9 bg-slate-700 hover:bg-emerald-700 text-white rounded-xl flex items-center justify-center font-bold text-lg cursor-pointer transition">+</button>
                                   <button type="button" onClick={() => removeFromCart(item.medicine.id)}
-                                    className="w-7 h-7 text-slate-600 hover:text-rose-400 flex items-center justify-center cursor-pointer transition mr-1">
-                                    <Trash2 className="w-3.5 h-3.5" />
+                                    className="w-9 h-9 text-slate-600 hover:text-rose-400 flex items-center justify-center cursor-pointer transition mr-1">
+                                    <Trash2 className="w-4 h-4" />
                                   </button>
                                 </div>
                               </div>
@@ -3123,22 +3123,22 @@ export default function Dashboard() {
                         </div>
 
                         {/* Totals */}
-                        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 space-y-2 text-xs font-semibold">
+                        <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5 space-y-3 text-sm font-semibold">
                           <div className="flex justify-between text-slate-400">
                             <span>المجموع الفرعي</span>
-                            <span className="font-mono text-slate-200">{posSubtotal.toLocaleString()} د.ع</span>
+                            <span className="font-mono text-slate-200 text-base">{posSubtotal.toLocaleString()} د.ع</span>
                           </div>
                           {posDiscountAmount > 0 && (
                             <div className="flex justify-between text-rose-400">
                               <span>الخصم</span>
-                              <span className="font-mono">−{posDiscountAmount.toLocaleString()} د.ع</span>
+                              <span className="font-mono text-base">−{posDiscountAmount.toLocaleString()} د.ع</span>
                             </div>
                           )}
-                          <div className="flex justify-between border-t border-slate-600 pt-2 text-base font-black">
+                          <div className="flex justify-between border-t border-slate-600 pt-3 text-xl font-black">
                             <span className="text-white">الصافي</span>
                             <span className="text-emerald-400 font-mono">{posTotal.toLocaleString()} د.ع</span>
                           </div>
-                          <div className="flex justify-between text-[10px] text-slate-600 pt-1 border-t border-slate-700">
+                          <div className="flex justify-between text-xs text-slate-500 pt-1 border-t border-slate-700">
                             <span>بالدولار الموازي</span>
                             <span className="font-mono">${(posTotal / 1500).toFixed(2)}</span>
                           </div>
@@ -3155,7 +3155,7 @@ export default function Dashboard() {
                   </div>
 
                   {/* Right Column: Searchable fast-add medicines shelf */}
-                  <div className="lg:col-span-7 bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
+                  <div className="lg:col-span-5 bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
                     <div>
                       <h3 className="font-extrabold text-slate-900 text-sm">أدوية ومخازن الصيدلة الحاضرة</h3>
                       <p className="text-[10px] text-slate-400 font-semibold mt-0.5">انقر على الدواء المتوفر لإضافته إلى فاتورة العميل مباشرة</p>
