@@ -104,6 +104,81 @@ export const MEDICINES_DATA: Medicine[] = [
     secondaryPrice: 11000,
     availableQuantity: 0,
     status: 'unavailable'
+  },
+  // --- أدوية تجريبية مؤقتة ---
+  {
+    id: 'TEST-1',
+    nameAr: 'زيثروماكس 500 ملغ',
+    nameEn: 'Zithromax 500mg',
+    scientificName: 'Azithromycin',
+    activeIngredient: 'أزيثروميسين',
+    category: 'المضادات الحيوية',
+    warehouse: 'مذخر النخبة العلمي (الموصل)',
+    price: 14000,
+    secondaryPrice: 15500,
+    costPrice: 12000,
+    availableQuantity: 80,
+    minStock: 20,
+    status: 'available'
+  },
+  {
+    id: 'TEST-2',
+    nameAr: 'نيكسيوم 40 ملغ',
+    nameEn: 'Nexium 40mg',
+    scientificName: 'Esomeprazole',
+    activeIngredient: 'إيزوميبرازول',
+    category: 'أدوية الجهاز الهضمي',
+    warehouse: 'مذخر السلام الدولي (النجف)',
+    price: 11500,
+    secondaryPrice: 12800,
+    costPrice: 9800,
+    availableQuantity: 5,
+    minStock: 15,
+    status: 'low'
+  },
+  {
+    id: 'TEST-3',
+    nameAr: 'ديكساميثازون 4 ملغ',
+    nameEn: 'Dexamethasone 4mg',
+    scientificName: 'Dexamethasone',
+    activeIngredient: 'ديكساميثازون',
+    category: 'كورتيزونات ومضادات الحساسية',
+    warehouse: 'مذخر الفيحاء الدوائي (السليمانية)',
+    price: 3200,
+    secondaryPrice: 3700,
+    costPrice: 2600,
+    availableQuantity: 200,
+    minStock: 50,
+    status: 'available'
+  },
+  {
+    id: 'TEST-4',
+    nameAr: 'ميترونيدازول 500 ملغ',
+    nameEn: 'Metronidazole 500mg',
+    scientificName: 'Metronidazole',
+    activeIngredient: 'ميترونيدازول',
+    category: 'أدوية الأمعاء والطفيليات',
+    warehouse: 'مكتب دجلة العلمي للأدوية (بغداد)',
+    price: 2800,
+    secondaryPrice: 3200,
+    costPrice: 2200,
+    availableQuantity: 0,
+    status: 'unavailable'
+  },
+  {
+    id: 'TEST-5',
+    nameAr: 'أوميبرازول 20 ملغ',
+    nameEn: 'Omeprazole 20mg',
+    scientificName: 'Omeprazole',
+    activeIngredient: 'أوميبرازول',
+    category: 'أدوية الجهاز الهضمي',
+    warehouse: 'مذخر قصر الشفاء الحديث (أربيل)',
+    price: 5500,
+    secondaryPrice: 6200,
+    costPrice: 4500,
+    availableQuantity: 350,
+    minStock: 60,
+    status: 'available'
   }
 ];
 
