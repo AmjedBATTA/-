@@ -5,7 +5,7 @@ import {
   Truck, HelpCircle, PlusCircle, Search, Trash2, ArrowLeft, 
   MapPin, UserCheck, ShieldCheck, Users, Sparkles, Plus, Check,
   TrendingUp, FileText, Ban, DollarSign, Calendar, RefreshCw, BarChart3, Pill, ClipboardList, ShieldAlert, Heart,
-  Barcode, X, Volume2, VolumeX, Camera, Download, Bell, Moon, Sun, Pencil, ScanLine, ChevronDown, CalendarClock, Palette
+  Barcode, X, Volume2, VolumeX, Camera, Download, Bell, Pencil, ScanLine, ChevronDown, CalendarClock
 } from 'lucide-react';
 import { Medicine, Order, Supplier } from '../types';
 import InvoiceImportModal from './InvoiceImportModal';
@@ -294,7 +294,7 @@ const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove
         <div className="flex items-center gap-3">
           <span className="text-sm text-emerald-400 font-mono font-bold">{unitPrice.toLocaleString()} د.ع</span>
           {item.medicine.costPrice && (
-            <span className="text-xs text-slate-400 font-mono">شراء: {item.medicine.costPrice.toLocaleString()} د.ع</span>
+            <span className="text-xs text-slate-400 font-mono">شراء: {(item.medicine.costPrice * item.quantity).toLocaleString()} د.ع</span>
           )}
         </div>
         <span className="text-xs text-slate-300 font-mono font-semibold">× {item.quantity} = <span className="text-amber-400 font-bold">{lineTotal.toLocaleString()} د.ع</span></span>
@@ -454,16 +454,8 @@ export default function Dashboard() {
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [showVirtualPriceInPOS, setShowVirtualPriceInPOS] = useState(false);
   const [chartRange, setChartRange] = useState<7 | 30 | 90>(30); // مدى الرسم البياني للمبيعات
-  const [theme, setTheme] = useState<'pastel' | 'light' | 'dark'>(() => {
-    try {
-      const saved = localStorage.getItem('theme') as 'pastel' | 'light' | 'dark' | null;
-      if (saved === 'pastel' || saved === 'light' || saved === 'dark') return saved;
-      // migrate old darkMode flag
-      if (localStorage.getItem('darkMode') === 'true') return 'dark';
-      return 'pastel';
-    } catch { return 'pastel'; }
-  });
-  const darkMode = theme === 'dark';
+  const [theme] = useState<'pastel'>('pastel');
+  const darkMode = false; // Dark mode removed — luxury theme only
   const [plPeriod, setPlPeriod] = useState<'month' | 'year'>('month'); // فترة قائمة الأرباح والخسائر
 
   // --- SALES HISTORY LEDGER ---
@@ -473,6 +465,8 @@ export default function Dashboard() {
 
   // --- DYNAMIC INVENTORY ACTIONS ---
   const [searchInInventoryQuery, setSearchInInventoryQuery] = useState('');
+  const deferredInvQuery = useDeferredValue(searchInInventoryQuery);
+  const [invRenderCap, setInvRenderCap] = useState(200);
 
   // --- STOCK MOVEMENT VIEWER (حركة المادة: الوارد والصادر) ---
   const [movementMedId, setMovementMedId] = useState<string>('');
@@ -735,14 +729,12 @@ export default function Dashboard() {
     }, 1500);
   };
 
-  // Theme: sync class on <html> + persist to localStorage
+  // Theme: always luxury (pastel class)
   useEffect(() => {
     const html = document.documentElement;
-    html.classList.remove('dark', 'pastel');
-    if (theme === 'dark') html.classList.add('dark');
-    else if (theme === 'pastel') html.classList.add('pastel');
-    try { localStorage.setItem('theme', theme); } catch {}
-  }, [theme]);
+    html.classList.remove('dark');
+    html.classList.add('pastel');
+  }, []);
 
   // RBAC: reset activeTab when role changes
   useEffect(() => {
@@ -1856,157 +1848,177 @@ export default function Dashboard() {
   const posTotal = posSubtotal - posDiscountAmount;
 
   // --- FINANCIAL PERIOD ANALYTICS (يومي / أسبوعي / شهري / سنوي) ---
-  // يجمّع سجل المبيعات حسب الفترة الزمنية ويحسب: المبيعات، الربح، الهامش، عدد الفواتير، متوسط الفاتورة
-  const computePeriodStats = (predicate: (saleDate: Date) => boolean) => {
-    const rows = salesLedger.filter(s => {
-      const d = new Date(String(s.timestamp).replace(' ', 'T'));
-      return !isNaN(d.getTime()) && predicate(d);
+  const {
+    statsToday, statsWeek, statsMonth, statsYear, finAccent, financialPeriods,
+    chartSeries, chartMax, topProfitable, topSelling, slowestMoving,
+    expMonth, expYear, netProfitMonth, netProfitYear,
+    plStats, plReturns, plExpenseRows, plGrossSales, plCogs, plNetSales,
+    plNetCogs, plGrossProfit, plTotalExpenses, plNetProfit, plGrossMargin, plNetMargin,
+    totalDebts, totalReceivables,
+    finTodayStr, plIsMonth,
+  } = useMemo(() => {
+    // يجمّع سجل المبيعات حسب الفترة الزمنية ويحسب: المبيعات، الربح، الهامش، عدد الفواتير، متوسط الفاتورة
+    const computePeriodStats = (predicate: (saleDate: Date) => boolean) => {
+      const rows = salesLedger.filter(s => {
+        const d = new Date(String(s.timestamp).replace(' ', 'T'));
+        return !isNaN(d.getTime()) && predicate(d);
+      });
+      const sales = rows.reduce((sum, r) => sum + (r.total || 0), 0);
+      const profit = rows.reduce((sum, r) => sum + (r.grossProfit ?? 0), 0);
+      const count = rows.length;
+      const margin = sales > 0 ? Math.round((profit / sales) * 100) : 0;
+      const avg = count > 0 ? Math.round(sales / count) : 0;
+      return { sales, profit, margin, count, avg };
+    };
+
+    const finNow = new Date();
+    const finTodayStr = `${finNow.getFullYear()}-${String(finNow.getMonth() + 1).padStart(2, '0')}-${String(finNow.getDate()).padStart(2, '0')}`;
+    const finWeekAgo = new Date(finNow.getFullYear(), finNow.getMonth(), finNow.getDate() - 6); // آخر 7 أيام شاملة اليوم
+
+    const statsToday = computePeriodStats(d => {
+      const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      return ds === finTodayStr;
     });
-    const sales = rows.reduce((sum, r) => sum + (r.total || 0), 0);
-    const profit = rows.reduce((sum, r) => sum + (r.grossProfit ?? 0), 0);
-    const count = rows.length;
-    const margin = sales > 0 ? Math.round((profit / sales) * 100) : 0;
-    const avg = count > 0 ? Math.round(sales / count) : 0;
-    return { sales, profit, margin, count, avg };
-  };
+    const statsWeek = computePeriodStats(d => d >= finWeekAgo);
+    const statsMonth = computePeriodStats(d => d.getFullYear() === finNow.getFullYear() && d.getMonth() === finNow.getMonth());
+    const statsYear = computePeriodStats(d => d.getFullYear() === finNow.getFullYear());
 
-  const finNow = new Date();
-  const finTodayStr = `${finNow.getFullYear()}-${String(finNow.getMonth() + 1).padStart(2, '0')}-${String(finNow.getDate()).padStart(2, '0')}`;
-  const finWeekAgo = new Date(finNow.getFullYear(), finNow.getMonth(), finNow.getDate() - 6); // آخر 7 أيام شاملة اليوم
+    // خرائط ألوان ثابتة (Tailwind يحتاج أسماء أصناف كاملة وليست مركّبة ديناميكياً)
+    const finAccent: Record<string, { badge: string; icon: string; profit: string; ring: string }> = {
+      emerald: { badge: 'bg-emerald-50 text-emerald-700', icon: 'text-emerald-600', profit: 'text-emerald-700', ring: 'border-emerald-100' },
+      blue: { badge: 'bg-blue-50 text-blue-700', icon: 'text-blue-600', profit: 'text-blue-700', ring: 'border-blue-100' },
+      violet: { badge: 'bg-violet-50 text-violet-700', icon: 'text-violet-600', profit: 'text-violet-700', ring: 'border-violet-100' },
+      amber: { badge: 'bg-amber-50 text-amber-700', icon: 'text-amber-600', profit: 'text-amber-700', ring: 'border-amber-100' },
+    };
+    const financialPeriods = [
+      { key: 'today', label: 'اليوم', sub: 'مبيعات هذا اليوم', stats: statsToday, accent: 'emerald' },
+      { key: 'week', label: 'آخر 7 أيام', sub: 'الأسبوع الجاري', stats: statsWeek, accent: 'blue' },
+      { key: 'month', label: 'هذا الشهر', sub: 'الشهر الحالي', stats: statsMonth, accent: 'violet' },
+      { key: 'year', label: 'هذا العام', sub: 'السنة المالية', stats: statsYear, accent: 'amber' },
+    ];
 
-  const statsToday = computePeriodStats(d => {
-    const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    return ds === finTodayStr;
-  });
-  const statsWeek = computePeriodStats(d => d >= finWeekAgo);
-  const statsMonth = computePeriodStats(d => d.getFullYear() === finNow.getFullYear() && d.getMonth() === finNow.getMonth());
-  const statsYear = computePeriodStats(d => d.getFullYear() === finNow.getFullYear());
-
-  // خرائط ألوان ثابتة (Tailwind يحتاج أسماء أصناف كاملة وليست مركّبة ديناميكياً)
-  const finAccent: Record<string, { badge: string; icon: string; profit: string; ring: string }> = {
-    emerald: { badge: 'bg-emerald-50 text-emerald-700', icon: 'text-emerald-600', profit: 'text-emerald-700', ring: 'border-emerald-100' },
-    blue: { badge: 'bg-blue-50 text-blue-700', icon: 'text-blue-600', profit: 'text-blue-700', ring: 'border-blue-100' },
-    violet: { badge: 'bg-violet-50 text-violet-700', icon: 'text-violet-600', profit: 'text-violet-700', ring: 'border-violet-100' },
-    amber: { badge: 'bg-amber-50 text-amber-700', icon: 'text-amber-600', profit: 'text-amber-700', ring: 'border-amber-100' },
-  };
-  const financialPeriods = [
-    { key: 'today', label: 'اليوم', sub: 'مبيعات هذا اليوم', stats: statsToday, accent: 'emerald' },
-    { key: 'week', label: 'آخر 7 أيام', sub: 'الأسبوع الجاري', stats: statsWeek, accent: 'blue' },
-    { key: 'month', label: 'هذا الشهر', sub: 'الشهر الحالي', stats: statsMonth, accent: 'violet' },
-    { key: 'year', label: 'هذا العام', sub: 'السنة المالية', stats: statsYear, accent: 'amber' },
-  ];
-
-  // --- SALES/PROFIT TREND CHART SERIES (تجميع يومي أو أسبوعي حسب المدى) ---
-  const buildChartSeries = (rangeDays: number) => {
-    const today = new Date();
-    const startDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (rangeDays - 1));
-    const byWeek = rangeDays > 30; // المدى 90 يوماً يُجمّع أسبوعياً لتجنب أعمدة كثيرة
-    const buckets: { label: string; sales: number; profit: number; from: Date; to: Date }[] = [];
-    if (byWeek) {
-      const numWeeks = Math.ceil(rangeDays / 7);
-      for (let w = numWeeks - 1; w >= 0; w--) {
-        const to = new Date(today.getFullYear(), today.getMonth(), today.getDate() - w * 7);
-        const from = new Date(today.getFullYear(), today.getMonth(), today.getDate() - w * 7 - 6);
-        buckets.push({ label: `${from.getDate()}/${from.getMonth() + 1}`, sales: 0, profit: 0, from, to });
+    // --- SALES/PROFIT TREND CHART SERIES (تجميع يومي أو أسبوعي حسب المدى) ---
+    const buildChartSeries = (rangeDays: number) => {
+      const today = new Date();
+      const startDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (rangeDays - 1));
+      const byWeek = rangeDays > 30; // المدى 90 يوماً يُجمّع أسبوعياً لتجنب أعمدة كثيرة
+      const buckets: { label: string; sales: number; profit: number; from: Date; to: Date }[] = [];
+      if (byWeek) {
+        const numWeeks = Math.ceil(rangeDays / 7);
+        for (let w = numWeeks - 1; w >= 0; w--) {
+          const to = new Date(today.getFullYear(), today.getMonth(), today.getDate() - w * 7);
+          const from = new Date(today.getFullYear(), today.getMonth(), today.getDate() - w * 7 - 6);
+          buckets.push({ label: `${from.getDate()}/${from.getMonth() + 1}`, sales: 0, profit: 0, from, to });
+        }
+      } else {
+        for (let i = rangeDays - 1; i >= 0; i--) {
+          const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+          buckets.push({ label: `${d.getDate()}/${d.getMonth() + 1}`, sales: 0, profit: 0, from: d, to: d });
+        }
       }
-    } else {
-      for (let i = rangeDays - 1; i >= 0; i--) {
-        const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
-        buckets.push({ label: `${d.getDate()}/${d.getMonth() + 1}`, sales: 0, profit: 0, from: d, to: d });
-      }
-    }
+      salesLedger.forEach(s => {
+        const sd = new Date(String(s.timestamp).replace(' ', 'T'));
+        if (isNaN(sd.getTime())) return;
+        const sDay = new Date(sd.getFullYear(), sd.getMonth(), sd.getDate());
+        if (sDay < startDay || sDay > today) return;
+        const b = buckets.find(bk => sDay >= bk.from && sDay <= bk.to);
+        if (b) { b.sales += s.total || 0; b.profit += s.grossProfit ?? 0; }
+      });
+      return buckets;
+    };
+    const chartSeries = buildChartSeries(chartRange);
+    const chartMax = Math.max(1, ...chartSeries.map(b => b.sales));
+
+    // --- PRODUCT-LEVEL ANALYTICS (تجميع من سجل المبيعات مع توحيد الأسماء) ---
+    // توحيد الاسم: إزالة الجزء بين قوسين (الاسم الإنجليزي/الوصف) لدمج السجلات القديمة والجديدة
+    const normalizeName = (n: string) => String(n).split(' (')[0].trim();
+    const productAgg: Record<string, { name: string; qty: number; revenue: number; profit: number }> = {};
     salesLedger.forEach(s => {
-      const sd = new Date(String(s.timestamp).replace(' ', 'T'));
-      if (isNaN(sd.getTime())) return;
-      const sDay = new Date(sd.getFullYear(), sd.getMonth(), sd.getDate());
-      if (sDay < startDay || sDay > today) return;
-      const b = buckets.find(bk => sDay >= bk.from && sDay <= bk.to);
-      if (b) { b.sales += s.total || 0; b.profit += s.grossProfit ?? 0; }
+      s.items.forEach(it => {
+        const key = normalizeName(it.name);
+        if (!productAgg[key]) productAgg[key] = { name: key, qty: 0, revenue: 0, profit: 0 };
+        productAgg[key].qty += it.quantity || 0;
+        productAgg[key].revenue += (it.price || 0) * (it.quantity || 0);
+        productAgg[key].profit += it.lineProfit ?? 0;
+      });
     });
-    return buckets;
-  };
-  const chartSeries = buildChartSeries(chartRange);
-  const chartMax = Math.max(1, ...chartSeries.map(b => b.sales));
+    const productList = Object.values(productAgg);
+    const topProfitable = [...productList].sort((a, b) => b.profit - a.profit).slice(0, 5);
+    const topSelling = [...productList].sort((a, b) => b.qty - a.qty).slice(0, 5);
+    const slowestMoving = [...inventory]
+      .map(m => {
+        const sold = productAgg[normalizeName(m.nameAr)]?.qty ?? 0;
+        const unitCost = m.costPrice ?? Math.round(m.price * 0.72);
+        return { name: m.nameAr, sold, stock: m.availableQuantity, value: unitCost * m.availableQuantity };
+      })
+      .sort((a, b) => a.sold - b.sold || b.value - a.value)
+      .slice(0, 5);
 
-  // --- PRODUCT-LEVEL ANALYTICS (تجميع من سجل المبيعات مع توحيد الأسماء) ---
-  // توحيد الاسم: إزالة الجزء بين قوسين (الاسم الإنجليزي/الوصف) لدمج السجلات القديمة والجديدة
-  const normalizeName = (n: string) => String(n).split(' (')[0].trim();
-  const productAgg: Record<string, { name: string; qty: number; revenue: number; profit: number }> = {};
-  salesLedger.forEach(s => {
-    s.items.forEach(it => {
-      const key = normalizeName(it.name);
-      if (!productAgg[key]) productAgg[key] = { name: key, qty: 0, revenue: 0, profit: 0 };
-      productAgg[key].qty += it.quantity || 0;
-      productAgg[key].revenue += (it.price || 0) * (it.quantity || 0);
-      productAgg[key].profit += it.lineProfit ?? 0;
-    });
-  });
-  const productList = Object.values(productAgg);
-  const topProfitable = [...productList].sort((a, b) => b.profit - a.profit).slice(0, 5);
-  const topSelling = [...productList].sort((a, b) => b.qty - a.qty).slice(0, 5);
-  const slowestMoving = [...inventory]
-    .map(m => {
-      const sold = productAgg[normalizeName(m.nameAr)]?.qty ?? 0;
-      const unitCost = m.costPrice ?? Math.round(m.price * 0.72);
-      return { name: m.nameAr, sold, stock: m.availableQuantity, value: unitCost * m.availableQuantity };
-    })
-    .sort((a, b) => a.sold - b.sold || b.value - a.value)
-    .slice(0, 5);
+    // --- NET PROFIT (الربح الصافي = الربح الإجمالي − المصاريف) ---
+    const sumExpenses = (predicate: (d: Date) => boolean) =>
+      expenses.filter(e => { const d = new Date(e.date); return !isNaN(d.getTime()) && predicate(d); })
+        .reduce((sum, e) => sum + (e.amount || 0), 0);
+    const expMonth = sumExpenses(d => d.getFullYear() === finNow.getFullYear() && d.getMonth() === finNow.getMonth());
+    const expYear = sumExpenses(d => d.getFullYear() === finNow.getFullYear());
+    const netProfitMonth = statsMonth.profit - expMonth;
+    const netProfitYear = statsYear.profit - expYear;
 
-  // --- NET PROFIT (الربح الصافي = الربح الإجمالي − المصاريف) ---
-  const sumExpenses = (predicate: (d: Date) => boolean) =>
-    expenses.filter(e => { const d = new Date(e.date); return !isNaN(d.getTime()) && predicate(d); })
-      .reduce((sum, e) => sum + (e.amount || 0), 0);
-  const expMonth = sumExpenses(d => d.getFullYear() === finNow.getFullYear() && d.getMonth() === finNow.getMonth());
-  const expYear = sumExpenses(d => d.getFullYear() === finNow.getFullYear());
-  const netProfitMonth = statsMonth.profit - expMonth;
-  const netProfitYear = statsYear.profit - expYear;
+    // --- قائمة الأرباح والخسائر (P&L / income statement) — تجمع الإيراد والتكلفة والمرتجعات والمصاريف لفترة واحدة ---
+    // مرتجعات الفترة: value = قيمة البيع المُرتجَع (تُخصم من الإيراد)، cost = تكلفة البضاعة العائدة للمخزون (تُخصم من COGS)
+    const sumReturns = (predicate: (d: Date) => boolean) => {
+      let value = 0, cost = 0, count = 0;
+      salesReturns.forEach(r => {
+        const d = new Date(String(r.timestamp).replace(' ', 'T'));
+        if (isNaN(d.getTime()) || !predicate(d)) return;
+        count++;
+        value += r.total || 0;
+        cost += r.items.reduce((s, it) => s + (it.costPrice ?? 0) * (it.quantity || 0), 0);
+      });
+      return { value, cost, count };
+    };
+    // تجميع المصاريف حسب النوع لفترة واحدة (لعرضها مفصّلة داخل القائمة)
+    const expensesByCategory = (predicate: (d: Date) => boolean) => {
+      const map: Record<string, number> = {};
+      expenses.forEach(e => {
+        const d = new Date(e.date);
+        if (isNaN(d.getTime()) || !predicate(d)) return;
+        map[e.category] = (map[e.category] || 0) + (e.amount || 0);
+      });
+      return Object.entries(map).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
+    };
+    const plIsMonth = plPeriod === 'month';
+    const plPredicate = plIsMonth
+      ? (d: Date) => d.getFullYear() === finNow.getFullYear() && d.getMonth() === finNow.getMonth()
+      : (d: Date) => d.getFullYear() === finNow.getFullYear();
+    const plStats = plIsMonth ? statsMonth : statsYear;
+    const plReturns = sumReturns(plPredicate);
+    const plExpenseRows = expensesByCategory(plPredicate);
+    const plGrossSales = plStats.sales;                  // إجمالي المبيعات (الإيراد)
+    const plCogs = plStats.sales - plStats.profit;       // تكلفة البضاعة المباعة = المبيعات − الربح الإجمالي
+    const plNetSales = plGrossSales - plReturns.value;   // صافي المبيعات بعد خصم المرتجعات
+    const plNetCogs = plCogs - plReturns.cost;           // التكلفة بعد إرجاع بضاعة المرتجعات للمخزون
+    const plGrossProfit = plNetSales - plNetCogs;        // مجمل الربح = صافي المبيعات − التكلفة
+    const plTotalExpenses = plExpenseRows.reduce((s, r) => s + r.amount, 0);
+    const plNetProfit = plGrossProfit - plTotalExpenses; // صافي الربح = مجمل الربح − المصاريف التشغيلية
+    const plGrossMargin = plNetSales > 0 ? Math.round((plGrossProfit / plNetSales) * 100) : 0;
+    const plNetMargin = plNetSales > 0 ? Math.round((plNetProfit / plNetSales) * 100) : 0;
 
-  // --- قائمة الأرباح والخسائر (P&L / income statement) — تجمع الإيراد والتكلفة والمرتجعات والمصاريف لفترة واحدة ---
-  // مرتجعات الفترة: value = قيمة البيع المُرتجَع (تُخصم من الإيراد)، cost = تكلفة البضاعة العائدة للمخزون (تُخصم من COGS)
-  const sumReturns = (predicate: (d: Date) => boolean) => {
-    let value = 0, cost = 0, count = 0;
-    salesReturns.forEach(r => {
-      const d = new Date(String(r.timestamp).replace(' ', 'T'));
-      if (isNaN(d.getTime()) || !predicate(d)) return;
-      count++;
-      value += r.total || 0;
-      cost += r.items.reduce((s, it) => s + (it.costPrice ?? 0) * (it.quantity || 0), 0);
-    });
-    return { value, cost, count };
-  };
-  // تجميع المصاريف حسب النوع لفترة واحدة (لعرضها مفصّلة داخل القائمة)
-  const expensesByCategory = (predicate: (d: Date) => boolean) => {
-    const map: Record<string, number> = {};
-    expenses.forEach(e => {
-      const d = new Date(e.date);
-      if (isNaN(d.getTime()) || !predicate(d)) return;
-      map[e.category] = (map[e.category] || 0) + (e.amount || 0);
-    });
-    return Object.entries(map).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
-  };
-  const plIsMonth = plPeriod === 'month';
-  const plPredicate = plIsMonth
-    ? (d: Date) => d.getFullYear() === finNow.getFullYear() && d.getMonth() === finNow.getMonth()
-    : (d: Date) => d.getFullYear() === finNow.getFullYear();
-  const plStats = plIsMonth ? statsMonth : statsYear;
-  const plReturns = sumReturns(plPredicate);
-  const plExpenseRows = expensesByCategory(plPredicate);
-  const plGrossSales = plStats.sales;                  // إجمالي المبيعات (الإيراد)
-  const plCogs = plStats.sales - plStats.profit;       // تكلفة البضاعة المباعة = المبيعات − الربح الإجمالي
-  const plNetSales = plGrossSales - plReturns.value;   // صافي المبيعات بعد خصم المرتجعات
-  const plNetCogs = plCogs - plReturns.cost;           // التكلفة بعد إرجاع بضاعة المرتجعات للمخزون
-  const plGrossProfit = plNetSales - plNetCogs;        // مجمل الربح = صافي المبيعات − التكلفة
-  const plTotalExpenses = plExpenseRows.reduce((s, r) => s + r.amount, 0);
-  const plNetProfit = plGrossProfit - plTotalExpenses; // صافي الربح = مجمل الربح − المصاريف التشغيلية
-  const plGrossMargin = plNetSales > 0 ? Math.round((plGrossProfit / plNetSales) * 100) : 0;
-  const plNetMargin = plNetSales > 0 ? Math.round((plNetProfit / plNetSales) * 100) : 0;
+    // --- إجمالي الذمم الدائنة المستحقة (مشتقّ من دفتر ديون الموردين) ---
+    const totalDebts = payables.reduce((sum, p) => sum + Math.max(0, (p.amount || 0) - (p.paidAmount || 0)), 0);
 
-  // --- إجمالي الذمم الدائنة المستحقة (مشتقّ من دفتر ديون الموردين) ---
-  const totalDebts = payables.reduce((sum, p) => sum + Math.max(0, (p.amount || 0) - (p.paidAmount || 0)), 0);
+    // --- إجمالي الذمم المدينة المستحقة لنا (مشتقّ من دفتر ذمم الزبائن / البيع بالآجل) ---
+    const totalReceivables = receivables.reduce((sum, r) => sum + Math.max(0, (r.amount || 0) - (r.paidAmount || 0)), 0);
 
-  // --- إجمالي الذمم المدينة المستحقة لنا (مشتقّ من دفتر ذمم الزبائن / البيع بالآجل) ---
-  const totalReceivables = receivables.reduce((sum, r) => sum + Math.max(0, (r.amount || 0) - (r.paidAmount || 0)), 0);
+    return {
+      statsToday, statsWeek, statsMonth, statsYear, finAccent, financialPeriods,
+      chartSeries, chartMax, topProfitable, topSelling, slowestMoving,
+      expMonth, expYear, netProfitMonth, netProfitYear,
+      plStats, plReturns, plExpenseRows, plGrossSales, plCogs, plNetSales,
+      plNetCogs, plGrossProfit, plTotalExpenses, plNetProfit, plGrossMargin, plNetMargin,
+      totalDebts, totalReceivables,
+      finTodayStr, plIsMonth,
+    };
+  }, [salesLedger, inventory, expenses, payables, receivables, salesReturns, chartRange, plPeriod]);
 
   // Search filter for POS select
   // فهرس المخزون المُسبق الحساب — يُعاد بناؤه عند تغيّر inventory فقط
@@ -2027,6 +2039,17 @@ export default function Dashboard() {
       )
       .map(({ m }) => m);
   }, [deferredPOSQuery, inventory, inventoryIndex]);
+
+  const filteredInventory = useMemo(() => {
+    const q = deferredInvQuery.toLowerCase().trim();
+    if (!q) return inventory;
+    return inventory.filter(m =>
+      m.nameAr.toLowerCase().includes(q) ||
+      m.nameEn.toLowerCase().includes(q) ||
+      m.scientificName.toLowerCase().includes(q) ||
+      (m.barcode && m.barcode.toLowerCase().includes(q))
+    );
+  }, [inventory, deferredInvQuery]);
 
   // مطابقة باركود/اسم في مرور واحد فقط (بدل 3 مرورات متتالية)
   const findScanMatch = useCallback((query: string): Medicine | null => {
@@ -2295,6 +2318,79 @@ export default function Dashboard() {
     setNewDrugBarcode('');
     setIsAddingDrug(false);
     setNewDrugMinStock(15);
+  };
+
+  // --- SEED TEST DATA (مؤقت للاختبار فقط) ---
+  const handleSeedTestData = async () => {
+    if (!currentUser) return;
+    const userId = currentUser.uid;
+    const maxId = inventory.reduce((max, item) => Math.max(max, Number(item.id) || 0), 0);
+    const testMeds: Medicine[] = [
+      {
+        id: String(maxId + 1),
+        nameAr: 'زيثروماكس 500 ملغ',
+        nameEn: 'Zithromax 500mg',
+        scientificName: 'Azithromycin',
+        activeIngredient: 'أزيثروميسين',
+        category: 'المضادات الحيوية',
+        warehouse: 'مذخر النخبة العلمي (الموصل)',
+        price: 14000, secondaryPrice: 15500, costPrice: 12000, lastCostPrice: 12000,
+        availableQuantity: 80, minStock: 20, status: 'available',
+        barcode: '6281100000001'
+      },
+      {
+        id: String(maxId + 2),
+        nameAr: 'نيكسيوم 40 ملغ',
+        nameEn: 'Nexium 40mg',
+        scientificName: 'Esomeprazole',
+        activeIngredient: 'إيزوميبرازول',
+        category: 'أدوية الجهاز الهضمي',
+        warehouse: 'مذخر السلام الدولي (النجف)',
+        price: 11500, secondaryPrice: 12800, costPrice: 9800, lastCostPrice: 9800,
+        availableQuantity: 5, minStock: 15, status: 'low',
+        barcode: '6281100000002'
+      },
+      {
+        id: String(maxId + 3),
+        nameAr: 'ديكساميثازون 4 ملغ',
+        nameEn: 'Dexamethasone 4mg',
+        scientificName: 'Dexamethasone',
+        activeIngredient: 'ديكساميثازون',
+        category: 'كورتيزونات ومضادات الحساسية',
+        warehouse: 'مذخر الفيحاء الدوائي (السليمانية)',
+        price: 3200, secondaryPrice: 3700, costPrice: 2600, lastCostPrice: 2600,
+        availableQuantity: 200, minStock: 50, status: 'available',
+        barcode: '6281100000003'
+      },
+      {
+        id: String(maxId + 4),
+        nameAr: 'ميترونيدازول 500 ملغ',
+        nameEn: 'Metronidazole 500mg',
+        scientificName: 'Metronidazole',
+        activeIngredient: 'ميترونيدازول',
+        category: 'أدوية الأمعاء والطفيليات',
+        warehouse: 'مكتب دجلة العلمي للأدوية (بغداد)',
+        price: 2800, secondaryPrice: 3200, costPrice: 2200, lastCostPrice: 2200,
+        availableQuantity: 0, minStock: 10, status: 'unavailable',
+        barcode: '6281100000004'
+      },
+      {
+        id: String(maxId + 5),
+        nameAr: 'أوميبرازول 20 ملغ',
+        nameEn: 'Omeprazole 20mg',
+        scientificName: 'Omeprazole',
+        activeIngredient: 'أوميبرازول',
+        category: 'أدوية الجهاز الهضمي',
+        warehouse: 'مذخر قصر الشفاء الحديث (أربيل)',
+        price: 5500, secondaryPrice: 6200, costPrice: 4500, lastCostPrice: 4500,
+        availableQuantity: 350, minStock: 60, status: 'available',
+        barcode: '6281100000005'
+      }
+    ];
+    for (const med of testMeds) {
+      await setDoc(doc(db, 'users', userId, 'inventory', med.id), { ...med, userId });
+    }
+    alert('✅ تمت إضافة 5 أدوية تجريبية بنجاح!');
   };
 
   // --- BULK INVENTORY IMPORT (استيراد المخزون الكامل من ES-PRO) ---
@@ -2879,16 +2975,14 @@ export default function Dashboard() {
                 تفعيل الإشعارات
               </button>
             )}
-            {/* Theme toggle: pastel → light → dark → pastel */}
-            <button
-              onClick={() => setTheme(prev => prev === 'pastel' ? 'light' : prev === 'light' ? 'dark' : 'pastel')}
-              title={theme === 'pastel' ? 'الوضع النهاري' : theme === 'light' ? 'الوضع الليلي' : 'الوضع الباستيل'}
-              className="w-8 h-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 transition cursor-pointer"
+            {/* Luxury theme badge */}
+            <div
+              title="النسخة الذهبية الفاخرة"
+              className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-black cursor-default select-none"
+              style={{background:'linear-gradient(135deg,#F5DAAC,#DFB060)',color:'#6B3A08',boxShadow:'0 2px 8px rgba(184,134,42,0.25)'}}
             >
-              {theme === 'dark'   ? <Palette className="w-4 h-4 text-violet-400" /> :
-               theme === 'light'  ? <Moon    className="w-4 h-4" /> :
-                                    <Sun     className="w-4 h-4 text-amber-500" />}
-            </button>
+              ✦ LUXURY
+            </div>
 
             {/* Notification Bell */}
             <div className="relative">
@@ -3097,7 +3191,7 @@ export default function Dashboard() {
             </div>
 
             {/* Compliance card — كان في الـ sidebar، يظهر في الصفحة الرئيسية فقط */}
-            <div className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="lux-dark-panel-wide bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-emerald-400 font-extrabold text-[11px]">
                   <ShieldCheck className="w-4 h-4" />
@@ -3153,7 +3247,7 @@ export default function Dashboard() {
                 >
                   
                   {/* Left Column: POS Register — dark theme */}
-                  <div className="lg:col-span-7 order-first lg:order-none bg-slate-900 rounded-3xl p-5 shadow-lg flex flex-col gap-4">
+                  <div className="lux-dark-panel lg:col-span-7 order-first lg:order-none bg-slate-900 rounded-3xl p-5 shadow-lg flex flex-col gap-4">
 
                     {/* Search bar — فوق سلة البيع */}
                     <POSSearchBar
@@ -4217,6 +4311,14 @@ export default function Dashboard() {
                         <Plus className="w-4 h-4" />
                         <span>إضافة دواء</span>
                       </button>
+                      {/* زر مؤقت للاختبار */}
+                      <button
+                        onClick={handleSeedTestData}
+                        className="bg-orange-500 hover:bg-orange-600 text-white font-black text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5"
+                        title="إضافة 5 أدوية تجريبية"
+                      >
+                        <span>🧪 بيانات تجريبية</span>
+                      </button>
                       {currentRole === 'admin' && (
                         <button
                           onClick={() => setShowBulkImportConfirm(true)}
@@ -4245,18 +4347,7 @@ export default function Dashboard() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                          {inventory
-                            .filter(m => {
-                              const q = searchInInventoryQuery.toLowerCase().trim();
-                              if (!q) return true;
-                              return (
-                                m.nameAr.toLowerCase().includes(q) ||
-                                m.nameEn.toLowerCase().includes(q) ||
-                                m.scientificName.toLowerCase().includes(q) ||
-                                (m.barcode && m.barcode.toLowerCase().includes(q))
-                              );
-                            })
-                            .map((med, idx) => {
+                          {filteredInventory.slice(0, invRenderCap).map((med, idx) => {
                               const expDate = expiryDates[med.id] || '2028-01-01';
                               const daysRemaining = getDaysUntilExpiry(med.id);
                               const isNearExpiry30 = daysRemaining <= 30;
@@ -4418,6 +4509,17 @@ export default function Dashboard() {
                         </tbody>
                       </table>
                     </div>
+                    {filteredInventory.length > invRenderCap && (
+                      <div className="text-center py-4">
+                        <button
+                          type="button"
+                          onClick={() => setInvRenderCap(c => c + 200)}
+                          className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-xs px-5 py-2.5 rounded-xl cursor-pointer transition"
+                        >
+                          عرض المزيد ({filteredInventory.length - invRenderCap} مادة متبقية)
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   </div>
