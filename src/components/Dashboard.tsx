@@ -322,7 +322,6 @@ export default function Dashboard() {
   // رُفع عند فشل تهيئة خدمة المصادقة (مفتاح API غير صالح أو انقطاع الشبكة) — يُظهر شريط تنبيه غير معطِّل
   const [authInitFailed, setAuthInitFailed] = useState(false);
   const [signInError, setSignInError] = useState('');
-  const [devBypass, setDevBypass] = useState(false);
   // حالة المزامنة الحقيقية مع خادم Firestore — مشتقّة من البيانات الوصفية للقطة (metadata)
   // وليست مجرّد "هل يوجد مستخدم". 'synced' = وصلت للخادم، 'pending' = قيد الرفع، 'offline' = محلية فقط.
   const [syncState, setSyncState] = useState<'synced' | 'pending' | 'offline'>('pending');
@@ -2781,7 +2780,7 @@ export default function Dashboard() {
     );
   }
 
-  if (!currentUser && !devBypass) {
+  if (!currentUser) {
     return (
       <div className="bg-gradient-to-br from-emerald-50 via-slate-50 to-teal-50 min-h-screen flex items-center justify-center p-4" dir="rtl">
         <div className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-slate-100 p-8 text-center">
@@ -2814,14 +2813,6 @@ export default function Dashboard() {
             سجّل الدخول بـ <span className="font-bold">نفس حساب Google</span> على كل أجهزة الكاشير. كل الأجهزة التي تستخدم نفس الحساب ترى نفس المخزون والمبيعات لحظياً.
           </div>
 
-          {import.meta.env.DEV && (
-            <button
-              onClick={() => setDevBypass(true)}
-              className="mt-3 w-full px-4 py-2.5 border border-dashed border-slate-300 text-slate-400 hover:text-slate-600 hover:border-slate-400 rounded-xl text-xs font-bold transition cursor-pointer"
-            >
-              متابعة بدون حساب (وضع المعاينة فقط — بيانات مؤقتة)
-            </button>
-          )}
         </div>
       </div>
     );
