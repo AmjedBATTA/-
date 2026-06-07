@@ -699,7 +699,12 @@ export default function Dashboard() {
       if (match) {
         const existsInDraft = purchaseDraft.find(d => d.medicineId === match.id);
         if (existsInDraft) {
-          setPurchaseDraft(prev => prev.map(d => d.medicineId === match.id ? { ...d, qty: d.qty + 10 } : d));
+          // زيادة الكمية ونقل الصنف إلى أعلى القائمة
+          setPurchaseDraft(prev => {
+            const target = prev.find(d => d.medicineId === match.id);
+            const rest = prev.filter(d => d.medicineId !== match.id);
+            return [{ ...target, qty: target.qty + 10 }, ...rest];
+          });
         } else {
           const freshDraft = {
             id: 'draft-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
@@ -707,15 +712,16 @@ export default function Dashboard() {
             nameAr: match.nameAr,
             nameEn: match.nameEn,
             scientificName: match.scientificName,
-            price: Math.floor(match.price * 0.72) || 3000,
+            // سعر جملة يعتمد على آخر سعر شراء فعلي إن وُجد
+            price: Number(match.lastCostPrice) || Number(match.costPrice) || Math.floor(match.price * 0.72) || 3000,
             retailPrice: match.price || 0,
             officialPrice: match.secondaryPrice || (match.price ? match.price + 500 : 0),
-            qty: 50,
+            qty: 1,
             expiryDate: expiryDates[match.id] || '2028-06-01',
             barcode: code,
             warehouse: purchaseSupplier || match.warehouse || '',
           };
-          setPurchaseDraft(prev => [...prev, freshDraft]);
+          setPurchaseDraft(prev => [freshDraft, ...prev]);
         }
       } else {
         setPurchaseNewProdBarcode(code);
@@ -2467,7 +2473,12 @@ export default function Dashboard() {
   const addToPurchaseDraft = (med: any, overrideQty?: number) => {
     const exists = purchaseDraft.find(d => d.medicineId === med.id);
     if (exists) {
-      setPurchaseDraft(prev => prev.map(d => d.medicineId === med.id ? { ...d, qty: d.qty + (overrideQty ?? 10) } : d));
+      // زيادة الكمية ونقل الصنف إلى أعلى القائمة
+      setPurchaseDraft(prev => {
+        const target = prev.find(d => d.medicineId === med.id);
+        const rest = prev.filter(d => d.medicineId !== med.id);
+        return [{ ...target, qty: target.qty + (overrideQty ?? 10) }, ...rest];
+      });
     } else {
       const newItem = {
         id: 'draft-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
@@ -2475,15 +2486,16 @@ export default function Dashboard() {
         nameAr: med.nameAr,
         nameEn: med.nameEn,
         scientificName: med.scientificName || 'N/A',
-        price: Math.floor(med.price * 0.72) || 3000, // Wholesale discount!
+        // سعر جملة يعتمد على آخر سعر شراء فعلي إن وُجد، وإلا التكلفة المتوسطة، وإلا تقدير 72%
+        price: Number(med.lastCostPrice) || Number(med.costPrice) || Math.floor(med.price * 0.72) || 3000,
         retailPrice: med.price || 0,
         officialPrice: med.secondaryPrice || (med.price ? med.price + 500 : 0),
-        qty: overrideQty ?? 50,
+        qty: overrideQty ?? 1,
         expiryDate: expiryDates[med.id] || '2028-12-01',
         barcode: med.barcode || '62811' + Math.floor(Math.random() * 900000 + 100000),
         warehouse: purchaseSupplier || med.warehouse || '',
       };
-      setPurchaseDraft(prev => [...prev, newItem]);
+      setPurchaseDraft(prev => [newItem, ...prev]);
     }
   };
 
@@ -4792,7 +4804,7 @@ export default function Dashboard() {
                                     barcode: purchaseNewProdBarcode || '628' + Math.floor(Math.random() * 90000000 + 10000000),
                                     warehouse: purchaseSupplier || '',
                                   };
-                                  setPurchaseDraft(prev => [...prev, customItem]);
+                                  setPurchaseDraft(prev => [customItem, ...prev]);
                                   setPurchaseNewProdAr('');
                                   setPurchaseNewProdEn('');
                                   setPurchaseNewProdSci('');
