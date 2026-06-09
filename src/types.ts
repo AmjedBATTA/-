@@ -35,6 +35,10 @@ export interface Order {
   totalAmount: number; // IQD
   status: 'pending' | 'preparing' | 'on_way' | 'delivered' | 'cancelled';
   items: { medicineName: string; quantity: number; price: number }[];
+  // لقطة كاملة من بنود مسودة الشراء — تتيح إعادة فتح الطلبية للتعديل بأمانة تامة
+  draftSnapshot?: any[];
+  onCredit?: boolean;            // هل اعتُمدت كشراء آجل (ذمّة) أم نقدي
+  creditSupplierName?: string;   // اسم مورد الآجل (عند onCredit)
 }
 
 export interface Supplier {

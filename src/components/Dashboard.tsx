@@ -322,6 +322,8 @@ export default function Dashboard() {
   // رُفع عند فشل تهيئة خدمة المصادقة (مفتاح API غير صالح أو انقطاع الشبكة) — يُظهر شريط تنبيه غير معطِّل
   const [authInitFailed, setAuthInitFailed] = useState(false);
   const [signInError, setSignInError] = useState('');
+  // تجاوز الدخول مؤقتاً — وضع محلي بلا مزامنة سحابية (للتجربة/المعاينة فقط)
+  const [bypassLogin, setBypassLogin] = useState(false);
   // حالة المزامنة الحقيقية مع خادم Firestore — مشتقّة من البيانات الوصفية للقطة (metadata)
   // وليست مجرّد "هل يوجد مستخدم". 'synced' = وصلت للخادم، 'pending' = قيد الرفع، 'offline' = محلية فقط.
   const [syncState, setSyncState] = useState<'synced' | 'pending' | 'offline'>('pending');
@@ -2469,6 +2471,14 @@ export default function Dashboard() {
     }
   };
 
+  // تطبيق مورّد موحّد على كل أصناف مسودة الشراء (مصدره صندوق الملخص بدل عمود الجدول)
+  const applyDraftSupplier = (val: string) => {
+    setPurchaseSupplier(val);
+    setCreditSupplierName(val);
+    setPurchaseDraft(prev => prev.map(d => ({ ...d, warehouse: val })));
+    if (val) setInventory(prev => prev.map(m => purchaseDraft.some(d => d.medicineId === m.id) ? { ...m, warehouse: val } : m));
+  };
+
   // --- PURCHASE ORDERS (طلبيات الشراء) BUSINESS LOGIC ---
   const addToPurchaseDraft = (med: any, overrideQty?: number) => {
     const exists = purchaseDraft.find(d => d.medicineId === med.id);
@@ -2516,7 +2526,11 @@ export default function Dashboard() {
         medicineName: `${item.nameAr} (${item.nameEn})`,
         quantity: item.qty,
         price: item.price
-      }))
+      })),
+      // لقطة كاملة من المسودة (خالية من undefined عبر JSON) لإعادة الفتح والتعديل لاحقاً
+      draftSnapshot: JSON.parse(JSON.stringify(purchaseDraft)),
+      onCredit: purchaseOnCredit,
+      creditSupplierName: purchaseOnCredit ? (creditSupplierName.trim() || 'المذخر') : '',
     };
 
     let updatedInventory = [...inventory];
@@ -2662,6 +2676,144 @@ export default function Dashboard() {
     }, 6000);
   };
 
+  // إعادة فتح طلبية شراء سابقة للتعديل: نعكس أثرها (المخزون + النقد/الذمّة + قيد التدقيق)
+  // ثم نعيد بنودها إلى المسودة ليعدّلها المستخدم ويعتمدها من جديد بنفس منطق الاعتماد المُجرَّب.
+  const reopenPurchaseOrderForEdit = (orderId: string) => {
+    const order = b2bOrders.find(o => o.id === orderId);
+    if (!order) return;
+
+    if (purchaseDraft.length > 0) {
+      const ok = window.confirm('لديك مسودة شراء غير معتمدة حالياً. ستُستبدل ببنود هذه الطلبية. هل تريد المتابعة؟');
+      if (!ok) return;
+    }
+
+    const hasSnapshot = Array.isArray(order.draftSnapshot) && order.draftSnapshot.length > 0;
+    const stamp = Date.now();
+
+    // يستعيد معرّف الدواء في المخزون؛ للمواد الجديدة (medicineId=null) نطابق بالاسم
+    // حتى لا تتكرر عند إعادة الاعتماد وحتى يُعكس أثرها على المخزون بدقة.
+    const resolveMedId = (d: any): string | null => {
+      if (d.medicineId) return d.medicineId;
+      const na = (d.nameAr || '').trim().toLowerCase();
+      const ne = (d.nameEn || '').trim().toLowerCase();
+      const med = inventory.find(m =>
+        (na && (m.nameAr || '').trim().toLowerCase() === na) ||
+        (ne && (m.nameEn || '').trim().toLowerCase() === ne)
+      );
+      return med?.id ?? null;
+    };
+
+    // بناء بنود المسودة لإعادة تحميلها (بمعرّفات جديدة لتفادي تكرار المفاتيح)
+    let reloadItems: any[];
+    if (hasSnapshot) {
+      reloadItems = order.draftSnapshot!.map((d: any, i: number) => ({
+        ...d,
+        id: `draft-reopen-${stamp}-${i}`,
+        medicineId: resolveMedId(d),
+      }));
+    } else {
+      // طلبيات قديمة بلا لقطة: نعيد البناء بأفضل تطابق بالاسم من المخزون
+      reloadItems = order.items.map((it, i) => {
+        const name = it.medicineName.toLowerCase();
+        const med = inventory.find(m =>
+          name.includes((m.nameAr || '').toLowerCase()) || name.includes((m.nameEn || '').toLowerCase())
+        );
+        return {
+          id: `draft-reopen-${stamp}-${i}`,
+          medicineId: med?.id ?? null,
+          nameAr: med?.nameAr ?? it.medicineName,
+          nameEn: med?.nameEn ?? '',
+          scientificName: med?.scientificName ?? 'N/A',
+          price: Number(it.price) || 0,
+          retailPrice: med?.price ?? 0,
+          officialPrice: med?.secondaryPrice ?? 0,
+          qty: Number(it.quantity) || 1,
+          expiryDate: med ? (expiryDates[med.id] ?? '') : '',
+          barcode: med?.barcode ?? '',
+          warehouse: med?.warehouse ?? '',
+        };
+      });
+    }
+
+    // 1) عكس أثر المخزون: خصم الكميات التي أضافتها الطلبية الأصلية
+    const reverseQtys: { medicineId: string | null; qty: number }[] = hasSnapshot
+      ? order.draftSnapshot!.map((d: any) => ({ medicineId: resolveMedId(d), qty: Number(d.qty) || 0 }))
+      : order.items.map(it => {
+          const name = it.medicineName.toLowerCase();
+          const med = inventory.find(m =>
+            name.includes((m.nameAr || '').toLowerCase()) || name.includes((m.nameEn || '').toLowerCase())
+          );
+          return { medicineId: med?.id ?? null, qty: Number(it.quantity) || 0 };
+        });
+
+    const changedMedIds = new Set<string>();
+    let revertedInventory = [...inventory];
+    reverseQtys.forEach(rq => {
+      if (rq.medicineId) {
+        revertedInventory = revertedInventory.map(m =>
+          m.id === rq.medicineId
+            ? { ...m, availableQuantity: Math.max(0, m.availableQuantity - rq.qty) }
+            : m
+        );
+        changedMedIds.add(rq.medicineId);
+      }
+    });
+    setInventory(revertedInventory);
+
+    // 2) عكس الأثر المالي: استرجاع النقد أو حذف الذمّة المرتبطة
+    let payableToDelete: Payable | undefined;
+    if (order.onCredit) {
+      payableToDelete = payables.find(p => p.relatedOrderId === orderId);
+      setPayables(prev => prev.filter(p => p.relatedOrderId !== orderId));
+    } else {
+      setWalletBalance(prev => prev + (order.totalAmount || 0));
+    }
+
+    // 3) قيد تدقيق عاكس (مبلغ سالب) ليبقى صافي المشتريات صحيحاً بعد إعادة الاعتماد
+    addAuditEntry({
+      action: 'purchase',
+      amount: -(order.totalAmount || 0),
+      description: `إعادة فتح طلبية الشراء ${orderId} للتعديل — عكس القيد السابق`,
+      relatedId: orderId,
+    });
+
+    // 4) إزالة الطلبية من السجل (الحالة + السحابة)
+    setB2bOrders(prev => prev.filter(o => o.id !== orderId));
+
+    // 5) مزامنة سحابية لما تغيّر
+    if (currentUser) {
+      const userId = currentUser.uid;
+      deleteDoc(doc(db, 'users', userId, 'b2bOrders', orderId))
+        .catch(e => handleFirestoreError(e, OperationType.DELETE, `users/${userId}/b2bOrders/${orderId}`));
+      if (payableToDelete) {
+        deleteDoc(doc(db, 'users', userId, 'payables', payableToDelete.id))
+          .catch(e => handleFirestoreError(e, OperationType.DELETE, `users/${userId}/payables/${payableToDelete!.id}`));
+      }
+      revertedInventory.forEach(med => {
+        if (changedMedIds.has(med.id)) {
+          setDoc(doc(db, 'users', userId, 'inventory', med.id), med)
+            .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/inventory/${med.id}`));
+        }
+      });
+    }
+
+    // 6) تحميل البنود إلى المسودة واستعادة وضع الآجل
+    setPurchaseDraft(reloadItems);
+    setPurchaseOnCredit(!!order.onCredit);
+    if (order.onCredit && order.creditSupplierName) {
+      setCreditSupplierName(order.creditSupplierName);
+    }
+
+    // 7) تنبيه + التمرير لأعلى حيث محرّر المسودة
+    setPurchaseSuccessBanner(
+      `تم فتح الطلبية ${orderId} للتعديل. عدّل البنود ثم اضغط «اعتماد الطلبية» من جديد. (تم عكس أثرها السابق على المخزون والحسابات تلقائياً)`
+    );
+    setTimeout(() => setPurchaseSuccessBanner(null), 8000);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
   // Action to instantly trigger delivery arrived
   const triggerInstantDeliveryArrived = (orderId: string) => {
     const o = b2bOrders.find(order => order.id === orderId);
@@ -2792,7 +2944,7 @@ export default function Dashboard() {
     );
   }
 
-  if (!currentUser) {
+  if (!currentUser && !bypassLogin) {
     return (
       <div className="bg-gradient-to-br from-emerald-50 via-slate-50 to-teal-50 min-h-screen flex items-center justify-center p-4" dir="rtl">
         <div className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-slate-100 p-8 text-center">
@@ -2818,6 +2970,13 @@ export default function Dashboard() {
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24"><path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/><path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
             <span>تسجيل الدخول عبر Google</span>
+          </button>
+
+          <button
+            onClick={() => setBypassLogin(true)}
+            className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition cursor-pointer border border-slate-200"
+          >
+            <span>تجاوز الدخول مؤقتاً (وضع محلي بلا مزامنة)</span>
           </button>
 
           <div className="mt-5 text-[11px] leading-relaxed text-slate-500 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5">
@@ -2854,6 +3013,19 @@ export default function Dashboard() {
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
             </svg>
+          </button>
+        </div>
+      )}
+
+      {/* شريط وضع تجاوز الدخول — بيانات محلية فقط بلا مزامنة سحابية */}
+      {bypassLogin && !currentUser && (
+        <div role="alert" className="flex items-center justify-between gap-3 bg-slate-100 border-b border-slate-300 px-4 py-2 text-xs text-slate-700" dir="rtl">
+          <span className="font-bold">وضع تجاوز الدخول مؤقت — البيانات محلية فقط على هذا الجهاز ولن تتزامن سحابياً.</span>
+          <button
+            onClick={() => setBypassLogin(false)}
+            className="flex-shrink-0 rounded-lg px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition cursor-pointer border-none"
+          >
+            العودة لتسجيل الدخول
           </button>
         </div>
       )}
@@ -4577,8 +4749,8 @@ export default function Dashboard() {
 
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                     
-                    {/* RIGHT PANEL - QUICK ADDERS (4 Cols) */}
-                    <div className="lg:col-span-4 space-y-6">
+                    {/* TOP PANEL - QUICK ADDERS (صف أفقي بعرض كامل) */}
+                    <div className="lg:col-span-12 grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
 
                       {/* Import from Image Button */}
                       <button
@@ -4824,8 +4996,8 @@ export default function Dashboard() {
 
                     </div>
 
-                    {/* LEFT PANEL - DIVERSIFIED DAILY PURCHASE SHEET (8 Cols) */}
-                    <div className="lg:col-span-8 space-y-6">
+                    {/* MAIN PANEL - DIVERSIFIED DAILY PURCHASE SHEET (بعرض كامل) */}
+                    <div className="lg:col-span-12 space-y-6">
                       
                       {/* Interactive Draft Sheet */}
                       <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm space-y-5">
@@ -4873,7 +5045,6 @@ export default function Dashboard() {
                                     <th className="py-2.5 px-3 text-center text-blue-700">سعر البيع للجمهور (د.ع)</th>
                                     <th className="py-2.5 px-3 text-center text-violet-700">سعر البيع الرسمي (د.ع)</th>
                                     <th className="py-2.5 px-3 text-center">انتهاء الصلاحية</th>
-                                    <th className="py-2.5 px-3 text-center text-indigo-700">المورد</th>
                                     <th className="py-2.5 px-3 text-center">الإجمالي الفرعي</th>
                                     <th className="py-2.5 px-3 text-center rounded-l-xl">تنظيف</th>
                                   </tr>
@@ -5009,29 +5180,6 @@ export default function Dashboard() {
                                           />
                                         </td>
 
-                                        {/* Supplier — يُطبَّق على كل أصناف المسودة ويصبح المورّد الافتراضي للأصناف القادمة */}
-                                        <td className="py-3.5 px-3 text-center">
-                                          <select
-                                            value={item.warehouse || purchaseSupplier || ''}
-                                            onChange={(e) => {
-                                              const val = e.target.value;
-                                              // اعتماده مورّداً نشطاً للمسودة وتطبيقه على جميع الأصناف الحالية
-                                              setPurchaseSupplier(val);
-                                              setPurchaseDraft(prev => prev.map(d => ({ ...d, warehouse: val })));
-                                              if (val) setInventory(prev => prev.map(m => purchaseDraft.some(d => d.medicineId === m.id) ? { ...m, warehouse: val } : m));
-                                            }}
-                                            className="bg-indigo-50 border border-indigo-100 rounded-lg p-1.5 text-[10px] font-bold text-indigo-800 cursor-pointer focus:outline-indigo-400 max-w-[130px]"
-                                          >
-                                            <option value="">— اختر —</option>
-                                            {suppliers.map(s => (
-                                              <option key={s.id} value={s.name}>{s.name}</option>
-                                            ))}
-                                            {item.warehouse && !suppliers.find(s => s.name === item.warehouse) && (
-                                              <option value={item.warehouse}>{item.warehouse}</option>
-                                            )}
-                                          </select>
-                                        </td>
-
                                         {/* Row Subtotal */}
                                         <td className="py-3.5 px-3 text-center font-mono font-bold text-slate-700">
                                           <span>{subTotal.toLocaleString()} د.ع</span>
@@ -5071,8 +5219,30 @@ export default function Dashboard() {
                                   <p>سعر توريد الجملة النهائي خاضع لحسابات الصيدلية و يحدّث أرصدة دواء صيدلية انوار الحسن مع تطبيق الأرباح تلقائياً عند التأكيد.</p>
                                 </div>
 
-                                {/* شراء بالآجل: تسجيل الفاتورة كذمّة على المذخر بدل خصمها نقداً */}
                                 <div className="pt-1 space-y-2">
+                                  {/* المورّد الموحّد — يُطبَّق على كل أصناف المسودة (نُقل من عمود الجدول) */}
+                                  <div className="space-y-1">
+                                    <label className="block text-slate-500 text-[10px] font-bold">المورّد (يُطبَّق على كل الأصناف)</label>
+                                    <select
+                                      value={suppliers.find(s => s.name === purchaseSupplier) ? purchaseSupplier : ''}
+                                      onChange={(e) => applyDraftSupplier(e.target.value)}
+                                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold text-slate-700 cursor-pointer"
+                                    >
+                                      <option value="">— اختر المورد —</option>
+                                      {suppliers.map(s => (
+                                        <option key={s.id} value={s.name}>{s.name}</option>
+                                      ))}
+                                    </select>
+                                    <input
+                                      type="text"
+                                      value={purchaseSupplier}
+                                      onChange={(e) => applyDraftSupplier(e.target.value)}
+                                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold text-slate-700"
+                                      placeholder="أو اكتب اسم المورد يدوياً..."
+                                    />
+                                  </div>
+
+                                  {/* شراء بالآجل: تسجيل الفاتورة كذمّة على المذخر بدل خصمها نقداً */}
                                   <label className="flex items-center gap-2 cursor-pointer select-none">
                                     <input
                                       type="checkbox"
@@ -5083,29 +5253,7 @@ export default function Dashboard() {
                                     <span className="text-[11px] font-black text-rose-700">شراء بالآجل (على حساب المذخر)</span>
                                   </label>
                                   {purchaseOnCredit && (
-                                    <div className="space-y-1">
-                                      <label className="block text-slate-500 text-[10px] font-bold">المورّد</label>
-                                      <select
-                                        value={creditSupplierName}
-                                        onChange={(e) => setCreditSupplierName(e.target.value)}
-                                        className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold text-slate-700 cursor-pointer"
-                                      >
-                                        <option value="">— اختر المورد —</option>
-                                        {suppliers.map(s => (
-                                          <option key={s.id} value={s.name}>{s.name}</option>
-                                        ))}
-                                        <option value="__manual__">إدخال يدوي...</option>
-                                      </select>
-                                      {creditSupplierName === '__manual__' && (
-                                        <input
-                                          type="text"
-                                          onChange={(e) => setCreditSupplierName(e.target.value)}
-                                          className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold text-slate-700 mt-1"
-                                          placeholder="اسم المورد..."
-                                        />
-                                      )}
-                                      <p className="text-[9px] text-rose-500 font-bold leading-normal">* لن تُخصم القيمة من الصندوق، وستُسجَّل كذمّة مستحقة في دفتر ديون الموردين.</p>
-                                    </div>
+                                    <p className="text-[9px] text-rose-500 font-bold leading-normal">* لن تُخصم القيمة من الصندوق، وستُسجَّل كذمّة مستحقة في دفتر ديون الموردين باسم المورّد المحدّد أعلاه.</p>
                                   )}
                                 </div>
                               </div>
@@ -5186,9 +5334,25 @@ export default function Dashboard() {
 
                           return (
                           <div className="space-y-3.5">
-                            {filtered.map((order) => (
+                            {filtered.map((order) => {
+                              // اسم المورد: مورد الآجل أولاً، ثم المورّد المحفوظ ضمن بنود اللقطة، ثم اسم المخزن
+                              const supplierLabel =
+                                (order.onCredit && order.creditSupplierName && order.creditSupplierName.trim())
+                                  ? order.creditSupplierName.trim()
+                                  : (Array.isArray(order.draftSnapshot)
+                                      ? (order.draftSnapshot.find((d: any) => d.warehouse && String(d.warehouse).trim())?.warehouse || '')
+                                      : '')
+                                    || (order.warehouseName && order.warehouseName.trim())
+                                    || 'مورد غير محدد';
+                              return (
                               <div key={order.id} className="bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs transition">
                                 <div className="space-y-1 text-right">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="flex items-center gap-1.5 bg-indigo-50 text-indigo-800 border border-indigo-150 px-2.5 py-1 rounded-lg font-extrabold text-[11px]">
+                                      <Truck className="w-3.5 h-3.5 text-indigo-600" />
+                                      <span>المورد: {supplierLabel}</span>
+                                    </span>
+                                  </div>
                                   <div className="flex items-center gap-2">
                                     <strong className="text-slate-900 font-mono font-bold">{order.id}</strong>
                                     <span className="text-[8px] bg-slate-200 text-slate-600 px-2.5 py-0.2 rounded font-sans font-bold">
@@ -5214,13 +5378,25 @@ export default function Dashboard() {
                                       {order.totalAmount.toLocaleString()} د.ع
                                     </strong>
                                   </div>
-                                  
-                                  <span className="px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-150 rounded-xl font-extrabold text-[10px]">
-                                    تم استيرادها بالكامل ✅
-                                  </span>
+
+                                  <div className="flex flex-col items-stretch gap-1.5">
+                                    <span className="px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-150 rounded-xl font-extrabold text-[10px] text-center">
+                                      تم استيرادها بالكامل ✅
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => reopenPurchaseOrderForEdit(order.id)}
+                                      title="إعادة فتح الطلبية للتعديل — يُعكس أثرها على المخزون والحسابات وتعود بنودها إلى المسودة"
+                                      className="px-3 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl font-extrabold text-[10px] flex items-center justify-center gap-1 transition cursor-pointer"
+                                    >
+                                      <Pencil className="w-3 h-3" />
+                                      <span>تعديل القائمة</span>
+                                    </button>
+                                  </div>
                                 </div>
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
                           );
                         })()}
