@@ -46,6 +46,25 @@ export default defineConfig(() => {
         },
       }),
     ],
+    build: {
+      // رفع حد التحذير بعد تقسيم الحزم إلى chunks مستقلة
+      chunkSizeWarningLimit: 900,
+      rollupOptions: {
+        output: {
+          // تقسيم مكتبات الطرف الثالث الثقيلة إلى chunks منفصلة قابلة للتخزين المؤقت
+          // (تُحمَّل بالتوازي وتبقى في الكاش عند تحديث كود التطبيق)
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined;
+            if (id.includes('/firebase/') || id.includes('@firebase')) return 'firebase-vendor';
+            if (id.includes('/@google/genai')) return 'genai-vendor';
+            if (id.includes('/motion') || id.includes('framer-motion')) return 'motion-vendor';
+            if (id.includes('/lucide-react/')) return 'icons-vendor';
+            if (id.includes('/react-dom/') || id.includes('/react/') || id.includes('/scheduler/')) return 'react-vendor';
+            return 'vendor';
+          },
+        },
+      },
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

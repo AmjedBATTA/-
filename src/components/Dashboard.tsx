@@ -1,14 +1,15 @@
-﻿import React, { useState, FormEvent, useEffect, useRef, useMemo, useCallback, useDeferredValue, forwardRef, useImperativeHandle } from 'react';
+﻿import React, { useState, FormEvent, useEffect, useRef, useMemo, useCallback, useDeferredValue, forwardRef, useImperativeHandle, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ShoppingBag, Wallet, Info, CheckCircle2, AlertCircle, Clock, 
   Truck, HelpCircle, PlusCircle, Search, Trash2, ArrowLeft, 
   MapPin, UserCheck, ShieldCheck, Users, Sparkles, Plus, Check,
   TrendingUp, FileText, Ban, DollarSign, Calendar, RefreshCw, BarChart3, Pill, ClipboardList, ShieldAlert, Heart,
-  Barcode, X, Volume2, VolumeX, Camera, Download, Bell, Pencil, ScanLine, ChevronDown, CalendarClock
+  Barcode, X, Volume2, VolumeX, Camera, Download, Upload, Bell, Pencil, ScanLine, ChevronDown, CalendarClock
 } from 'lucide-react';
 import { Medicine, Order, Supplier } from '../types';
-import InvoiceImportModal from './InvoiceImportModal';
+// تحميل كسول: نافذة استيراد الفاتورة + مكتبة @google/genai (~305kB) لا تُحمَّل إلا عند فتحها
+const InvoiceImportModal = lazy(() => import('./InvoiceImportModal'));
 
 // Firebase Authentication & Remote Firestore Synchronizer hooks
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
@@ -180,6 +181,51 @@ const POSSearchBar = forwardRef<POSSearchHandle, POSSearchBarProps>(
           <Barcode className="w-3.5 h-3.5" />
           <span className="hidden md:inline">قارئ باركود</span>
         </button>
+      </div>
+    );
+  }
+);
+
+// =========================================================
+// INVENTORY SEARCH BAR — معزول بنفس نمط POSSearchBar
+// السبب: كتابة البحث في المخزون كانت تُعيد تصيير كامل شجرة Dashboard
+// (7500 سطر) مع كل ضغطة. بعزله محلياً + debounce، لا يتأثر الأب إلا
+// بالقيمة المُلتزَمة كل 150ms فقط.
+// =========================================================
+interface InventorySearchBarProps {
+  onQueryChange: (q: string) => void;
+}
+const InventorySearchBar = forwardRef<POSSearchHandle, InventorySearchBarProps>(
+  ({ onQueryChange }, ref) => {
+    const [input, setInput] = useState('');
+    useEffect(() => {
+      const t = setTimeout(() => onQueryChange(input), 150);
+      return () => clearTimeout(t);
+    }, [input, onQueryChange]);
+    useImperativeHandle(ref, () => ({
+      setValue: (v: string) => { setInput(v); onQueryChange(v); },
+    }), [onQueryChange]);
+    return (
+      <div className="relative flex-1 min-w-[180px]">
+        <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onFocus={() => { setInput(''); onQueryChange(''); }}
+          className="w-full bg-white border border-slate-200 rounded-xl pr-9 pl-8 py-2 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-emerald-500 font-medium"
+          placeholder="بحث بالاسم أو الباركود أو الفئة..."
+        />
+        {input && (
+          <button
+            type="button"
+            onClick={() => { setInput(''); onQueryChange(''); }}
+            className="absolute left-2.5 top-2 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+            title="مسح البحث"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
       </div>
     );
   }
@@ -467,6 +513,9 @@ export default function Dashboard() {
   // --- DYNAMIC INVENTORY ACTIONS ---
   const [searchInInventoryQuery, setSearchInInventoryQuery] = useState('');
   const deferredInvQuery = useDeferredValue(searchInInventoryQuery);
+  // مرجع لـ InventorySearchBar حتى يدفع قارئ الباركود وزر المسح القيمة إلى الحقل المعزول
+  const invSearchRef = useRef<POSSearchHandle>(null);
+  const handleInvQueryChange = useCallback((q: string) => setSearchInInventoryQuery(q), []);
   const [invRenderCap, setInvRenderCap] = useState(200);
 
   // --- STOCK MOVEMENT VIEWER (حركة المادة: الوارد والصادر) ---
@@ -683,7 +732,7 @@ export default function Dashboard() {
     if (scanTarget === 'pos') {
       posSearchRef.current?.setValue(code); setSearchPOSQuery(code);
     } else if (scanTarget === 'inventory') {
-      setSearchInInventoryQuery(code);
+      invSearchRef.current?.setValue(code); setSearchInInventoryQuery(code);
     } else if (scanTarget === 'add-drug') {
       setNewDrugBarcode(code);
     } else if (scanTarget === 'movement') {
@@ -799,12 +848,12 @@ export default function Dashboard() {
 
   const getDaysUntilExpiry = useCallback((id: string) => expiryDaysMap[id] ?? 9999, [expiryDaysMap]);
 
-  const getNearExpiryMeds = () => {
-    return inventory.filter(m => {
-      const days = getDaysUntilExpiry(m.id);
-      return days <= 30;
-    });
-  };
+  // مذكّر: تُحسب مرة واحدة عند تغيّر المخزون/الصلاحيات بدل كل رندر
+  const nearExpiryMeds = useMemo(
+    () => inventory.filter(m => (expiryDaysMap[m.id] ?? 9999) <= 30),
+    [inventory, expiryDaysMap]
+  );
+  const getNearExpiryMeds = useCallback(() => nearExpiryMeds, [nearExpiryMeds]);
 
   // --- لوحة الصلاحيات الموسّعة (6 أشهر) ---
   const EXPIRY_HORIZON_DAYS = 180; // أفق المراقبة: 6 أشهر
@@ -818,19 +867,17 @@ export default function Dashboard() {
   };
 
   // كل الأدوية التي لها تاريخ صلاحية ضمن أفق 6 أشهر (يشمل المنتهية)، مرتّبة بالأولوية: الأقرب انتهاءً أولاً
-  const getHorizonExpiryMeds = () => {
-    return inventory
-      .filter(m => {
-        if (!expiryDates[m.id]) return false;
-        const days = getDaysUntilExpiry(m.id);
-        return days <= EXPIRY_HORIZON_DAYS;
-      })
-      .sort((a, b) => getDaysUntilExpiry(a.id) - getDaysUntilExpiry(b.id));
-  };
+  const horizonExpiryMeds = useMemo(
+    () => inventory
+      .filter(m => expiryDates[m.id] && (expiryDaysMap[m.id] ?? 9999) <= EXPIRY_HORIZON_DAYS)
+      .sort((a, b) => (expiryDaysMap[a.id] ?? 9999) - (expiryDaysMap[b.id] ?? 9999)),
+    [inventory, expiryDates, expiryDaysMap]
+  );
+  const getHorizonExpiryMeds = useCallback(() => horizonExpiryMeds, [horizonExpiryMeds]);
 
   // قائمة الأشهر الستة القادمة (تبدأ من الشهر الحالي) مع عدد المستحضرات المنتهية في كل شهر
-  const getExpiryMonths = () => {
-    const meds = getHorizonExpiryMeds();
+  const expiryMonths = useMemo(() => {
+    const meds = horizonExpiryMeds;
     const now = new Date();
     const months: { key: string; label: string; count: number }[] = [];
     const arMonths = ['كانون الثاني', 'شباط', 'آذار', 'نيسان', 'أيار', 'حزيران', 'تموز', 'آب', 'أيلول', 'تشرين الأول', 'تشرين الثاني', 'كانون الأول'];
@@ -841,7 +888,8 @@ export default function Dashboard() {
       months.push({ key, label: `${arMonths[d.getMonth()]} ${d.getFullYear()}`, count });
     }
     return months;
-  };
+  }, [horizonExpiryMeds, expiryDates]);
+  const getExpiryMonths = useCallback(() => expiryMonths, [expiryMonths]);
 
   // فتح محرّر الكمية المباشر لصف في جدول المخزون
   const startEditingQty = (med: Medicine) => {
@@ -1412,6 +1460,116 @@ export default function Dashboard() {
       setDoc(doc(db, 'users', userId, 'auditLog', full.id), { ...full, userId })
         .catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${userId}/auditLog/${full.id}`));
     }
+  };
+
+  // =========================================================
+  // النسخ الاحتياطي التلقائي على اللابتوب (يعمل بلا إنترنت)
+  // (1) حفظ صامت في متصفح اللابتوب عند كل تغيير (مؤجَّل)
+  // (2) تنزيل ملف كامل تلقائياً مرة واحدة يومياً
+  // (3) استعادة من نسخة المتصفح أو من ملف
+  // =========================================================
+  const BACKUP_KEY = 'anwar_autobackup_latest';
+  const BACKUP_DAILY_KEY = 'anwar_lastDailyBackup';
+  const restoreFileRef = useRef<HTMLInputElement>(null);
+  const [lastAutoBackupAt, setLastAutoBackupAt] = useState<string | null>(() => {
+    try { const raw = localStorage.getItem(BACKUP_KEY); return raw ? (JSON.parse(raw).exportedAt ?? null) : null; } catch { return null; }
+  });
+
+  const buildBackupSnapshot = useCallback(() => ({
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    inventory, salesLedger, expenses, payables, receivables,
+    salesReturns, b2bOrders, walletBalance, suppliers, auditLog, expiryDates,
+  }), [inventory, salesLedger, expenses, payables, receivables, salesReturns, b2bOrders, walletBalance, suppliers, auditLog, expiryDates]);
+
+  // مرجع دائم لأحدث لقطة (لتفادي الإغلاق القديم داخل المؤقّتات)
+  const snapshotRef = useRef(buildBackupSnapshot);
+  useEffect(() => { snapshotRef.current = buildBackupSnapshot; }, [buildBackupSnapshot]);
+
+  const downloadBackupFile = (snap: any) => {
+    const blob = new Blob([JSON.stringify(snap, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `anwar-backup-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // (1) حفظ صامت في المتصفح — يُؤجَّل 4 ثوانٍ بعد آخر تغيير
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        const snap = buildBackupSnapshot();
+        const hasData = snap.inventory.length || snap.salesLedger.length || snap.b2bOrders.length || snap.expenses.length;
+        if (!hasData) return; // لا نطمس نسخة فيها بيانات بنسخة فارغة عند أول تشغيل
+        localStorage.setItem(BACKUP_KEY, JSON.stringify(snap));
+        setLastAutoBackupAt(snap.exportedAt);
+      } catch (e) {
+        console.warn('[نسخ احتياطي] تعذّر الحفظ المحلي (قد تكون مساحة المتصفح ممتلئة):', e);
+      }
+    }, 4000);
+    return () => clearTimeout(t);
+  }, [buildBackupSnapshot]);
+
+  // (2) تنزيل ملف يومي تلقائي — مرة واحدة في اليوم بعد اكتمال تحميل البيانات
+  useEffect(() => {
+    let last: string | null = null;
+    try { last = localStorage.getItem(BACKUP_DAILY_KEY); } catch {}
+    const today = new Date().toISOString().split('T')[0];
+    if (last === today) return;
+    const t = setTimeout(() => {
+      try {
+        const snap = snapshotRef.current();
+        const hasData = snap.inventory.length || snap.salesLedger.length || snap.b2bOrders.length;
+        if (!hasData) return;
+        downloadBackupFile(snap);
+        localStorage.setItem(BACKUP_DAILY_KEY, today);
+      } catch (e) { console.warn('[نسخ احتياطي يومي] فشل:', e); }
+    }, 10000); // 10 ثوانٍ بعد الإقلاع حتى تكتمل المزامنة
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // (3) الاستعادة — تُطبّق اللقطة على الحالة المحلية
+  const applyRestoredSnapshot = (snap: any): boolean => {
+    if (!snap || typeof snap !== 'object') { window.alert('ملف النسخة غير صالح.'); return false; }
+    if (Array.isArray(snap.inventory)) setInventory(snap.inventory);
+    if (Array.isArray(snap.salesLedger)) setSalesLedger(snap.salesLedger);
+    if (Array.isArray(snap.expenses)) setExpenses(snap.expenses);
+    if (Array.isArray(snap.payables)) setPayables(snap.payables);
+    if (Array.isArray(snap.receivables)) setReceivables(snap.receivables);
+    if (Array.isArray(snap.salesReturns)) setSalesReturns(snap.salesReturns);
+    if (Array.isArray(snap.b2bOrders)) setB2bOrders(snap.b2bOrders);
+    if (typeof snap.walletBalance === 'number') setWalletBalance(snap.walletBalance);
+    if (Array.isArray(snap.suppliers)) setSuppliers(snap.suppliers);
+    if (Array.isArray(snap.auditLog)) setAuditLog(snap.auditLog);
+    if (snap.expiryDates && typeof snap.expiryDates === 'object') setExpiryDates(snap.expiryDates);
+    return true;
+  };
+
+  const restoreFromBrowserBackup = () => {
+    let raw: string | null = null;
+    try { raw = localStorage.getItem(BACKUP_KEY); } catch {}
+    if (!raw) { window.alert('لا توجد نسخة احتياطية محلية محفوظة بعد.'); return; }
+    try {
+      const snap = JSON.parse(raw);
+      const when = snap.exportedAt ? new Date(snap.exportedAt).toLocaleString('ar') : 'غير معروف';
+      if (!window.confirm(`استعادة النسخة المحفوظة (${when})؟\nستُستبدل البيانات الحالية على هذا الجهاز.`)) return;
+      if (applyRestoredSnapshot(snap)) window.alert('تمت الاستعادة من نسخة المتصفح بنجاح ✅');
+    } catch (e) { window.alert('تعذّرت الاستعادة: ' + (e as Error).message); }
+  };
+
+  const handleRestoreFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const snap = JSON.parse(String(reader.result));
+        if (!window.confirm('استعادة من هذا الملف؟ ستُستبدل البيانات الحالية على هذا الجهاز.')) return;
+        if (applyRestoredSnapshot(snap)) window.alert('تمت الاستعادة من الملف بنجاح ✅');
+      } catch (e) { window.alert('ملف غير صالح: ' + (e as Error).message); }
+    };
+    reader.readAsText(file);
   };
 
   // --- PROCESS SALES RETURN (تسجيل مرتجع مبيعات وعكس تأثيره على المخزون والسيولة) ---
@@ -4451,31 +4609,11 @@ export default function Dashboard() {
                   <div className="space-y-3">
                     {/* شريط تحكم موحّد: بحث + فلتر الفئة + أزرار الإجراءات */}
                     <div className="bg-slate-50/70 border border-slate-150 rounded-2xl p-3 flex flex-wrap items-center gap-2">
-                      <div className="relative flex-1 min-w-[180px]">
-                        <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
-                        <input
-                          type="text"
-                          value={searchInInventoryQuery}
-                          onChange={(e) => setSearchInInventoryQuery(e.target.value)}
-                          onFocus={() => setSearchInInventoryQuery('')}
-                          className="w-full bg-white border border-slate-200 rounded-xl pr-9 pl-8 py-2 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-emerald-500 font-medium"
-                          placeholder="بحث بالاسم أو الباركود أو الفئة..."
-                        />
-                        {searchInInventoryQuery && (
-                          <button
-                            type="button"
-                            onClick={() => setSearchInInventoryQuery('')}
-                            className="absolute left-2.5 top-2 text-slate-400 hover:text-rose-600 transition cursor-pointer"
-                            title="مسح البحث"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
+                      <InventorySearchBar ref={invSearchRef} onQueryChange={handleInvQueryChange} />
                       {searchInInventoryQuery && (
                         <button
                           type="button"
-                          onClick={() => setSearchInInventoryQuery('')}
+                          onClick={() => { invSearchRef.current?.setValue(''); }}
                           className="text-[10px] font-black text-slate-500 hover:text-rose-600 px-2 py-2 transition cursor-pointer"
                         >
                           مسح ✕
@@ -5506,31 +5644,40 @@ export default function Dashboard() {
                           <span>تصدير CSV</span>
                         </button>
                         <button
-                          onClick={() => {
-                            const backup = {
-                              exportedAt: new Date().toISOString(),
-                              inventory,
-                              salesLedger,
-                              expenses,
-                              payables,
-                              receivables,
-                              salesReturns,
-                              b2bOrders,
-                              walletBalance,
-                            };
-                            const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-                            const url = URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = `anwar-backup-${new Date().toISOString().split('T')[0]}.json`;
-                            a.click();
-                            URL.revokeObjectURL(url);
-                          }}
+                          onClick={() => downloadBackupFile(buildBackupSnapshot())}
                           className="bg-slate-700 hover:bg-slate-800 text-white font-black py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
+                          title="تنزيل نسخة احتياطية كاملة الآن (تشمل المخزون والمبيعات والموردين والذمم وسجل التدقيق والصلاحيات)"
                         >
                           <Download className="w-4 h-4" />
                           <span>نسخ احتياطي JSON</span>
                         </button>
+                        <button
+                          onClick={restoreFromBrowserBackup}
+                          className="bg-amber-600 hover:bg-amber-700 text-white font-black py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
+                          title={lastAutoBackupAt ? `استعادة آخر نسخة محفوظة تلقائياً في المتصفح (${new Date(lastAutoBackupAt).toLocaleString('ar')})` : 'استعادة من النسخة المحفوظة تلقائياً في المتصفح'}
+                        >
+                          <RefreshCw className="w-4 h-4" />
+                          <span>استعادة (المتصفح)</span>
+                        </button>
+                        <button
+                          onClick={() => restoreFileRef.current?.click()}
+                          className="bg-white border border-slate-300 hover:border-amber-400 text-slate-700 font-black py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
+                          title="استعادة من ملف نسخة احتياطية (.json) محفوظ على اللابتوب"
+                        >
+                          <Upload className="w-4 h-4" />
+                          <span>استعادة من ملف</span>
+                        </button>
+                        <input
+                          ref={restoreFileRef}
+                          type="file"
+                          accept="application/json,.json"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) handleRestoreFile(f);
+                            e.target.value = '';
+                          }}
+                        />
                         <button
                           onClick={() => {
                             document.body.classList.add('printing-financial');
@@ -7446,9 +7593,10 @@ export default function Dashboard() {
         )}
       </AnimatePresence>
 
-      {/* Invoice Import Modal */}
+      {/* Invoice Import Modal — محمّل كسولاً */}
       <AnimatePresence>
         {showInvoiceImport && (
+          <Suspense fallback={null}>
           <InvoiceImportModal
             inventory={inventory}
             onClose={() => setShowInvoiceImport(false)}
@@ -7479,6 +7627,7 @@ export default function Dashboard() {
               setTimeout(() => setPurchaseSuccessBanner(null), 5000);
             }}
           />
+          </Suspense>
         )}
       </AnimatePresence>
 
