@@ -19,6 +19,7 @@ import {
   generateDocId, deriveStockStatus, resolveUnitCost, movingAverageCost,
   computeSaleTotals, computeProfit, loadDefaultCostPercent, saveDefaultCostPercent,
 } from '../utils/finance';
+import { downloadCSV, datedFilename } from '../utils/csvExport';
 
 // Let's declare our reactive state types inside the component
 interface POSItem {
@@ -87,7 +88,7 @@ interface SalesReturn {
 interface AuditEntry {
   id: string;              // AUD-xxxx
   timestamp: string;       // YYYY-MM-DD HH:mm
-  action: 'sale' | 'purchase' | 'expense' | 'payable_add' | 'payable_settle' | 'receivable_add' | 'receivable_collect' | 'return' | 'inventory_import';
+  action: 'sale' | 'purchase' | 'expense' | 'payable_add' | 'payable_settle' | 'receivable_add' | 'receivable_collect' | 'return' | 'inventory_import' | 'inventory_edit' | 'inventory_delete' | 'security';
   actor: string;           // currentUser.displayName || currentRole
   amount: number;          // المبلغ المالي (0 إذا لم ينطبق)
   description: string;     // وصف قصير بالعربي
@@ -408,6 +409,8 @@ export default function Dashboard() {
   const [walletBalance, setWalletBalance] = useState(0); // IQD cash in register — يبدأ صفراً
   // نسبة تقدير التكلفة من سعر البيع للمواد بلا تكلفة شراء مسجلة (C1: قابلة للضبط بدل 72% الثابتة)
   const [defaultCostPercent, setDefaultCostPercent] = useState<number>(() => loadDefaultCostPercent());
+  // تقرير الإغلاق اليومي (Z-Report) — التاريخ المختار، افتراضياً اليوم
+  const [zReportDate, setZReportDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [dailySalesRevenue, setDailySalesRevenue] = useState(0); // Today's POS cash sum — يبدأ صفراً
 
   // --- EXPENSES LEDGER STATES (دفتر المصاريف) ---
@@ -491,7 +494,11 @@ export default function Dashboard() {
   // --- STOCK MOVEMENT LOG ---
 
   // --- RBAC ---
-  const [currentRole, setCurrentRole] = useState<'admin' | 'pharmacist' | 'cashier'>('admin');
+  // دور الجهاز يبقى محفوظاً بعد إعادة التشغيل — جهاز الكاشير يبقى كاشيراً
+  const [currentRole, setCurrentRole] = useState<'admin' | 'pharmacist' | 'cashier'>(() => {
+    const saved = localStorage.getItem('anwar_device_role');
+    return saved === 'pharmacist' || saved === 'cashier' ? saved : 'admin';
+  });
 
   // --- NOTIFICATION CENTER ---
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
@@ -1028,6 +1035,15 @@ export default function Dashboard() {
       setDoc(doc(db, 'users', currentUser.uid, 'inventory', medId), updatedMed)
         .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${currentUser.uid}/inventory/${medId}`));
     }
+    if (updatedMed) {
+      const m = updatedMed as Medicine;
+      addAuditEntry({
+        action: 'inventory_edit',
+        amount: 0,
+        description: `تعديل سعر ${m.nameAr} → ${Number(m.price).toLocaleString()} د.ع`,
+        relatedId: medId,
+      });
+    }
     setEditingPriceId(null);
     setEditingPriceValue('');
     setEditingSecondaryPriceValue('');
@@ -1049,7 +1065,7 @@ export default function Dashboard() {
         .catch(e => handleFirestoreError(e, OperationType.DELETE, `users/${userId}/inventory/${med.id}`));
     }
     addAuditEntry({
-      action: 'inventory_import',
+      action: 'inventory_delete',
       amount: 0,
       description: `حذف مادة من المخزون: ${med.nameAr}`,
       relatedId: med.id,
@@ -1529,6 +1545,25 @@ export default function Dashboard() {
     }, 4000);
     return () => clearTimeout(t);
   }, [buildBackupSnapshot]);
+
+  // (1ب) حفظ فوري عند إغلاق/إخفاء الصفحة — يسدّ فجوة تأجيل الـ4 ثوانٍ
+  // (كان آخر تغيير يضيع إذا أُغلق التطبيق قبل انقضاء المهلة)
+  useEffect(() => {
+    const flush = () => {
+      try {
+        const snap = snapshotRef.current();
+        const hasData = snap.inventory.length || snap.salesLedger.length || snap.b2bOrders.length || snap.expenses.length;
+        if (hasData) localStorage.setItem(BACKUP_KEY, JSON.stringify(snap));
+      } catch { /* مساحة المتصفح ممتلئة — نتجاهل */ }
+    };
+    const onVisibility = () => { if (document.visibilityState === 'hidden') flush(); };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);
 
   // (2) تنزيل ملف يومي تلقائي — مرة واحدة في اليوم بعد اكتمال تحميل البيانات
   useEffect(() => {
@@ -3109,6 +3144,29 @@ export default function Dashboard() {
     handleSettlePayable(oldestOpen, 500000);
   };
 
+  // تصدير جرد المخزون الكامل إلى CSV (يفتح في Excel بالعربية)
+  const exportInventoryToCSV = () => {
+    const rows: (string | number)[][] = [
+      [`جرد المخزون — صيدلية انوار الحسن`, new Date().toLocaleString('ar-IQ', { hour12: true })],
+      [],
+      ['الاسم العربي', 'الاسم الإنجليزي', 'المادة الفعالة', 'الباركود', 'الكمية المتاحة', 'الحالة', 'سعر البيع (د.ع)', 'سعر الكلفة (د.ع)', 'قيمة المخزون بالكلفة (د.ع)', 'تاريخ انتهاء الصلاحية'],
+      ...inventory.map(m => {
+        const cost = resolveUnitCost(m.costPrice, m.price, defaultCostPercent);
+        return [
+          m.nameAr, m.nameEn, m.activeIngredient || '', m.barcode || '',
+          m.availableQuantity,
+          m.status === 'available' ? 'متوفر' : m.status === 'low' ? 'منخفض' : 'غير متوفر',
+          m.price, cost, cost * m.availableQuantity,
+          expiryDates[m.id] || '',
+        ];
+      }),
+      [],
+      ['إجمالي الأصناف', inventory.length],
+      ['إجمالي قيمة المخزون بالكلفة (د.ع)', inventory.reduce((s, m) => s + resolveUnitCost(m.costPrice, m.price, defaultCostPercent) * m.availableQuantity, 0)],
+    ];
+    downloadCSV(datedFilename('جرد_المخزون_انوار_الحسن'), rows);
+  };
+
   // Export financial reports to CSV
   const exportFinancialsToCSV = () => {
     const totalInventoryValue = inventory.reduce((sum, item) => sum + (item.price * item.availableQuantity), 0);
@@ -3141,12 +3199,19 @@ export default function Dashboard() {
       });
     }
 
+    // كشف الذمم الفعلي من سجل payables — كانت هنا أسماء مذاخر وهمية بمبالغ ثابتة
     csvContent += `\r\nتفاصيل كشف ذمم الدائنين (المذاخر والمكاتب العلمية)\r\n`;
-    csvContent += `مكتب التجهيز العلمي والذمة,المبلغ المستحق (د.ع)\r\n`;
-    csvContent += `مكتب دجلة العلمي للأدوية (بغداد),${totalDebts > 0 ? Math.min(750000, totalDebts) : 0}\r\n`;
-    csvContent += `مذخر قصر الشفاء الحديث (أربيل),${totalDebts > 750000 ? Math.min(1100500, totalDebts - 750000) : 0}\r\n`;
-    csvContent += `مكاتب التجهيز والذمم الإضافية الأخرى,${Math.max(0, totalDebts - 1850000)}\r\n`;
-    csvContent += `إجمالي المستحقات لجميع المذاخر,${totalDebts}\r\n`;
+    csvContent += `المورد/المذخر,تاريخ الذمّة,المبلغ الكلي (د.ع),المسدَّد (د.ع),المتبقي (د.ع),الحالة\r\n`;
+    const openPayables = payables.filter(p => p.status !== 'paid');
+    if (openPayables.length === 0) {
+      csvContent += `لا توجد ذمم مفتوحة,-,-,-,-,-\r\n`;
+    } else {
+      openPayables.forEach(p => {
+        const statusAr = p.status === 'partial' ? 'مسدَّدة جزئياً' : 'مفتوحة';
+        csvContent += `"${p.supplierName}","${p.date}",${p.amount},${p.paidAmount},${Math.max(0, p.amount - p.paidAmount)},${statusAr}\r\n`;
+      });
+    }
+    csvContent += `إجمالي المستحقات لجميع المذاخر,,,,${totalDebts},\r\n`;
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -3217,6 +3282,11 @@ export default function Dashboard() {
                   setShowBypassPin(false);
                   setBypassPinEntry('');
                   setBypassPinError(false);
+                  addAuditEntry({
+                    action: 'security',
+                    amount: 0,
+                    description: 'دخول بوضع تجاوز مؤقت (محلي بلا مزامنة) بعد إدخال كلمة المرور',
+                  });
                 } else {
                   setBypassPinError(true);
                   setBypassPinEntry('');
@@ -3421,7 +3491,25 @@ export default function Dashboard() {
             {currentUser && (
               <select
                 value={currentRole}
-                onChange={e => setCurrentRole(e.target.value as 'admin' | 'pharmacist' | 'cashier')}
+                onChange={e => {
+                  const next = e.target.value as 'admin' | 'pharmacist' | 'cashier';
+                  // الترقية لدور أعلى صلاحية تتطلب كلمة مرور الحسابات — التنزيل حر
+                  const rank: Record<typeof next, number> = { cashier: 0, pharmacist: 1, admin: 2 };
+                  if (rank[next] > rank[currentRole]) {
+                    const pin = window.prompt('الترقية لدور أعلى تتطلب كلمة مرور الحسابات:');
+                    if (pin !== financialPin) {
+                      if (pin !== null) alert('كلمة المرور غير صحيحة — بقي الدور كما هو.');
+                      return;
+                    }
+                    addAuditEntry({
+                      action: 'security',
+                      amount: 0,
+                      description: `ترقية دور الجهاز من ${currentRole === 'cashier' ? 'كاشير' : 'صيدلاني'} إلى ${next === 'admin' ? 'مدير' : 'صيدلاني'}`,
+                    });
+                  }
+                  setCurrentRole(next);
+                  try { localStorage.setItem('anwar_device_role', next); } catch { /* localStorage غير متاح */ }
+                }}
                 className="text-[9px] font-bold bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 cursor-pointer"
               >
                 <option value="admin">مدير</option>
@@ -4061,9 +4149,20 @@ export default function Dashboard() {
                   className="space-y-6"
                 >
                   <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
-                    <div>
-                      <h3 className="font-extrabold text-slate-900 text-sm">مستودع الأدوية والمخزون الداخلي</h3>
-                      <p className="text-[10px] text-slate-400 font-bold mt-0.5">تحرير الأسعار ونسب المخزون وإدارة فترات انتهاء صلاحية الأدوية العضوية والمبردة</p>
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div>
+                        <h3 className="font-extrabold text-slate-900 text-sm">مستودع الأدوية والمخزون الداخلي</h3>
+                        <p className="text-[10px] text-slate-400 font-bold mt-0.5">تحرير الأسعار ونسب المخزون وإدارة فترات انتهاء صلاحية الأدوية العضوية والمبردة</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={exportInventoryToCSV}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-[11px]"
+                        title="تنزيل جرد المخزون الكامل كملف Excel/CSV"
+                      >
+                        <FileText className="w-4 h-4" />
+                        <span>تصدير الجرد CSV</span>
+                      </button>
                     </div>
 
                     {/* Bulk import status banner */}
@@ -7129,6 +7228,114 @@ export default function Dashboard() {
                     </div>
                   </div>
 
+                  {/* --- تقرير الإغلاق اليومي (Z-Report) --- */}
+                  {(() => {
+                    const day = zReportDate;
+                    const daySales = salesLedger.filter(s => String(s.timestamp).startsWith(day));
+                    const salesTotal = daySales.reduce((s, x) => s + (x.total || 0), 0);
+                    const salesProfit = daySales.reduce((s, x) => s + (x.grossProfit || 0), 0);
+                    const creditSalesTotal = receivables
+                      .filter(r => r.relatedInvoiceId && r.date === day)
+                      .reduce((s, r) => s + (r.amount || 0), 0);
+                    const cashSalesTotal = Math.max(0, salesTotal - creditSalesTotal);
+                    const dayExpenses = expenses.filter(e => e.date === day).reduce((s, e) => s + (e.amount || 0), 0);
+                    const dayCashReturns = salesReturns
+                      .filter(r => String(r.timestamp).startsWith(day) && r.refundMethod === 'cash')
+                      .reduce((s, r) => s + (r.total || 0), 0);
+                    const dayCollected = auditLog
+                      .filter(a => a.action === 'receivable_collect' && a.timestamp.startsWith(day))
+                      .reduce((s, a) => s + (a.amount || 0), 0);
+                    const daySettled = auditLog
+                      .filter(a => a.action === 'payable_settle' && a.timestamp.startsWith(day))
+                      .reduce((s, a) => s + (a.amount || 0), 0);
+                    const dayCashPurchases = b2bOrders
+                      .filter(o => o.date === day && !o.onCredit)
+                      .reduce((s, o) => s + (o.totalAmount || 0), 0);
+                    const netCash = cashSalesTotal + dayCollected - dayExpenses - daySettled - dayCashReturns - dayCashPurchases;
+
+                    const zRows: [string, number][] = [
+                      ['المبيعات النقدية', cashSalesTotal],
+                      ['المبيعات الآجلة (ذمم زبائن)', creditSalesTotal],
+                      ['تحصيلات من ذمم الزبائن', dayCollected],
+                      ['المصاريف التشغيلية', -dayExpenses],
+                      ['تسديدات للموردين', -daySettled],
+                      ['مرتجعات نقدية', -dayCashReturns],
+                      ['مشتريات نقدية', -dayCashPurchases],
+                    ];
+
+                    return (
+                      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
+                        <div className="flex items-center justify-between flex-wrap gap-3">
+                          <div className="flex items-center gap-2">
+                            <Clock className="w-4 h-4 text-emerald-700" />
+                            <span className="text-[11px] text-slate-600 font-black">تقرير الإغلاق اليومي (Z-Report)</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="date"
+                              value={zReportDate}
+                              onChange={e => setZReportDate(e.target.value)}
+                              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-[11px] font-bold focus:outline-none focus:border-emerald-400"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => downloadCSV(datedFilename(`تقرير_الاغلاق_${day}`), [
+                                [`تقرير الإغلاق اليومي — صيدلية انوار الحسن`, day],
+                                [],
+                                ['البند', 'القيمة (د.ع)'],
+                                ['عدد فواتير البيع', daySales.length],
+                                ['إجمالي المبيعات', salesTotal],
+                                ['الربح الإجمالي للمبيعات', salesProfit],
+                                ...zRows,
+                                [],
+                                ['صافي حركة النقد لليوم', netCash],
+                              ])}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-black py-1.5 px-3 rounded-xl text-[10px] cursor-pointer transition border-none flex items-center gap-1.5"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              <span>تصدير CSV</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                          <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center">
+                            <span className="block text-[9px] text-emerald-700 font-black">عدد الفواتير</span>
+                            <span className="block text-lg font-black text-emerald-800 font-mono">{daySales.length}</span>
+                          </div>
+                          <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center">
+                            <span className="block text-[9px] text-emerald-700 font-black">إجمالي المبيعات</span>
+                            <span className="block text-lg font-black text-emerald-800 font-mono">{salesTotal.toLocaleString()}</span>
+                          </div>
+                          <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 text-center">
+                            <span className="block text-[9px] text-violet-700 font-black">ربح المبيعات</span>
+                            <span className="block text-lg font-black text-violet-800 font-mono">{salesProfit.toLocaleString()}</span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          {zRows.map(([label, val]) => (
+                            <div key={label} className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-[10px] font-bold">
+                              <span className="text-slate-600">{label}</span>
+                              <span className={`font-mono font-black ${val < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
+                                {val < 0 ? '−' : '+'}{Math.abs(val).toLocaleString()} د.ع
+                              </span>
+                            </div>
+                          ))}
+                          <div className="flex items-center justify-between bg-slate-900 rounded-xl px-3 py-2.5 text-[11px] font-black">
+                            <span className="text-white">صافي حركة النقد لليوم</span>
+                            <span className={`font-mono ${netCash < 0 ? 'text-rose-300' : 'text-emerald-300'}`}>
+                              {netCash < 0 ? '−' : ''}{Math.abs(netCash).toLocaleString()} د.ع
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-[9px] text-slate-400 font-bold">
+                          * التحصيلات والتسديدات تُحسب من سجل التدقيق (آخر 300 عملية) — للأيام القديمة جداً قد تكون غير مكتملة.
+                        </p>
+                      </div>
+                    );
+                  })()}
+
                   {/* --- سجل التدقيق --- */}
                   <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
                     <div className="flex items-center justify-between">
@@ -7151,6 +7358,9 @@ export default function Dashboard() {
                           receivable_collect: { label: 'تحصيل',     color: 'text-emerald-700',bg: 'bg-emerald-50'},
                           return:             { label: 'مرتجع',     color: 'text-rose-700',   bg: 'bg-rose-50'   },
                           inventory_import:   { label: 'استيراد مخزون', color: 'text-slate-700', bg: 'bg-slate-100' },
+                          inventory_edit:     { label: 'تعديل مخزون', color: 'text-blue-700',  bg: 'bg-blue-50'   },
+                          inventory_delete:   { label: 'حذف مادة',   color: 'text-rose-700',   bg: 'bg-rose-50'   },
+                          security:           { label: 'أمان',       color: 'text-amber-700',  bg: 'bg-amber-50'  },
                         };
                         const meta = actionMeta[entry.action];
                         return (
@@ -7395,16 +7605,21 @@ export default function Dashboard() {
               </div>
 
               <button
-                onClick={() => window.print()}
-                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 rounded-xl cursor-pointer transition"
+                onClick={() => {
+                  // تفعيل وضع طباعة الإيصال الحراري (80mm) — القاعدة في index.css
+                  document.body.classList.add('printing-receipt');
+                  window.print();
+                  setTimeout(() => document.body.classList.remove('printing-receipt'), 1000);
+                }}
+                className="no-print w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 rounded-xl cursor-pointer transition"
               >
                 طباعة الفاتورة
               </button>
 
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={() => setShowReceiptModal(false)}
-                className="w-full bg-slate-950 hover:bg-slate-900 text-white font-extrabold text-xs py-2.5 rounded-xl cursor-pointer transition shadow text-center block"
+                className="no-print w-full bg-slate-950 hover:bg-slate-900 text-white font-extrabold text-xs py-2.5 rounded-xl cursor-pointer transition shadow text-center block"
               >
                 الموافقة وإغلاق الفاتورة صيدلي
               </button>

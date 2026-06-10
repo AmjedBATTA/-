@@ -46,14 +46,44 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #C99830, #8A6020); }
 
-/* ── Print — receipt ── */
+/* ── Print — receipt + financial report ──
+   ملاحظة: نستخدم visibility وليس display — العنصر المتداخل لا يستطيع الظهور
+   إذا كان أحد آبائه display:none، لكنه يستطيع مع visibility:hidden.
+   (القاعدة القديمة كانت تطبع صفحات فارغة لهذا السبب) */
 @media print {
-  body > * { display: none !important; }
-  .print-receipt { display: block !important; }
-}
-@media print {
-  body.printing-financial > * { display: none !important; }
+  /* إيصال البيع الحراري (80mm) — يُفعَّل بإضافة printing-receipt على body */
+  body.printing-receipt * { visibility: hidden !important; }
+  body.printing-receipt .print-receipt,
+  body.printing-receipt .print-receipt * { visibility: visible !important; }
+  body.printing-receipt .print-receipt {
+    position: absolute !important;
+    top: 0 !important;
+    right: 0 !important;
+    width: 80mm !important;
+    max-width: 80mm !important;
+    margin: 0 !important;
+    padding: 4mm !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: #fff !important;
+  }
+
+  /* التقرير المالي (A4) — يُفعَّل بإضافة printing-financial على body */
+  body.printing-financial * { visibility: hidden !important; }
   body.printing-financial .print-financial { display: block !important; }
+  body.printing-financial .print-financial,
+  body.printing-financial .print-financial * { visibility: visible !important; }
+  body.printing-financial .print-financial {
+    position: absolute !important;
+    top: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    background: #fff !important;
+  }
+
+  /* عناصر لا تُطبع أبداً (أزرار داخل الإيصال) */
+  .no-print { display: none !important; }
 }
 .print-financial { display: none; }
 
