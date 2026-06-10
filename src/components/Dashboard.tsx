@@ -15,6 +15,10 @@ const InvoiceImportModal = lazy(() => import('./InvoiceImportModal'));
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { collection, doc, getDoc, setDoc, onSnapshot, deleteDoc, writeBatch, increment, getCountFromServer, query, orderBy, limit } from 'firebase/firestore';
+import {
+  generateDocId, deriveStockStatus, resolveUnitCost, movingAverageCost,
+  computeSaleTotals, computeProfit, loadDefaultCostPercent, saveDefaultCostPercent,
+} from '../utils/finance';
 
 // Let's declare our reactive state types inside the component
 interface POSItem {
@@ -402,6 +406,8 @@ export default function Dashboard() {
 
   // Financial States
   const [walletBalance, setWalletBalance] = useState(0); // IQD cash in register — يبدأ صفراً
+  // نسبة تقدير التكلفة من سعر البيع للمواد بلا تكلفة شراء مسجلة (C1: قابلة للضبط بدل 72% الثابتة)
+  const [defaultCostPercent, setDefaultCostPercent] = useState<number>(() => loadDefaultCostPercent());
   const [dailySalesRevenue, setDailySalesRevenue] = useState(0); // Today's POS cash sum — يبدأ صفراً
 
   // --- EXPENSES LEDGER STATES (دفتر المصاريف) ---
@@ -768,7 +774,7 @@ export default function Dashboard() {
             nameEn: match.nameEn,
             scientificName: match.scientificName,
             // سعر جملة يعتمد على آخر سعر شراء فعلي إن وُجد
-            price: Number(match.lastCostPrice) || Number(match.costPrice) || Math.floor(match.price * 0.72) || 3000,
+            price: Number(match.lastCostPrice) || Number(match.costPrice) || resolveUnitCost(null, match.price, defaultCostPercent) || 3000,
             retailPrice: match.price || 0,
             officialPrice: match.secondaryPrice || (match.price ? match.price + 500 : 0),
             qty: 1,
@@ -1214,7 +1220,7 @@ export default function Dashboard() {
           loadedInventory.push({
             ...raw,
             availableQuantity: qty,
-            status: (qty <= 0 ? 'unavailable' : qty < 15 ? 'low' : 'available') as Medicine['status'],
+            status: deriveStockStatus(qty),
           });
         });
         loadedInventory.sort((a, b) => Number(a.id) - Number(b.id));
@@ -1461,7 +1467,7 @@ export default function Dashboard() {
     const now = new Date();
     const ts = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
     const full: AuditEntry = {
-      id: `AUD-${Math.floor(Math.random()*90000+10000)}`,
+      id: generateDocId('AUD'),
       timestamp: ts,
       actor: currentUser?.displayName || currentRole,
       ...entry,
@@ -1599,7 +1605,7 @@ export default function Dashboard() {
     const ts = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
     const newReturn: SalesReturn = {
-      returnId: `RET-${Math.floor(Math.random() * 9000 + 1000)}`,
+      returnId: generateDocId('RET'),
       originalInvoiceId: returnTarget.invoiceId,
       timestamp: ts,
       items: returnedItems,
@@ -1714,7 +1720,7 @@ export default function Dashboard() {
       alert(`لا يمكن تسجيل المصروف: المبلغ (${Math.round(newExpAmount).toLocaleString()} د.ع) أكبر من السيولة المتاحة بالصندوق (${walletBalance.toLocaleString()} د.ع).`);
       return;
     }
-    const expId = `EXP-${Math.floor(Math.random() * 90000 + 10000)}`;
+    const expId = generateDocId('EXP');
     const newExpense: Expense = {
       id: expId,
       date: new Date().toISOString().split('T')[0],
@@ -1747,7 +1753,7 @@ export default function Dashboard() {
   const handleAddPayable = (e: FormEvent) => {
     e.preventDefault();
     if (!newPaySupplier.trim() || !newPayAmount || newPayAmount <= 0) return;
-    const payId = `PAY-${Math.floor(Math.random() * 90000 + 10000)}`;
+    const payId = generateDocId('PAY');
     const matchedSup = suppliers.find(s => s.name === newPaySupplier.trim());
     const newPayable: Payable = {
       id: payId,
@@ -1910,7 +1916,7 @@ export default function Dashboard() {
   const handleAddReceivable = (e: FormEvent) => {
     e.preventDefault();
     if (!newRecCustomer.trim() || !newRecAmount || newRecAmount <= 0) return;
-    const recId = `REC-${Math.floor(Math.random() * 90000 + 10000)}`;
+    const recId = generateDocId('REC');
     const newReceivable: Receivable = {
       id: recId,
       customerName: newRecCustomer.trim(),
@@ -2042,9 +2048,10 @@ export default function Dashboard() {
   };
 
   // --- POS CART COMPUTE ---
-  const posSubtotal = currentCart.reduce((sum, item) => sum + (item.medicine.price * item.quantity), 0);
-  const posDiscountAmount = Math.round(posSubtotal * (posDiscountPercent / 100));
-  const posTotal = posSubtotal - posDiscountAmount;
+  const { subtotal: posSubtotal, discountAmount: posDiscountAmount, total: posTotal } = computeSaleTotals(
+    currentCart.map(item => ({ price: item.medicine.price, quantity: item.quantity })),
+    posDiscountPercent
+  );
 
   // --- FINANCIAL PERIOD ANALYTICS (يومي / أسبوعي / شهري / سنوي) ---
   const {
@@ -2147,7 +2154,7 @@ export default function Dashboard() {
     const slowestMoving = [...inventory]
       .map(m => {
         const sold = productAgg[normalizeName(m.nameAr)]?.qty ?? 0;
-        const unitCost = m.costPrice ?? Math.round(m.price * 0.72);
+        const unitCost = resolveUnitCost(m.costPrice, m.price, defaultCostPercent);
         return { name: m.nameAr, sold, stock: m.availableQuantity, value: unitCost * m.availableQuantity };
       })
       .sort((a, b) => a.sold - b.sold || b.value - a.value)
@@ -2316,7 +2323,7 @@ export default function Dashboard() {
     e.preventDefault();
     if (currentCart.length === 0) return;
 
-    const invoiceId = `INV-${Math.floor(Math.random() * 9000 + 1000)}`;
+    const invoiceId = generateDocId('INV');
     const now = new Date();
     const formattedTimestamp = now.getFullYear() + '-' + 
       String(now.getMonth() + 1).padStart(2, '0') + '-' + 
@@ -2327,7 +2334,7 @@ export default function Dashboard() {
     // --- COST & PROFIT COMPUTATION ---
     // Cost basis per line (fallback to ~72% of sale price for legacy items without costPrice)
     const itemsWithCost = currentCart.map(item => {
-      const unitCost = item.medicine.costPrice ?? Math.round(item.medicine.price * 0.72);
+      const unitCost = resolveUnitCost(item.medicine.costPrice, item.medicine.price, defaultCostPercent);
       return {
         name: `${item.medicine.nameAr} (${item.medicine.nameEn})`,
         quantity: item.quantity,
@@ -2337,8 +2344,7 @@ export default function Dashboard() {
       };
     });
     const posTotalCost = itemsWithCost.reduce((sum, it) => sum + (it.costPrice * it.quantity), 0);
-    const posGrossProfit = posTotal - posTotalCost; // الربح الإجمالي بعد خصم الفاتورة
-    const posProfitMargin = posTotal > 0 ? Math.round((posGrossProfit / posTotal) * 100) : 0;
+    const { grossProfit: posGrossProfit, profitMargin: posProfitMargin } = computeProfit(posTotal, posTotalCost);
 
     const newSaleRecord: SaleRecord = {
       invoiceId,
@@ -2357,7 +2363,7 @@ export default function Dashboard() {
     let creditReceivable: Receivable | null = null;
     if (posOnCredit) {
       creditReceivable = {
-        id: `REC-${Math.floor(Math.random() * 90000 + 10000)}`,
+        id: generateDocId('REC'),
         customerName: posCustomerName,
         amount: posTotal,
         paidAmount: 0,
@@ -2386,7 +2392,7 @@ export default function Dashboard() {
           batch.set(doc(db, 'users', userId, 'inventory', med.id), {
             availableQuantity: increment(-item.quantity),
             // الحالة تقديرية من القيمة المحلية — تُصحَّح ذاتياً عند القراءة التالية من الخادم
-            status: estimatedQty <= 0 ? 'unavailable' : estimatedQty < 15 ? 'low' : 'available',
+            status: deriveStockStatus(estimatedQty),
             updatedAt: new Date().toISOString(),
           }, { merge: true });
         }
@@ -2498,8 +2504,8 @@ export default function Dashboard() {
       warehouse: 'أدخلت يدويا في صيدلية انوار الحسن',
       price: newDrugPrice,
       secondaryPrice: newDrugSecondaryPrice,
-      costPrice: Math.round(newDrugPrice * 0.72), // تقدير مبدئي للتكلفة (يُحدّث عند أول عملية شراء)
-      lastCostPrice: Math.round(newDrugPrice * 0.72),
+      costPrice: resolveUnitCost(null, newDrugPrice, defaultCostPercent), // تقدير مبدئي (يُحدّث عند أول شراء)
+      lastCostPrice: resolveUnitCost(null, newDrugPrice, defaultCostPercent),
       availableQuantity: newDrugQty,
       status: 'available',
       minStock: newDrugMinStock,
@@ -2696,7 +2702,7 @@ export default function Dashboard() {
         nameEn: med.nameEn,
         scientificName: med.scientificName || 'N/A',
         // سعر جملة يعتمد على آخر سعر شراء فعلي إن وُجد، وإلا التكلفة المتوسطة، وإلا تقدير 72%
-        price: Number(med.lastCostPrice) || Number(med.costPrice) || Math.floor(med.price * 0.72) || 3000,
+        price: Number(med.lastCostPrice) || Number(med.costPrice) || resolveUnitCost(null, med.price, defaultCostPercent) || 3000,
         retailPrice: med.price || 0,
         officialPrice: med.secondaryPrice || (med.price ? med.price + 500 : 0),
         qty: overrideQty ?? 1,
@@ -2711,7 +2717,7 @@ export default function Dashboard() {
   const commitPurchaseDraft = () => {
     if (purchaseDraft.length === 0) return;
 
-    const orderId = `PO-${Math.floor(Math.random() * 90000 + 10000)}`;
+    const orderId = generateDocId('PO');
     const totalCost = purchaseDraft.reduce((acc, curr) => acc + (curr.price * curr.qty), 0);
 
     // فحص مسبق: الشراء النقدي لا يتجاوز السيولة المتاحة — وإلا اختر الشراء بالآجل
@@ -2753,12 +2759,10 @@ export default function Dashboard() {
             const purchaseQty = Number(draftItem.qty);
             const purchaseUnitCost = Number(draftItem.price);
             const existingQty = med.availableQuantity;
-            const existingCost = med.costPrice ?? Math.round(med.price * 0.72);
+            const existingCost = resolveUnitCost(med.costPrice, med.price, defaultCostPercent);
             const newQty = existingQty + purchaseQty;
             // Moving Average Cost: متوسط مرجّح بين تكلفة المخزون القديم وتكلفة الشراء الجديد
-            const movingAvgCost = newQty > 0
-              ? Math.round(((existingQty * existingCost) + (purchaseQty * purchaseUnitCost)) / newQty)
-              : purchaseUnitCost;
+            const movingAvgCost = movingAverageCost(existingQty, existingCost, purchaseQty, purchaseUnitCost);
             return {
               ...med,
               availableQuantity: newQty,
@@ -2843,7 +2847,7 @@ export default function Dashboard() {
       // شراء بالآجل: تُسجَّل الفاتورة كذمّة على المذخر بدلاً من خصمها نقداً
       const matchedSupplier = suppliers.find(s => s.name === creditSupplierName.trim());
       const creditPayable: Payable = {
-        id: `PAY-${Math.floor(Math.random() * 90000 + 10000)}`,
+        id: generateDocId('PAY'),
         supplierName: creditSupplierName.trim() || 'مذخر التوريد',
         supplierId: matchedSupplier?.id,
         amount: totalCost,
@@ -6217,7 +6221,7 @@ export default function Dashboard() {
                               e.preventDefault();
                               if (!newSupName.trim()) return;
                               const newSup: Supplier = {
-                                id: `SUP-${Math.floor(Math.random() * 9000 + 1000)}`,
+                                id: generateDocId('SUP'),
                                 name: newSupName.trim(),
                                 phone: newSupPhone.trim() || undefined,
                                 address: newSupAddress.trim() || undefined,
@@ -7253,6 +7257,44 @@ export default function Dashboard() {
                         )}
                       </div>
                     </form>
+                  </div>
+
+                  {/* --- إعداد نسبة تقدير التكلفة (C1) --- */}
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Info className="w-4 h-4 text-amber-600" />
+                      <span className="text-[11px] text-slate-600 font-black">نسبة تقدير التكلفة الافتراضية</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 font-semibold leading-relaxed">
+                      عندما لا يكون للدواء سعر شراء مسجّل، يقدّر التطبيق تكلفته كنسبة من سعر البيع لحساب الأرباح.
+                      اضبطها لتطابق هامش صيدليتك الفعلي — الأرباح المبنية على هذا التقدير تقريبية حتى تُسجَّل تكلفة شراء حقيقية.
+                    </p>
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={1}
+                          max={99}
+                          value={defaultCostPercent}
+                          onChange={e => {
+                            const v = Math.min(99, Math.max(1, Math.round(Number(e.target.value) || 0)));
+                            setDefaultCostPercent(v);
+                          }}
+                          className="w-20 bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center font-mono text-sm focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-200 transition"
+                        />
+                        <span className="text-xs text-slate-500 font-black">% من سعر البيع</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          saveDefaultCostPercent(defaultCostPercent);
+                          alert(`تم الحفظ: ستُقدَّر تكلفة المواد بلا سعر شراء بنسبة ${defaultCostPercent}% من سعر البيع.`);
+                        }}
+                        className="bg-amber-500 hover:bg-amber-600 text-white font-black px-5 py-2.5 rounded-xl text-xs cursor-pointer transition border-none font-sans"
+                      >
+                        حفظ النسبة
+                      </button>
+                    </div>
                   </div>
 
                 </motion.div>

@@ -109,7 +109,7 @@ interface RawGeminiItem {
   expiry?: string;
 }
 
-function parseNumber(val: number | string | null | undefined): number {
+export function parseNumber(val: number | string | null | undefined): number {
   if (val === null || val === undefined) return 0;
   const s = String(val).replace(/[',]/g, '').replace(/\.00$/, '');
   return Math.round(Number(s)) || 0;
