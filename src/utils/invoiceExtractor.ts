@@ -3,11 +3,11 @@ import type { Medicine, ExtractedInvoiceItem, ExtractedInvoice } from '../types'
 
 const GEMINI_KEY_STORAGE = 'anwar_gemini_api_key';
 
-// الأولوية: مفتاح أدخله المستخدم من الواجهة → ثم المفتاح المُضمَّن في ملف .env
+// المفتاح يُدخله المستخدم من الواجهة فقط ويُحفظ محلياً على هذا الجهاز.
+// لا تقرأ المفتاح من import.meta.env: أي متغير VITE_ يُدمج في ملفات JS المنشورة
+// ويصبح مكشوفاً لأي زائر للموقع.
 export const getStoredApiKey = (): string =>
-  localStorage.getItem(GEMINI_KEY_STORAGE) ||
-  (import.meta.env.VITE_GEMINI_API_KEY as string | undefined) ||
-  '';
+  localStorage.getItem(GEMINI_KEY_STORAGE) || '';
 export const saveApiKey = (key: string) => localStorage.setItem(GEMINI_KEY_STORAGE, key.trim());
 
 function normalizeName(s: string): string {
@@ -125,7 +125,7 @@ export async function extractInvoice(
   // مفاتيح Gemini حروف وأرقام إنجليزية فقط (تبدأ بـ AIza). أي حرف غير ذلك (مثل النص العربي المؤقت)
   // سيُفشل طلب HTTP بخطأ غامض، لذا نتحقق مبكراً ونعطي رسالة واضحة.
   if (!key || !/^[\x20-\x7E]+$/.test(key) || !key.startsWith('AIza')) {
-    throw new Error('مفتاح Gemini API غير صالح. تأكد من وضع المفتاح الحقيقي (يبدأ بـ AIza) في ملف .env بدلاً من النص المؤقت، ثم أعد تشغيل التطبيق.');
+    throw new Error('مفتاح Gemini API غير صالح. أدخل المفتاح الحقيقي (يبدأ بـ AIza) من شاشة إعداد المفتاح في نافذة استيراد الفاتورة.');
   }
 
   const ai = new GoogleGenAI({ apiKey: key });

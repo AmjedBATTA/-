@@ -14,7 +14,7 @@ const InvoiceImportModal = lazy(() => import('./InvoiceImportModal'));
 // Firebase Authentication & Remote Firestore Synchronizer hooks
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
-import { collection, doc, getDoc, setDoc, onSnapshot, deleteDoc, writeBatch, getCountFromServer, query, orderBy, limit } from 'firebase/firestore';
+import { collection, doc, getDoc, setDoc, onSnapshot, deleteDoc, writeBatch, increment, getCountFromServer, query, orderBy, limit } from 'firebase/firestore';
 
 // Let's declare our reactive state types inside the component
 interface POSItem {
@@ -370,6 +370,10 @@ export default function Dashboard() {
   const [signInError, setSignInError] = useState('');
   // تجاوز الدخول مؤقتاً — وضع محلي بلا مزامنة سحابية (للتجربة/المعاينة فقط)
   const [bypassLogin, setBypassLogin] = useState(false);
+  // حماية زر التجاوز: يتطلب كلمة مرور الحسابات (fin_pin) حتى لا يفتح أي شخص التطبيق بدون حساب
+  const [showBypassPin, setShowBypassPin] = useState(false);
+  const [bypassPinEntry, setBypassPinEntry] = useState('');
+  const [bypassPinError, setBypassPinError] = useState(false);
   // حالة المزامنة الحقيقية مع خادم Firestore — مشتقّة من البيانات الوصفية للقطة (metadata)
   // وليست مجرّد "هل يوجد مستخدم". 'synced' = وصلت للخادم، 'pending' = قيد الرفع، 'offline' = محلية فقط.
   const [syncState, setSyncState] = useState<'synced' | 'pending' | 'offline'>('pending');
@@ -1203,7 +1207,15 @@ export default function Dashboard() {
       } else {
         const loadedInventory: Medicine[] = [];
         snapshot.forEach((doc) => {
-          loadedInventory.push(doc.data() as Medicine);
+          const raw = doc.data() as Medicine;
+          // تطبيع ذاتي: الخصم بـ increment() قد يهبط بالكمية تحت الصفر عند بيع متزامن
+          // من جهازين، وحقل الحالة المكتوب تقديري — نعيد اشتقاقهما من قيمة الخادم الفعلية.
+          const qty = Math.max(0, Number(raw.availableQuantity) || 0);
+          loadedInventory.push({
+            ...raw,
+            availableQuantity: qty,
+            status: (qty <= 0 ? 'unavailable' : qty < 15 ? 'low' : 'available') as Medicine['status'],
+          });
         });
         loadedInventory.sort((a, b) => Number(a.id) - Number(b.id));
         setInventory(loadedInventory);
@@ -1597,6 +1609,12 @@ export default function Dashboard() {
       customerName: returnTarget.customerName,
     };
 
+    // فحص مسبق: الاسترداد النقدي لا يتجاوز السيولة المتاحة بالصندوق
+    if (returnRefundMethod === 'cash' && returnTotal > walletBalance) {
+      alert(`لا يمكن الاسترداد نقداً: مبلغ المرتجع (${returnTotal.toLocaleString()} د.ع) أكبر من السيولة المتاحة بالصندوق (${walletBalance.toLocaleString()} د.ع). اختر "بدون صرف نقدي" أو قلّل الكمية.`);
+      return;
+    }
+
     // 1. أعِد الكمية إلى المخزون (محلياً + جمع المواد المتغيّرة لمزامنتها مع Firestore)
     const restoredMeds: Medicine[] = [];
     const invAfterReturn = inventory.map(med => {
@@ -1618,7 +1636,7 @@ export default function Dashboard() {
 
     // 2. إذا كان الاسترداد نقداً → اخصم من الصندوق
     if (returnRefundMethod === 'cash') {
-      setWalletBalance(prev => Math.max(0, prev - returnTotal));
+      setWalletBalance(prev => prev - returnTotal);
     }
 
     // 3. سجّل المرتجع
@@ -1662,7 +1680,8 @@ export default function Dashboard() {
       const newTotalCost = editingItems.reduce((sum, it) => sum + it.quantity * (it.costPrice ?? 0), 0);
       const newGrossProfit = newTotal - newTotalCost;
       const diff = newTotal - s.total;
-      if (diff !== 0) setWalletBalance(w => w + diff);
+      // تعديل فاتورة قديمة يصحّح الصندوق بالفرق — مع منع نزول الرصيد تحت الصفر
+      if (diff !== 0) setWalletBalance(w => Math.max(0, w + diff));
       updatedRecord = {
         ...s,
         items: editingItems.map(it => ({
@@ -1690,6 +1709,11 @@ export default function Dashboard() {
   const handleAddExpense = (e: FormEvent) => {
     e.preventDefault();
     if (!newExpAmount || newExpAmount <= 0) return;
+    // فحص مسبق: لا يُسمح بمصروف أكبر من السيولة المتاحة — بدل قصّ الرصيد عند الصفر بصمت
+    if (Math.round(newExpAmount) > walletBalance) {
+      alert(`لا يمكن تسجيل المصروف: المبلغ (${Math.round(newExpAmount).toLocaleString()} د.ع) أكبر من السيولة المتاحة بالصندوق (${walletBalance.toLocaleString()} د.ع).`);
+      return;
+    }
     const expId = `EXP-${Math.floor(Math.random() * 90000 + 10000)}`;
     const newExpense: Expense = {
       id: expId,
@@ -1773,9 +1797,14 @@ export default function Dashboard() {
     const remaining = Math.max(0, p.amount - p.paidAmount);
     const pay = Math.min(Math.max(0, Math.round(rawAmount || 0)), remaining);
     if (pay <= 0) return;
+    // فحص مسبق: التسديد لا يتجاوز السيولة المتاحة
+    if (pay > walletBalance) {
+      alert(`لا يمكن التسديد: المبلغ (${pay.toLocaleString()} د.ع) أكبر من السيولة المتاحة بالصندوق (${walletBalance.toLocaleString()} د.ع).`);
+      return;
+    }
     const newPaid = p.paidAmount + pay;
     const newStatus: Payable['status'] = newPaid >= p.amount ? 'paid' : 'partial';
-    setWalletBalance(prev => Math.max(0, prev - pay));
+    setWalletBalance(prev => prev - pay);
     setPayables(prev => prev.map(x => x.id === p.id ? { ...x, paidAmount: newPaid, status: newStatus } : x));
     if (currentUser) {
       const userId = currentUser.uid;
@@ -1842,6 +1871,11 @@ export default function Dashboard() {
     const totalOwed = supPayablesOpen.reduce((s, p) => s + Math.max(0, p.amount - p.paidAmount), 0);
     const payTotal = amount == null ? totalOwed : Math.min(Math.max(0, Math.round(amount)), totalOwed);
     if (payTotal <= 0) return;
+    // فحص مسبق: التسديد لا يتجاوز السيولة المتاحة
+    if (payTotal > walletBalance) {
+      alert(`لا يمكن التسديد: المبلغ (${payTotal.toLocaleString()} د.ع) أكبر من السيولة المتاحة بالصندوق (${walletBalance.toLocaleString()} د.ع).`);
+      return;
+    }
 
     let remaining = payTotal;
     const changedIds: string[] = [];
@@ -1858,7 +1892,7 @@ export default function Dashboard() {
     });
 
     setPayables(updated);
-    setWalletBalance(prev => Math.max(0, prev - payTotal));
+    setWalletBalance(prev => prev - payTotal);
     // حفظ الذمم المتغيّرة في Firestore حتى لا تُعكَس عند إعادة التحميل
     if (currentUser) {
       const userId = currentUser.uid;
@@ -2338,20 +2372,23 @@ export default function Dashboard() {
     // 1. Decrement state values or persist directly to Firestore
     if (currentUser) {
       const userId = currentUser.uid;
-      
-      // Update matched medicine levels in Firestore
+
+      // كل كتابات البيع في دفعة ذرّية واحدة (writeBatch): إما تُحفظ الفاتورة وخصم المخزون
+      // والذمّة معاً، أو لا يُحفظ شيء — فلا تتباعد السجلات عند انقطاع في المنتصف.
+      // الخصم بـ increment() بدل كتابة الكمية كرقم ثابت: لو باع جهازان نفس الدواء في نفس
+      // اللحظة يُطبَّق الخصمان معاً على الخادم بدل أن يمحو أحدهما الآخر.
+      const batch = writeBatch(db);
+
       currentCart.forEach(item => {
         const med = inventory.find(m => m.id === item.medicine.id);
         if (med) {
-          const nextQty = Math.max(0, med.availableQuantity - item.quantity);
-          const updatedMed = {
-            ...med,
-            availableQuantity: nextQty,
-            status: nextQty <= 0 ? 'unavailable' : nextQty < 15 ? 'low' : 'available',
-            updatedAt: new Date().toISOString()
-          };
-          setDoc(doc(db, 'users', userId, 'inventory', med.id), updatedMed)
-            .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/inventory/${med.id}`));
+          const estimatedQty = Math.max(0, med.availableQuantity - item.quantity);
+          batch.set(doc(db, 'users', userId, 'inventory', med.id), {
+            availableQuantity: increment(-item.quantity),
+            // الحالة تقديرية من القيمة المحلية — تُصحَّح ذاتياً عند القراءة التالية من الخادم
+            status: estimatedQty <= 0 ? 'unavailable' : estimatedQty < 15 ? 'low' : 'available',
+            updatedAt: new Date().toISOString(),
+          }, { merge: true });
         }
       });
 
@@ -2360,8 +2397,7 @@ export default function Dashboard() {
         ...newSaleRecord,
         userId
       };
-      setDoc(doc(db, 'users', userId, 'salesLedger', invoiceId), finalSaleRecord)
-        .catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${userId}/salesLedger/${invoiceId}`));
+      batch.set(doc(db, 'users', userId, 'salesLedger', invoiceId), finalSaleRecord);
 
       // بيع بالآجل: سجّل الذمّة المدينة على الزبون في Firestore (بدون قبض نقدي)
       if (creditReceivable) {
@@ -2376,9 +2412,14 @@ export default function Dashboard() {
           userId,
         };
         if (creditReceivable.description) payload.description = creditReceivable.description;
-        setDoc(doc(db, 'users', userId, 'receivables', creditReceivable.id), payload)
-          .catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${userId}/receivables/${creditReceivable.id}`));
+        batch.set(doc(db, 'users', userId, 'receivables', creditReceivable.id), payload);
       }
+
+      batch.commit()
+        .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/salesLedger/${invoiceId} (batch)`));
+
+      // النقد من البيع النقدي يدخل الصندوق — كان مفقوداً في وضع تسجيل الدخول (يعمل فقط محلياً)
+      if (!posOnCredit) setWalletBalance(prev => prev + posTotal);
 
       addAuditEntry({
         action: 'sale',
@@ -2673,6 +2714,12 @@ export default function Dashboard() {
     const orderId = `PO-${Math.floor(Math.random() * 90000 + 10000)}`;
     const totalCost = purchaseDraft.reduce((acc, curr) => acc + (curr.price * curr.qty), 0);
 
+    // فحص مسبق: الشراء النقدي لا يتجاوز السيولة المتاحة — وإلا اختر الشراء بالآجل
+    if (!purchaseOnCredit && totalCost > walletBalance) {
+      alert(`لا يمكن اعتماد الشراء نقداً: قيمة الفاتورة (${totalCost.toLocaleString()} د.ع) أكبر من السيولة المتاحة بالصندوق (${walletBalance.toLocaleString()} د.ع).\n\nفعّل خيار "شراء بالآجل" لتسجيلها كذمّة على المورد، أو قلّل الكمية.`);
+      return;
+    }
+
     const archivedOrder: Order = {
       id: orderId,
       date: new Date().toISOString().split('T')[0],
@@ -2693,9 +2740,13 @@ export default function Dashboard() {
 
     let updatedInventory = [...inventory];
     let updatedExpiries = { ...expiryDates };
+    // نجمع معرّفات المواد المتغيّرة فقط — الكتابة السحابية كانت ترفع كل المخزون
+    // (آلاف المستندات) عند كل اعتماد، ما يبطئ ويخاطر بمحو تعديلات أجهزة أخرى.
+    const changedMedIds = new Set<string>();
 
     purchaseDraft.forEach(draftItem => {
       if (draftItem.medicineId) {
+        changedMedIds.add(draftItem.medicineId);
         // Exists in inventory!
         updatedInventory = updatedInventory.map(med => {
           if (med.id === draftItem.medicineId) {
@@ -2753,6 +2804,7 @@ export default function Dashboard() {
           barcode: draftItem.barcode || '62811' + Math.floor(Math.random() * 900000 + 100000)
         };
         updatedInventory.push(newMedRecord);
+        changedMedIds.add(brandNewId);
         if (draftItem.expiryDate) {
           updatedExpiries[brandNewId] = draftItem.expiryDate;
         }
@@ -2761,15 +2813,19 @@ export default function Dashboard() {
 
     if (currentUser) {
       const userId = currentUser.uid;
-      setDoc(doc(db, 'users', userId, 'b2bOrders', orderId), {
-        ...archivedOrder,
-        userId
-      }).catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${userId}/b2bOrders/${orderId}`));
-
-      updatedInventory.forEach(med => {
-        setDoc(doc(db, 'users', userId, 'inventory', med.id), med)
-          .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/inventory/${med.id}`));
-      });
+      // دفعات ذرّية: الطلبية + المواد المتغيّرة فقط تُكتب معاً، فلا تظهر طلبية
+      // "مستلمة" دون أن يصل أثرها للمخزون. حد الدفعة 500 عملية فنقسّم عند الحاجة.
+      const changedMeds = updatedInventory.filter(med => changedMedIds.has(med.id));
+      const CHUNK = 450;
+      for (let i = 0; i < changedMeds.length; i += CHUNK) {
+        const batch = writeBatch(db);
+        if (i === 0) batch.set(doc(db, 'users', userId, 'b2bOrders', orderId), { ...archivedOrder, userId });
+        changedMeds.slice(i, i + CHUNK).forEach(med => {
+          batch.set(doc(db, 'users', userId, 'inventory', med.id), med);
+        });
+        batch.commit()
+          .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/b2bOrders/${orderId} (batch ${i / CHUNK + 1})`));
+      }
     }
 
     setB2bOrders(prev => [archivedOrder, ...prev]);
@@ -2817,8 +2873,8 @@ export default function Dashboard() {
           .catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${userId}/payables/${creditPayable.id}`));
       }
     } else {
-      // الدفع النقدي المعتاد: خصم قيمة الفاتورة من السيولة بالصندوق
-      setWalletBalance(prev => Math.max(0, prev - totalCost));
+      // الدفع النقدي المعتاد: خصم قيمة الفاتورة من السيولة بالصندوق (مفحوصة مسبقاً أعلاه)
+      setWalletBalance(prev => prev - totalCost);
     }
 
     setPurchaseDraft([]);
@@ -3141,12 +3197,67 @@ export default function Dashboard() {
             <span>تسجيل الدخول عبر Google</span>
           </button>
 
-          <button
-            onClick={() => setBypassLogin(true)}
-            className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition cursor-pointer border border-slate-200"
-          >
-            <span>تجاوز الدخول مؤقتاً (وضع محلي بلا مزامنة)</span>
-          </button>
+          {!showBypassPin ? (
+            <button
+              onClick={() => { setShowBypassPin(true); setBypassPinEntry(''); setBypassPinError(false); }}
+              className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition cursor-pointer border border-slate-200"
+            >
+              <span>تجاوز الدخول مؤقتاً (وضع محلي بلا مزامنة)</span>
+            </button>
+          ) : (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (bypassPinEntry === financialPin) {
+                  setBypassLogin(true);
+                  setShowBypassPin(false);
+                  setBypassPinEntry('');
+                  setBypassPinError(false);
+                } else {
+                  setBypassPinError(true);
+                  setBypassPinEntry('');
+                }
+              }}
+              className="mt-3 bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2 text-right"
+            >
+              <p className="text-[11px] font-bold text-slate-600">
+                التجاوز محمي بكلمة مرور الحسابات — أدخلها للمتابعة بوضع محلي بلا مزامنة:
+              </p>
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={20}
+                autoFocus
+                value={bypassPinEntry}
+                onChange={(e) => { setBypassPinEntry(e.target.value); setBypassPinError(false); }}
+                placeholder="••••"
+                className={`w-full text-center text-lg font-mono tracking-[0.4em] bg-white border rounded-lg py-2 px-3 focus:outline-none focus:ring-2 transition ${bypassPinError ? 'border-rose-400 focus:ring-rose-200 bg-rose-50' : 'border-slate-200 focus:ring-emerald-200 focus:border-emerald-400'}`}
+              />
+              {bypassPinError && (
+                <p className="text-[11px] text-rose-600 font-bold text-center">كلمة المرور غير صحيحة</p>
+              )}
+              {financialPin === '0000' && (
+                <p className="text-[10px] text-amber-600 font-semibold text-center">
+                  تنبيه: كلمة المرور ما زالت الافتراضية (0000) — غيّرها من تبويب الحسابات بعد الدخول.
+                </p>
+              )}
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  className="flex-1 bg-slate-700 hover:bg-slate-800 text-white rounded-lg py-2 text-xs font-black transition cursor-pointer border-none"
+                >
+                  تأكيد التجاوز
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setShowBypassPin(false); setBypassPinEntry(''); setBypassPinError(false); }}
+                  className="flex-1 bg-white hover:bg-slate-100 text-slate-600 rounded-lg py-2 text-xs font-bold transition cursor-pointer border border-slate-200"
+                >
+                  إلغاء
+                </button>
+              </div>
+            </form>
+          )}
 
           <div className="mt-5 text-[11px] leading-relaxed text-slate-500 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5">
             <span className="font-bold text-emerald-700">مهم لتوحيد البيانات بين الأجهزة:</span><br/>
@@ -3201,9 +3312,18 @@ export default function Dashboard() {
 
       {/* شريط خطأ المزامنة — يظهر عند رفض الصلاحيات أو انقطاع الخادم (لم يعد مكتوماً في الـ console) */}
       {syncError && (
-        <div role="alert" className="flex items-center gap-2 bg-red-50 border-b border-red-300 px-4 py-2.5 text-sm text-red-800" dir="rtl">
-          <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse flex-shrink-0" />
-          <span className="font-medium">تعذّرت المزامنة مع السحابة ({syncError}). بياناتك محفوظة على هذا الجهاز فقط ولم تُرفع بعد — تحقّق من الإنترنت ثم أعد المحاولة.</span>
+        <div role="alert" className="flex items-center justify-between gap-2 bg-red-50 border-b border-red-300 px-4 py-2.5 text-sm text-red-800" dir="rtl">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse flex-shrink-0" />
+            <span className="font-medium">تعذّرت المزامنة مع السحابة ({syncError}). بياناتك محفوظة على هذا الجهاز فقط ولم تُرفع بعد — تحقّق من الإنترنت ثم أعد المحاولة.</span>
+          </div>
+          <button
+            onClick={() => setSyncError(null)}
+            aria-label="إخفاء التنبيه"
+            className="flex-shrink-0 rounded px-2 py-0.5 text-red-600 hover:bg-red-100 transition-colors text-xs font-bold cursor-pointer border border-red-200 bg-white"
+          >
+            إخفاء
+          </button>
         </div>
       )}
 
