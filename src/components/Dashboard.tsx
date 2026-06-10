@@ -1540,7 +1540,7 @@ export default function Dashboard() {
       } catch (e) { console.warn('[نسخ احتياطي يومي] فشل:', e); }
     }, 10000); // 10 ثوانٍ بعد الإقلاع حتى تكتمل المزامنة
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   // (3) الاستعادة — تُطبّق اللقطة على الحالة المحلية
@@ -2256,7 +2256,7 @@ export default function Dashboard() {
     if (!q) return null;
     const lower = q.toLowerCase();
     let exact: Medicine | null = null;
-    let partial: Medicine | null = null;
+    const partial: Medicine | null = null;
     for (const { m, nameAr, nameEn, sci, barcode } of inventoryIndex) {
       if (barcode === lower || nameAr === lower || nameEn === lower) return m;
       if (!exact && (nameAr.includes(lower) || nameEn.includes(lower) || sci.includes(lower) || barcode.includes(lower)))
@@ -2739,7 +2739,7 @@ export default function Dashboard() {
     };
 
     let updatedInventory = [...inventory];
-    let updatedExpiries = { ...expiryDates };
+    const updatedExpiries = { ...expiryDates };
     // نجمع معرّفات المواد المتغيّرة فقط — الكتابة السحابية كانت ترفع كل المخزون
     // (آلاف المستندات) عند كل اعتماد، ما يبطئ ويخاطر بمحو تعديلات أجهزة أخرى.
     const changedMedIds = new Set<string>();

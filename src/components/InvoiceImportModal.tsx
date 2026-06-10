@@ -450,7 +450,7 @@ export default function InvoiceImportModal({ inventory, onClose, onConfirm }: Pr
                                       .map(m => ({ m, score: [m.nameAr, m.nameEn, m.scientificName].map(n => {
                                         const na = (n || '').toLowerCase(); const nb = (item.arabicName || item.rawName).toLowerCase();
                                         return na.includes(nb.slice(0, 4)) || nb.includes(na.slice(0, 4)) ? 0.6 : 0;
-                                      }).reduce((a, b) => Math.max(a, b), 0) }))
+                                      }).reduce((a: number, b) => Math.max(a, b), 0) }))
                                       .filter(x => x.score > 0 || x.m.id === medicine?.id)
                                       .sort((a, b) => b.score - a.score)
                                       .slice(0, 6)
