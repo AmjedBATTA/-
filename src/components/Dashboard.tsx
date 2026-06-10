@@ -2703,6 +2703,23 @@ export default function Dashboard() {
       return med?.id ?? null;
     };
 
+    // مطابقة آمنة للطلبيات القديمة (بلا لقطة): نفصل اسم البند «عربي (إنجليزي)» ونطابقه
+    // بالاسم الكامل تماماً مع حماية من النصوص الفارغة (تفادي خطأ includes('') = true دائماً).
+    const matchLegacyItem = (medicineName: string) => {
+      const raw = (medicineName || '').trim();
+      const pm = raw.match(/^(.*?)\s*\(([^)]*)\)\s*$/);
+      const itemNameAr = (pm ? pm[1] : raw).trim();
+      const itemNameEn = (pm ? pm[2] : '').trim();
+      const arL = itemNameAr.toLowerCase();
+      const enL = itemNameEn.toLowerCase();
+      const med = inventory.find(m => {
+        const mAr = (m.nameAr || '').trim().toLowerCase();
+        const mEn = (m.nameEn || '').trim().toLowerCase();
+        return (arL && mAr === arL) || (enL && mEn === enL);
+      });
+      return { med, itemNameAr, itemNameEn };
+    };
+
     // بناء بنود المسودة لإعادة تحميلها (بمعرّفات جديدة لتفادي تكرار المفاتيح)
     let reloadItems: any[];
     if (hasSnapshot) {
@@ -2712,17 +2729,14 @@ export default function Dashboard() {
         medicineId: resolveMedId(d),
       }));
     } else {
-      // طلبيات قديمة بلا لقطة: نعيد البناء بأفضل تطابق بالاسم من المخزون
+      // طلبيات قديمة بلا لقطة: نعيد البناء بتطابق دقيق بالاسم، ونحتفظ باسم البند الأصلي إن لم نجد تطابقاً
       reloadItems = order.items.map((it, i) => {
-        const name = it.medicineName.toLowerCase();
-        const med = inventory.find(m =>
-          name.includes((m.nameAr || '').toLowerCase()) || name.includes((m.nameEn || '').toLowerCase())
-        );
+        const { med, itemNameAr, itemNameEn } = matchLegacyItem(it.medicineName);
         return {
           id: `draft-reopen-${stamp}-${i}`,
           medicineId: med?.id ?? null,
-          nameAr: med?.nameAr ?? it.medicineName,
-          nameEn: med?.nameEn ?? '',
+          nameAr: med?.nameAr ?? itemNameAr,
+          nameEn: med?.nameEn ?? itemNameEn,
           scientificName: med?.scientificName ?? 'N/A',
           price: Number(it.price) || 0,
           retailPrice: med?.price ?? 0,
@@ -2739,10 +2753,7 @@ export default function Dashboard() {
     const reverseQtys: { medicineId: string | null; qty: number }[] = hasSnapshot
       ? order.draftSnapshot!.map((d: any) => ({ medicineId: resolveMedId(d), qty: Number(d.qty) || 0 }))
       : order.items.map(it => {
-          const name = it.medicineName.toLowerCase();
-          const med = inventory.find(m =>
-            name.includes((m.nameAr || '').toLowerCase()) || name.includes((m.nameEn || '').toLowerCase())
-          );
+          const { med } = matchLegacyItem(it.medicineName);
           return { medicineId: med?.id ?? null, qty: Number(it.quantity) || 0 };
         });
 
