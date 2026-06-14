@@ -25,6 +25,7 @@ import { downloadCSV, datedFilename } from '../utils/csvExport';
 interface POSItem {
   medicine: Medicine;
   quantity: number;
+  outOfStock?: boolean; // علامة تذكير لمادة نافذة (رصيد صفر): تظهر بالأحمر الباهت، لا تُحتسب في المجموع ولا تُخصم من المخزون
 }
 
 interface SaleRecord {
@@ -262,11 +263,11 @@ const MedicineCard = React.memo(({ med, showVirtualPrice, daysUntilExpiry, onAdd
 
   return (
     <div
-      onClick={() => !isOut && onAdd(med)}
-      className={`p-3.5 rounded-2xl border text-right transition-all flex flex-col gap-2 relative ${
+      onClick={() => onAdd(med)}
+      className={`p-3.5 rounded-2xl border text-right transition-all flex flex-col gap-2 relative cursor-pointer active:scale-[0.98] ${
         isOut
-          ? 'bg-slate-50 border-slate-100 opacity-50 cursor-not-allowed'
-          : 'bg-white border-slate-200 hover:border-emerald-400 hover:shadow-md cursor-pointer shadow-sm active:scale-[0.98]'
+          ? 'bg-rose-50/70 border-rose-200 hover:border-rose-400 hover:shadow-md shadow-sm'
+          : 'bg-white border-slate-200 hover:border-emerald-400 hover:shadow-md shadow-sm'
       }`}
     >
       {/* Status badge */}
@@ -336,6 +337,27 @@ const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove
   const unitPrice = showVirtualPrice
     ? (item.medicine.secondaryPrice || (item.medicine.price + 500))
     : item.medicine.price;
+
+  // مادة نافذة (رصيد صفر): سطر تذكير أحمر باهت — اسم + سعر بلا شطب، بلا أزرار كمية،
+  // غير محتسب في الإجمالي ولا يُخصم من المخزون. زر الحذف فقط.
+  if (item.outOfStock) {
+    return (
+      <div className="bg-rose-950/40 border border-rose-900/50 rounded-2xl p-4 flex items-center justify-between gap-3">
+        <div className="flex-1 min-w-0 space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="font-extrabold text-rose-200 text-sm truncate">{item.medicine.nameAr}</span>
+            <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-rose-900/60 text-rose-300 shrink-0">نفذ</span>
+          </div>
+          <span className="text-sm text-rose-300/80 font-mono font-bold block">{unitPrice.toLocaleString()} د.ع</span>
+        </div>
+        <button type="button" onClick={() => onRemove(item.medicine.id)}
+          className="w-9 h-9 text-rose-700 hover:text-rose-300 flex items-center justify-center cursor-pointer transition shrink-0">
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+    );
+  }
+
   const lineTotal = unitPrice * item.quantity;
 
   return (
@@ -584,6 +606,10 @@ export default function Dashboard() {
   const [bulkImportMsg, setBulkImportMsg] = useState('');
   const [showBulkImportConfirm, setShowBulkImportConfirm] = useState(false);
   const [purchaseDraft, setPurchaseDraft] = useState<any[]>([]);
+  // تعديل اسم/باركود صف مسودة الشراء بالنقر ثلاث مرات — ينتشر للمخزون و POS تلقائياً
+  const [editingDraftField, setEditingDraftField] = useState<{ id: string; field: 'nameAr' | 'barcode'; medicineId?: string } | null>(null);
+  const [editingDraftValue, setEditingDraftValue] = useState('');
+  const draftEditCancelRef = useRef(false);
 
   // المورّد النشط لمسودة الشراء الحالية — يُطبَّق على كل الأصناف ويُورَّث للأصناف الجديدة تلقائياً
   const [purchaseSupplier, setPurchaseSupplier] = useState<string>('');
@@ -1746,6 +1772,89 @@ export default function Dashboard() {
     setExpandedInvoiceId(null);
   };
 
+  // --- DELETE ONE ITEM FROM A SALES INVOICE (حذف صنف من فاتورة مبيعات + إرجاع عدده للمخزون) ---
+  // تصحيح كامل: يُزال الصنف، تُعاد كميته للمخزون، يَنقص الإجمالي، ويُصحَّح الصندوق بالفرق
+  // (نفس المنطق المالي لـ handleSaveInvoiceEdit + إعادة للمخزون بمطابقة الاسم كما في المرتجعات).
+  const handleDeleteInvoiceItem = (invoiceId: string, itemIndex: number) => {
+    const sale = salesLedger.find(s => s.invoiceId === invoiceId);
+    const item = sale?.items[itemIndex];
+    if (!sale || !item) return;
+
+    // مطابقة المادة بالمخزون (نفس نمط الإرجاع: الاسم الكامل أو الاسم العربي)
+    const med = inventory.find(m => `${m.nameAr} (${m.nameEn})` === item.name || m.nameAr === item.name);
+    const restoreQty = item.quantity;
+    const lineAmount = item.quantity * item.price;
+
+    // تأكيد سريع قبل التنفيذ
+    const ok = window.confirm(
+      `حذف «${item.name}» من الفاتورة ${invoiceId}؟\n` +
+      (med ? `سيُعاد ${restoreQty} إلى المخزون` : `⚠ تعذّرت مطابقة المادة بالمخزون — لن يُعاد العدد`) +
+      `، ويَنقص الإجمالي ${lineAmount.toLocaleString()} د.ع ويُصحَّح الصندوق.`
+    );
+    if (!ok) return;
+
+    // 1) أزل الصنف من الفاتورة + أعد حساب الإجماليات (نفس حساب handleSaveInvoiceEdit)
+    let updatedRecord: SaleRecord | null = null;
+    setSalesLedger(prev => prev.map(s => {
+      if (s.invoiceId !== invoiceId) return s;
+      const newItems = s.items.filter((_, i) => i !== itemIndex);
+      const newTotal = newItems.reduce((sum, it) => sum + it.quantity * it.price, 0);
+      const newTotalCost = newItems.reduce((sum, it) => sum + it.quantity * (it.costPrice ?? 0), 0);
+      const newGrossProfit = newTotal - newTotalCost;
+      updatedRecord = {
+        ...s,
+        items: newItems,
+        subtotal: newTotal,
+        total: newTotal,
+        totalCost: newTotalCost,
+        grossProfit: newGrossProfit,
+        profitMargin: newTotal > 0 ? Math.round((newGrossProfit / newTotal) * 100) : 0,
+      };
+      return updatedRecord;
+    }));
+
+    // 2) صحّح الصندوق بفرق المبلغ (نفس سلوك «حفظ التعديلات» — مع منع النزول تحت الصفر)
+    setWalletBalance(w => Math.max(0, w - lineAmount));
+
+    // 3) أعِد الكمية إلى المخزون (إن طوبقت المادة) + جهّز المزامنة
+    let restoredMed: Medicine | null = null;
+    if (med) {
+      setInventory(prev => prev.map(m => {
+        if (m.id !== med.id) return m;
+        const nextQty = m.availableQuantity + restoreQty;
+        restoredMed = {
+          ...m,
+          availableQuantity: nextQty,
+          status: (nextQty > 15 ? 'available' : nextQty > 0 ? 'low' : 'unavailable') as Medicine['status'],
+        } as Medicine;
+        return restoredMed;
+      }));
+    }
+
+    // 4) مزامنة Firestore (الفاتورة المعدّلة + المخزون المُعاد)
+    if (currentUser) {
+      const userId = currentUser.uid;
+      if (updatedRecord) {
+        setDoc(doc(db, 'users', userId, 'salesLedger', invoiceId), { ...(updatedRecord as SaleRecord), userId })
+          .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/salesLedger/${invoiceId}`));
+      }
+      if (restoredMed) {
+        const rm = restoredMed as Medicine;
+        setDoc(doc(db, 'users', userId, 'inventory', rm.id), { ...rm, userId })
+          .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/inventory/${rm.id}`));
+      }
+    }
+
+    // 5) حدّث العرض الموسّع (إزالة نفس الفهرس) + سجّل في دفتر التدقيق
+    setEditingItems(prev => prev.filter((_, i) => i !== itemIndex));
+    addAuditEntry({
+      action: 'inventory_edit',
+      amount: lineAmount,
+      description: `حذف صنف «${item.name}» (${restoreQty}) من فاتورة ${invoiceId}${med ? ' وإعادته للمخزون' : ''} — تصحيح الإجمالي والصندوق`,
+      relatedId: invoiceId,
+    });
+  };
+
   // --- ADD EXPENSE (تسجيل مصروف وخصمه من السيولة) ---
   const handleAddExpense = (e: FormEvent) => {
     e.preventDefault();
@@ -2084,7 +2193,8 @@ export default function Dashboard() {
 
   // --- POS CART COMPUTE ---
   const { subtotal: posSubtotal, discountAmount: posDiscountAmount, total: posTotal } = computeSaleTotals(
-    currentCart.map(item => ({ price: item.medicine.price, quantity: item.quantity })),
+    // المواد النافذة (علامات تذكير) لا تُحتسب في المجموع/الصافي
+    currentCart.filter(i => !i.outOfStock).map(item => ({ price: item.medicine.price, quantity: item.quantity })),
     posDiscountPercent
   );
 
@@ -2309,9 +2419,14 @@ export default function Dashboard() {
 
   // مُثبّت بـ useCallback + functional update — حتى تبقى هويته مستقرة (يعتمد عليه POSSearchBar)
   const addToCart = useCallback((med: Medicine) => {
-    if (med.availableQuantity <= 0) return;
     setCurrentCart(prev => {
       const idx = prev.findIndex(item => item.medicine.id === med.id);
+      // مادة نافذة (رصيد صفر): تُضاف مرّة واحدة كعلامة تذكير حمراء فقط —
+      // بلا سعر محتسب ولا خصم من المخزون. لا تتكرّر ولا تزيد كميتها.
+      if (med.availableQuantity <= 0) {
+        if (idx !== -1) return prev;
+        return [{ medicine: med, quantity: 1, outOfStock: true }, ...prev];
+      }
       if (idx !== -1) {
         const existing = prev[idx];
         if (existing.quantity >= med.availableQuantity) return prev;
@@ -2338,7 +2453,8 @@ export default function Dashboard() {
 
   const updateCartQty = useCallback((medId: string, delta: number) => {
     setCurrentCart(prev => prev.map(item => {
-      if (item.medicine.id === medId) {
+      // العلامات النافذة لا تتغيّر كميتها (لا أزرار +/− لها أصلاً) — حماية دفاعية
+      if (item.medicine.id === medId && !item.outOfStock) {
         const nextQty = item.quantity + delta;
         const maxQty = item.medicine.availableQuantity;
         if (nextQty >= 1 && nextQty <= maxQty) {
@@ -2356,7 +2472,9 @@ export default function Dashboard() {
   // COMPLETE SALE DISPATCH
   const handleCheckoutPOS = (e: FormEvent) => {
     e.preventDefault();
-    if (currentCart.length === 0) return;
+    // المواد النافذة علامات تذكير فقط — تُستبعد كلياً من البيع (لا فاتورة، لا حسابات، لا خصم مخزون)
+    const sellableCart = currentCart.filter(i => !i.outOfStock);
+    if (sellableCart.length === 0) return;
 
     const invoiceId = generateDocId('INV');
     const now = new Date();
@@ -2368,7 +2486,7 @@ export default function Dashboard() {
 
     // --- COST & PROFIT COMPUTATION ---
     // Cost basis per line (fallback to ~72% of sale price for legacy items without costPrice)
-    const itemsWithCost = currentCart.map(item => {
+    const itemsWithCost = sellableCart.map(item => {
       const unitCost = resolveUnitCost(item.medicine.costPrice, item.medicine.price, defaultCostPercent);
       return {
         name: `${item.medicine.nameAr} (${item.medicine.nameEn})`,
@@ -2405,7 +2523,7 @@ export default function Dashboard() {
         date: new Date().toISOString().split('T')[0],
         status: 'open',
         relatedInvoiceId: invoiceId,
-        description: `بيع آجل (${currentCart.length} صنف)`,
+        description: `بيع آجل (${sellableCart.length} صنف)`,
       };
       setReceivables(prev => [creditReceivable!, ...prev]);
     }
@@ -2420,7 +2538,7 @@ export default function Dashboard() {
       // اللحظة يُطبَّق الخصمان معاً على الخادم بدل أن يمحو أحدهما الآخر.
       const batch = writeBatch(db);
 
-      currentCart.forEach(item => {
+      sellableCart.forEach(item => {
         const med = inventory.find(m => m.id === item.medicine.id);
         if (med) {
           const estimatedQty = Math.max(0, med.availableQuantity - item.quantity);
@@ -2465,7 +2583,7 @@ export default function Dashboard() {
       addAuditEntry({
         action: 'sale',
         amount: posTotal,
-        description: `فاتورة بيع ${posOnCredit ? 'آجل' : 'نقدي'} (${currentCart.length} صنف) — ${posCustomerName}`,
+        description: `فاتورة بيع ${posOnCredit ? 'آجل' : 'نقدي'} (${sellableCart.length} صنف) — ${posCustomerName}`,
         relatedId: invoiceId,
       });
       setLastPrintedInvoice(newSaleRecord);
@@ -2478,7 +2596,7 @@ export default function Dashboard() {
       // Decrement state values in live inventory database!
       setInventory(prevInventory => {
         return prevInventory.map(med => {
-          const cartItem = currentCart.find(i => i.medicine.id === med.id);
+          const cartItem = sellableCart.find(i => i.medicine.id === med.id);
           if (cartItem) {
             const nextQty = Math.max(0, med.availableQuantity - cartItem.quantity);
             return {
@@ -2500,7 +2618,7 @@ export default function Dashboard() {
       addAuditEntry({
         action: 'sale',
         amount: posTotal,
-        description: `فاتورة بيع ${posOnCredit ? 'آجل' : 'نقدي'} (${currentCart.length} صنف) — ${posCustomerName}`,
+        description: `فاتورة بيع ${posOnCredit ? 'آجل' : 'نقدي'} (${sellableCart.length} صنف) — ${posCustomerName}`,
         relatedId: invoiceId,
       });
       setLastPrintedInvoice(newSaleRecord);
@@ -2717,6 +2835,50 @@ export default function Dashboard() {
     setCreditSupplierName(val);
     setPurchaseDraft(prev => prev.map(d => ({ ...d, warehouse: val })));
     if (val) setInventory(prev => prev.map(m => purchaseDraft.some(d => d.medicineId === m.id) ? { ...m, warehouse: val } : m));
+  };
+
+  // بدء تعديل اسم/باركود صف المسودة (يُستدعى بالنقر ثلاث مرات)
+  const startEditDraftField = (item: any, field: 'nameAr' | 'barcode') => {
+    setEditingDraftField({ id: item.id, field, medicineId: item.medicineId });
+    setEditingDraftValue(field === 'nameAr' ? (item.nameAr ?? '') : (item.barcode ?? ''));
+  };
+
+  // حفظ التعديل: يحدّث صف المسودة + سجل الدواء الرئيسي في المخزون + Firestore
+  // فينعكس تلقائياً في نقاط البيع وجدول المخزون. الطلبيات المحفوظة لا تُمسّ (حفظ السجل التاريخي).
+  const saveDraftField = () => {
+    // أُلغِي بـ Escape — لا حفظ
+    if (draftEditCancelRef.current) {
+      draftEditCancelRef.current = false;
+      setEditingDraftField(null);
+      setEditingDraftValue('');
+      return;
+    }
+    const editing = editingDraftField;
+    if (!editing) return;
+    const { id, field, medicineId } = editing;
+    const val = editingDraftValue.trim();
+    // الاسم لا يُترك فارغاً؛ الباركود يُقبل كما هو
+    setPurchaseDraft(prev => prev.map(d => {
+      if (d.id !== id) return d;
+      return field === 'nameAr' ? { ...d, nameAr: val || d.nameAr } : { ...d, barcode: val };
+    }));
+    // الانتشار للمخزون الرئيسي + Firestore (فقط لو الصنف مرتبط بمادة في المخزون)
+    if (medicineId) {
+      let updatedMed: Medicine | null = null;
+      setInventory(prev => prev.map(m => {
+        if (m.id !== medicineId) return m;
+        updatedMed = (field === 'nameAr'
+          ? { ...m, nameAr: val || m.nameAr, updatedAt: new Date().toISOString() }
+          : { ...m, barcode: val, updatedAt: new Date().toISOString() }) as Medicine;
+        return updatedMed!;
+      }));
+      if (currentUser && updatedMed) {
+        setDoc(doc(db, 'users', currentUser.uid, 'inventory', medicineId), updatedMed)
+          .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${currentUser.uid}/inventory/${medicineId}`));
+      }
+    }
+    setEditingDraftField(null);
+    setEditingDraftValue('');
   };
 
   // --- PURCHASE ORDERS (طلبيات الشراء) BUSINESS LOGIC ---
@@ -4100,6 +4262,14 @@ export default function Dashboard() {
                                         <span className="text-[9px] font-mono text-emerald-700 shrink-0">
                                           = {(it.quantity * it.price).toLocaleString()}
                                         </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteInvoiceItem(s.invoiceId, idx)}
+                                          title="حذف هذا الصنف من الفاتورة وإرجاع عدده للمخزون"
+                                          className="shrink-0 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded p-1 transition cursor-pointer border-none bg-transparent flex items-center justify-center"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
                                       </div>
                                     ))}
                                   </div>
@@ -5424,27 +5594,73 @@ export default function Dashboard() {
                                 <tbody>
                                   {purchaseDraft.map((item, index) => {
                                     const subTotal = (item.qty || 0) * (item.price || 0);
+                                    // الرصيد الحقيقي الحالي للصنف في المخزن (مصدره inventory لا كمية المسودة)
+                                    const liveMed = inventory.find(m => m.id === item.medicineId);
+                                    const liveQty = liveMed?.availableQuantity ?? 0;
                                     return (
                                       <tr key={item.id} className="border-b border-slate-100/70 hover:bg-slate-50/40 transition">
                                         
                                         {/* Name & details */}
                                         <td className="py-3.5 px-3 max-w-xs">
                                           <div className="space-y-0.5">
-                                            <strong className="text-slate-900 block font-bold text-xs">{item.nameAr}</strong>
+                                            {/* الاسم العربي (ثلاث نقرات للتعديل) + الرصيد الحقيقي بالمخزن بجانبه */}
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                              {editingDraftField !== null && editingDraftField.id === item.id && editingDraftField.field === 'nameAr' ? (
+                                                <input
+                                                  autoFocus
+                                                  type="text"
+                                                  value={editingDraftValue}
+                                                  onChange={e => setEditingDraftValue(e.target.value)}
+                                                  onKeyDown={e => {
+                                                    if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); }
+                                                    else if (e.key === 'Escape') { draftEditCancelRef.current = true; (e.target as HTMLInputElement).blur(); }
+                                                  }}
+                                                  onBlur={saveDraftField}
+                                                  className="text-slate-900 font-bold text-xs flex-1 min-w-0 bg-indigo-50 border border-indigo-300 rounded px-1 focus:outline-indigo-500 text-right"
+                                                  title="اضغط Enter للحفظ أو Escape للإلغاء"
+                                                />
+                                              ) : (
+                                                <strong
+                                                  className="text-slate-900 font-bold text-xs cursor-text select-none"
+                                                  title="انقر ثلاث مرات لتعديل الاسم العربي"
+                                                  onClick={e => { if (e.detail === 3) startEditDraftField(item, 'nameAr'); }}
+                                                >{item.nameAr}</strong>
+                                              )}
+                                              {item.medicineId && liveMed ? (
+                                                <span
+                                                  className={`text-[8px] font-black px-1.5 py-0.5 rounded-full shrink-0 ${liveQty <= 0 ? 'bg-rose-100 text-rose-700' : liveQty < (liveMed.minStock ?? 15) ? 'bg-amber-100 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}
+                                                  title="الرصيد الحالي الحقيقي في المخزن"
+                                                >بالمخزن: {liveQty}</span>
+                                              ) : (
+                                                <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full shrink-0 bg-blue-50 text-blue-700" title="صنف جديد غير موجود بالمخزن بعد">جديد</span>
+                                              )}
+                                            </div>
                                             <span className="text-[9px] text-slate-500 font-mono block">
                                               {item.nameEn} • {item.scientificName}
                                             </span>
+                                            {/* الباركود — ثلاث نقرات للتعديل مع انتشار للمخزون */}
                                             <div className="flex flex-wrap items-center gap-1">
-                                              <input
-                                                type="text"
-                                                value={item.barcode}
-                                                onChange={(e) => {
-                                                  const val = e.target.value;
-                                                  setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, barcode: val } : d));
-                                                }}
-                                                className="text-[8px] text-slate-500 font-mono bg-transparent border-none border-b border-dashed border-slate-200 focus:border-indigo-500 w-24 text-right focus:outline-none"
-                                                title="تعديل باركود عبوة الشراء"
-                                              />
+                                              {editingDraftField !== null && editingDraftField.id === item.id && editingDraftField.field === 'barcode' ? (
+                                                <input
+                                                  autoFocus
+                                                  type="text"
+                                                  value={editingDraftValue}
+                                                  onChange={e => setEditingDraftValue(e.target.value)}
+                                                  onKeyDown={e => {
+                                                    if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); }
+                                                    else if (e.key === 'Escape') { draftEditCancelRef.current = true; (e.target as HTMLInputElement).blur(); }
+                                                  }}
+                                                  onBlur={saveDraftField}
+                                                  className="text-[8px] text-slate-500 font-mono bg-indigo-50 border border-indigo-300 rounded px-1 w-24 text-right focus:outline-indigo-500"
+                                                  title="اضغط Enter للحفظ أو Escape للإلغاء"
+                                                />
+                                              ) : (
+                                                <span
+                                                  className="text-[8px] text-slate-500 font-mono cursor-text select-none border-b border-dashed border-slate-200"
+                                                  title="انقر ثلاث مرات لتعديل الباركود"
+                                                  onClick={e => { if (e.detail === 3) startEditDraftField(item, 'barcode'); }}
+                                                >{item.barcode || '—'}</span>
+                                              )}
                                             </div>
                                           </div>
                                         </td>
