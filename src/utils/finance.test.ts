@@ -6,8 +6,21 @@ import {
   movingAverageCost,
   computeSaleTotals,
   computeProfit,
+  todayLocalISO,
   DEFAULT_COST_PERCENT,
 } from './finance';
+
+describe('todayLocalISO', () => {
+  it('يعيد صيغة YYYY-MM-DD', () => {
+    expect(todayLocalISO()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('يعيد اليوم المحلي لا يوم UTC (قيد ما بعد منتصف الليل يبقى بتاريخ اليوم)', () => {
+    // 01:30 فجراً بالتوقيت المحلي — toISOString كان يعيد تاريخ الأمس في أي منطقة شرق غرينتش
+    const lateNight = new Date(2026, 6, 4, 1, 30); // تموز 4 (الشهر يبدأ من صفر)
+    expect(todayLocalISO(lateNight)).toBe('2026-07-04');
+  });
+});
 
 describe('generateDocId', () => {
   it('يبدأ بالبادئة المطلوبة', () => {

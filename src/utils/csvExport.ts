@@ -1,4 +1,5 @@
 // تصدير CSV متوافق مع Excel (بترميز UTF-8 BOM حتى تظهر العربية صحيحة).
+import { todayLocalISO } from './finance';
 
 /** علامة ترتيب البايتات — تجعل Excel يفتح الملف بترميز UTF-8 فتظهر العربية سليمة */
 const UTF8_BOM = String.fromCharCode(0xFEFF);
@@ -24,7 +25,7 @@ export function downloadCSV(filename: string, rows: (string | number | null | un
   URL.revokeObjectURL(url);
 }
 
-/** اسم ملف بتاريخ اليوم: prefix_YYYY-MM-DD.csv */
+/** اسم ملف بتاريخ اليوم المحلي: prefix_YYYY-MM-DD.csv */
 export function datedFilename(prefix: string): string {
-  return `${prefix}_${new Date().toISOString().split('T')[0]}.csv`;
+  return `${prefix}_${todayLocalISO()}.csv`;
 }

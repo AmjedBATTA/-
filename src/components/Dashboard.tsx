@@ -16,7 +16,7 @@ import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { collection, doc, getDoc, setDoc, onSnapshot, deleteDoc, writeBatch, increment, getCountFromServer, query, orderBy, limit } from 'firebase/firestore';
 import {
-  generateDocId, deriveStockStatus, resolveUnitCost, movingAverageCost,
+  generateDocId, deriveStockStatus, resolveUnitCost, movingAverageCost, todayLocalISO,
   computeSaleTotals, computeProfit, loadDefaultCostPercent, saveDefaultCostPercent,
 } from '../utils/finance';
 import { downloadCSV, datedFilename } from '../utils/csvExport';
@@ -28,10 +28,19 @@ interface POSItem {
   outOfStock?: boolean; // علامة تذكير لمادة نافذة (رصيد صفر): تظهر بالأحمر الباهت، لا تُحتسب في المجموع ولا تُخصم من المخزون
 }
 
+// تعقيم نص قبل حقنه في قالب HTML يُبنى كسلسلة نصية (مثل صفحات الطباعة عبر document.write) —
+// أسماء الأدوية قابلة للتحرير وتأتي أيضاً من استخراج OCR، فقد تحمل وسوماً خبيثة
+const escapeHtml = (s: string) => String(s)
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
 interface SaleRecord {
   invoiceId: string;
   timestamp: string;
-  items: { name: string; quantity: number; price: number; costPrice?: number; lineProfit?: number }[];
+  items: { medicineId?: string; name: string; quantity: number; price: number; costPrice?: number; lineProfit?: number }[];
   subtotal: number;
   discount: number;
   total: number;
@@ -79,7 +88,7 @@ interface SalesReturn {
   returnId: string;             // RET-xxxx
   originalInvoiceId: string;    // رقم الفاتورة الأصلية
   timestamp: string;            // YYYY-MM-DD HH:mm
-  items: { name: string; quantity: number; price: number; costPrice?: number }[];
+  items: { medicineId?: string; name: string; quantity: number; price: number; costPrice?: number }[];
   total: number;                // إجمالي مبلغ الاسترداد (IQD)
   reason: string;               // سبب الإرجاع
   refundMethod: 'cash' | 'none'; // نقد (يُخصم من الصندوق) / بدون صرف نقدي
@@ -254,11 +263,11 @@ const MedicineCard = React.memo(({ med, showVirtualPrice, daysUntilExpiry, onAdd
   const isLow = med.availableQuantity < 15;
   const isOut = med.availableQuantity <= 0;
   const isExpiringSoon = daysUntilExpiry <= 30;
-  const sellPrice = showVirtualPrice
-    ? (med.secondaryPrice || (med.price + 500))
-    : med.price;
-  const margin = med.costPrice && med.costPrice > 0
-    ? Math.round(((sellPrice - med.costPrice) / sellPrice) * 100)
+  // السعر المُحاسَب دائماً هو الجمهوري (med.price) — «الرسمي» يظهر كمعلومة مرجعية فقط
+  // ولا يدخل في سعر السطر أو الإجمالي (كان يحلّ محلّ السعر فتناقض الشاشةُ الفاتورة)
+  const officialPrice = med.secondaryPrice || (med.price + 500);
+  const margin = med.costPrice && med.costPrice > 0 && med.price > 0
+    ? Math.round(((med.price - med.costPrice) / med.price) * 100)
     : null;
 
   return (
@@ -294,10 +303,15 @@ const MedicineCard = React.memo(({ med, showVirtualPrice, daysUntilExpiry, onAdd
       {/* Prices */}
       <div className="border-t border-slate-100 pt-2 flex justify-between items-end">
         <div className="space-y-0.5">
-          <span className={`text-sm font-black font-mono block ${showVirtualPrice ? 'text-purple-700' : 'text-emerald-700'}`}>
-            {sellPrice.toLocaleString()}
+          <span className="text-sm font-black font-mono block text-emerald-700">
+            {med.price.toLocaleString()}
             <span className="text-[9px] font-bold text-slate-400 mr-0.5">د.ع</span>
           </span>
+          {showVirtualPrice && (
+            <span className="text-[9px] text-purple-700 font-mono font-bold block">
+              رسمي: {officialPrice.toLocaleString()}
+            </span>
+          )}
           {med.costPrice && med.costPrice > 0 && (
             <span className="text-[9px] text-slate-400 font-mono block">
               شراء: <span className="text-slate-500 font-bold">{med.costPrice.toLocaleString()}</span>
@@ -334,9 +348,9 @@ interface CartItemRowProps {
 }
 
 const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove }: CartItemRowProps) => {
-  const unitPrice = showVirtualPrice
-    ? (item.medicine.secondaryPrice || (item.medicine.price + 500))
-    : item.medicine.price;
+  // السعر المُحاسَب دائماً هو الجمهوري — «الرسمي» معلومة مرجعية لا تدخل في سطر أو إجمالي
+  const unitPrice = item.medicine.price;
+  const officialPrice = item.medicine.secondaryPrice || (item.medicine.price + 500);
 
   // مادة نافذة (رصيد صفر): سطر تذكير أحمر باهت — اسم + سعر بلا شطب، بلا أزرار كمية،
   // غير محتسب في الإجمالي ولا يُخصم من المخزون. زر الحذف فقط.
@@ -362,15 +376,25 @@ const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove
 
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 flex items-center justify-between gap-3">
-      <div className="flex-1 min-w-0 space-y-1">
-        <span className="font-extrabold text-white text-sm block truncate">{item.medicine.nameAr}</span>
+      <div className="flex-1 min-w-0 space-y-1.5">
+        <span className="font-extrabold text-white text-base block truncate">{item.medicine.nameAr}</span>
+        {/* الصف البارز: سعر الوحدة ثم «البيع الكلي» كبيراً وواضحاً (نُقل لأعلى مكان «الشراء» سابقاً) */}
+        <div className="flex items-baseline gap-2 flex-wrap">
+          <span className="text-base text-emerald-400 font-mono font-bold">{unitPrice.toLocaleString()} د.ع</span>
+          <span className="text-sm text-slate-400 font-mono">× {item.quantity}</span>
+          <span className="text-2xl text-amber-400 font-mono font-black leading-none">
+            {lineTotal.toLocaleString()}<span className="text-sm font-bold text-amber-500/80 mr-1">د.ع</span>
+          </span>
+        </div>
+        {/* الصف الثانوي: «الشراء» الكلي (نُقل لأسفل مكان «البيع الكلي» سابقاً) + الرسمي إن فُعّل */}
         <div className="flex items-center gap-3">
-          <span className="text-sm text-emerald-400 font-mono font-bold">{unitPrice.toLocaleString()} د.ع</span>
           {item.medicine.costPrice && (
-            <span className="text-xs text-slate-400 font-mono">شراء: {(item.medicine.costPrice * item.quantity).toLocaleString()} د.ع</span>
+            <span className="text-sm text-slate-400 font-mono">الشراء: {(item.medicine.costPrice * item.quantity).toLocaleString()} د.ع</span>
+          )}
+          {showVirtualPrice && (
+            <span className="text-sm text-purple-400 font-mono font-bold">رسمي: {officialPrice.toLocaleString()}</span>
           )}
         </div>
-        <span className="text-xs text-slate-300 font-mono font-semibold">× {item.quantity} = <span className="text-amber-400 font-bold">{lineTotal.toLocaleString()} د.ع</span></span>
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
         <button type="button" onClick={() => onDec(item.medicine.id)}
@@ -412,15 +436,8 @@ export default function Dashboard() {
   const [inventory, setInventory] = useState<Medicine[]>([]);
 
   // Expiry states tracking
-  const [expiryDates, setExpiryDates] = useState<Record<string, string>>({
-    '1': '2028-04-12',
-    '2': '2027-09-30',
-    '3': '2026-06-15', // Near expiry
-    '4': '2026-07-20', // Expiring in July 2026
-    '5': '2028-02-15',
-    '6': '2026-06-02', // Near Expiry!
-    '7': '2027-11-10'
-  });
+  // تواريخ انتهاء الصلاحية (medicineId → YYYY-MM-DD) — تبدأ فارغة وتُحمَّل من مستمع Firestore
+  const [expiryDates, setExpiryDates] = useState<Record<string, string>>({});
 
   const [dismissedLowStock, setDismissedLowStock] = useState<Set<string>>(new Set());
 
@@ -432,7 +449,7 @@ export default function Dashboard() {
   // نسبة تقدير التكلفة من سعر البيع للمواد بلا تكلفة شراء مسجلة (C1: قابلة للضبط بدل 72% الثابتة)
   const [defaultCostPercent, setDefaultCostPercent] = useState<number>(() => loadDefaultCostPercent());
   // تقرير الإغلاق اليومي (Z-Report) — التاريخ المختار، افتراضياً اليوم
-  const [zReportDate, setZReportDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [zReportDate, setZReportDate] = useState<string>(() => todayLocalISO());
   const [dailySalesRevenue, setDailySalesRevenue] = useState(0); // Today's POS cash sum — يبدأ صفراً
 
   // --- EXPENSES LEDGER STATES (دفتر المصاريف) ---
@@ -605,6 +622,7 @@ export default function Dashboard() {
   const [bulkImportProgress, setBulkImportProgress] = useState({ done: 0, total: 0 });
   const [bulkImportMsg, setBulkImportMsg] = useState('');
   const [showBulkImportConfirm, setShowBulkImportConfirm] = useState(false);
+  const bulkImportFileRef = useRef<HTMLInputElement>(null);
   const [purchaseDraft, setPurchaseDraft] = useState<any[]>([]);
   // تعديل اسم/باركود صف مسودة الشراء بالنقر ثلاث مرات — ينتشر للمخزون و POS تلقائياً
   const [editingDraftField, setEditingDraftField] = useState<{ id: string; field: 'nameAr' | 'barcode'; medicineId?: string } | null>(null);
@@ -704,15 +722,20 @@ export default function Dashboard() {
     };
   }, [scanStream]);
 
-  // Detector / Simulator loop
+  // Detector loop — كشف حقيقي عبر الكاميرا فقط (أُزيل محاكي الباركود العشوائي)
   useEffect(() => {
     let active = true;
     let animationFrameId: number;
-    let timeoutId: any;
+    let playHandler: (() => void) | null = null;
+    let listeningVideo: HTMLVideoElement | null = null;
 
     const runDetector = async () => {
       const currentVideo = videoRef.current;
-      if (isScanning && scanStream && currentVideo && 'BarcodeDetector' in window) {
+      if (isScanning && scanStream && currentVideo) {
+        if (!('BarcodeDetector' in window)) {
+          setScanError('المتصفح لا يدعم المسح التلقائي للباركود — أدخل الباركود يدوياً في حقل البحث.');
+          return;
+        }
         try {
           const detector = new (window as any).BarcodeDetector({
             formats: ['ean_13', 'ean_8', 'qr_code', 'code_128', 'code_39', 'upc_a', 'upc_e']
@@ -735,35 +758,29 @@ export default function Dashboard() {
             }
           };
 
-          currentVideo.addEventListener('play', () => {
+          playHandler = () => {
             if (active) animationFrameId = requestAnimationFrame(checkFrame);
-          });
+          };
+          listeningVideo = currentVideo;
+          currentVideo.addEventListener('play', playHandler);
           if (!currentVideo.paused) {
             animationFrameId = requestAnimationFrame(checkFrame);
           }
         } catch (e) {
-          console.warn("BarcodeDetector setup failed, falling back to simulated matching:", e);
+          console.warn("BarcodeDetector setup failed:", e);
+          setScanError('تعذّر تشغيل كاشف الباركود — أدخل الباركود يدوياً في حقل البحث.');
         }
       }
     };
 
     if (isScanning && !scanError && !scanSuccessFeedback) {
       runDetector();
-      // Keep safety simulation timeout (4 seconds fallback)
-      timeoutId = setTimeout(() => {
-        if (active) {
-          // Choose a random sample barcode corresponding to existing medicines or a new one
-          const sampleCodes = ['6281100115598', '5011327110992', '8699532095457', '7611327110931', '4004732101236', '5011327789311', '7611327114321'];
-          const randomCode = sampleCodes[Math.floor(Math.random() * sampleCodes.length)];
-          handleScanCode(randomCode);
-        }
-      }, 4000);
     }
 
     return () => {
       active = false;
       if (animationFrameId) cancelAnimationFrame(animationFrameId);
-      if (timeoutId) clearTimeout(timeoutId);
+      if (listeningVideo && playHandler) listeningVideo.removeEventListener('play', playHandler);
     };
   }, [isScanning, scanStream, scanError, scanSuccessFeedback]);
 
@@ -879,7 +896,7 @@ export default function Dashboard() {
 
   // خريطة أيام الصلاحية — تُحسب مرة واحدة عند تغيّر expiryDates فقط
   const expiryDaysMap = useMemo(() => {
-    const todayMs = new Date(new Date().toLocaleDateString('en-CA')).getTime();
+    const todayMs = new Date(todayLocalISO()).getTime();
     const map: Record<string, number> = {};
     for (const id in expiryDates) {
       const expDateStr = expiryDates[id];
@@ -941,23 +958,21 @@ export default function Dashboard() {
   };
 
   // حفظ الكمية المعدّلة يدوياً: تحديث الحالة + المزامنة مع Firestore إن وُجد مستخدم
+  // (الكتابة مطلقة عمداً — «عددتُ الرف والكمية هي س» مثل الجرد السريع)
   const saveEditingQty = (medId: string) => {
     const parsed = Math.max(0, Math.round(Number(editingQtyValue)));
     if (isNaN(parsed)) { setEditingQtyId(null); return; }
-    let updatedMed: Medicine | null = null;
-    setInventory(prev => prev.map(m => {
-      if (m.id === medId) {
-        updatedMed = {
-          ...m,
-          availableQuantity: parsed,
-          status: parsed <= 0 ? 'unavailable' : parsed < (m.minStock ?? 15) ? 'low' : 'available',
-          updatedAt: new Date().toISOString(),
-        } as Medicine;
-        return updatedMed;
-      }
-      return m;
-    }));
-    if (currentUser && updatedMed) {
+    // الحساب خارج setState — نفس نمط بقية الدوال المُصلَحة
+    const med = inventory.find(m => m.id === medId);
+    if (!med) { setEditingQtyId(null); return; }
+    const updatedMed: Medicine = {
+      ...med,
+      availableQuantity: parsed,
+      status: parsed <= 0 ? 'unavailable' : parsed < (med.minStock ?? 15) ? 'low' : 'available',
+      updatedAt: new Date().toISOString(),
+    };
+    setInventory(prev => prev.map(m => (m.id === medId ? updatedMed : m)));
+    if (currentUser) {
       setDoc(doc(db, 'users', currentUser.uid, 'inventory', medId), updatedMed)
         .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${currentUser.uid}/inventory/${medId}`));
     }
@@ -967,22 +982,25 @@ export default function Dashboard() {
 
   // تعديل سريع للكمية بمقدار ثابت (+/-) مع المزامنة مع Firestore
   const adjustStockQty = (medId: string, delta: number) => {
-    let updatedMed: Medicine | null = null;
-    setInventory(prev => prev.map(m => {
-      if (m.id === medId) {
-        const nextQty = Math.max(0, m.availableQuantity + delta);
-        updatedMed = {
-          ...m,
-          availableQuantity: nextQty,
-          status: nextQty <= 0 ? 'unavailable' : nextQty < (m.minStock ?? 15) ? 'low' : 'available',
-          updatedAt: new Date().toISOString(),
-        } as Medicine;
-        return updatedMed;
-      }
-      return m;
-    }));
-    if (currentUser && updatedMed) {
-      setDoc(doc(db, 'users', currentUser.uid, 'inventory', medId), updatedMed)
+    // الحسابات خارج setState (التحديث داخلها قد يتكرر في StrictMode)، والكتابة تزايدية
+    const med = inventory.find(m => m.id === medId);
+    if (!med) return;
+    const nextQty = Math.max(0, med.availableQuantity + delta);
+    const effectiveDelta = nextQty - med.availableQuantity;
+    if (effectiveDelta === 0) return; // لا كتابة عبثية عند محاولة الإنقاص تحت الصفر
+    const updatedMed = {
+      ...med,
+      availableQuantity: nextQty,
+      status: nextQty <= 0 ? 'unavailable' : nextQty < (med.minStock ?? 15) ? 'low' : 'available',
+      updatedAt: new Date().toISOString(),
+    } as Medicine;
+    setInventory(prev => prev.map(m => (m.id === medId ? updatedMed : m)));
+    if (currentUser) {
+      setDoc(doc(db, 'users', currentUser.uid, 'inventory', medId), {
+        availableQuantity: increment(effectiveDelta),
+        status: updatedMed.status,
+        updatedAt: updatedMed.updatedAt,
+      }, { merge: true })
         .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${currentUser.uid}/inventory/${medId}`));
     }
   };
@@ -1004,26 +1022,24 @@ export default function Dashboard() {
     const cost  = Math.max(0, Math.round(Number(qaCostPrice)));
     const qty   = Math.max(0, Math.round(Number(qaQty)));
     if (isNaN(price) || isNaN(qty)) { setQuickAuditId(null); return; }
-    let updatedMed: Medicine | null = null;
-    setInventory(prev => prev.map(m => {
-      if (m.id !== medId) return m;
-      updatedMed = {
-        ...m,
-        nameAr: qaNameAr.trim() || m.nameAr,
-        nameEn: qaNameEn.trim() || m.nameEn,
-        price,
-        costPrice: cost > 0 ? cost : m.costPrice,
-        availableQuantity: qty,
-        status: qty <= 0 ? 'unavailable' : qty < (m.minStock ?? 15) ? 'low' : 'available',
-      } as Medicine;
-      return updatedMed!;
-    }));
+    // الحساب خارج setState — التحديث داخلها قد يتكرر مرتين (StrictMode) والمتغير الجانبي هشّ
+    const med = inventory.find(m => m.id === medId);
+    if (!med) { setQuickAuditId(null); return; }
+    const updatedMed: Medicine = {
+      ...med,
+      nameAr: qaNameAr.trim() || med.nameAr,
+      nameEn: qaNameEn.trim() || med.nameEn,
+      price,
+      costPrice: cost > 0 ? cost : med.costPrice,
+      availableQuantity: qty,
+      status: qty <= 0 ? 'unavailable' : qty < (med.minStock ?? 15) ? 'low' : 'available',
+    };
+    setInventory(prev => prev.map(m => (m.id === medId ? updatedMed : m)));
     if (qaExpiry) setExpiryDates(prev => ({ ...prev, [medId]: qaExpiry }));
     if (currentUser) {
       const uid = currentUser.uid;
-      if (updatedMed)
-        setDoc(doc(db, 'users', uid, 'inventory', medId), updatedMed)
-          .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${uid}/inventory/${medId}`));
+      setDoc(doc(db, 'users', uid, 'inventory', medId), updatedMed)
+        .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${uid}/inventory/${medId}`));
       if (qaExpiry)
         setDoc(doc(db, 'users', uid, 'expiryDates', medId), { expiry: qaExpiry, userId: uid })
           .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${uid}/expiryDates/${medId}`));
@@ -1044,32 +1060,26 @@ export default function Dashboard() {
     const parsedPrice = Math.max(0, Math.round(Number(editingPriceValue)));
     const parsedSecondary = Math.max(0, Math.round(Number(editingSecondaryPriceValue)));
     if (isNaN(parsedPrice) || isNaN(parsedSecondary)) { setEditingPriceId(null); return; }
-    let updatedMed: Medicine | null = null;
-    setInventory(prev => prev.map(m => {
-      if (m.id === medId) {
-        updatedMed = {
-          ...m,
-          price: parsedPrice,
-          secondaryPrice: parsedSecondary,
-          updatedAt: new Date().toISOString(),
-        } as Medicine;
-        return updatedMed;
-      }
-      return m;
-    }));
-    if (currentUser && updatedMed) {
+    // الحساب خارج setState — نفس نمط بقية الدوال المُصلَحة
+    const med = inventory.find(m => m.id === medId);
+    if (!med) { setEditingPriceId(null); return; }
+    const updatedMed: Medicine = {
+      ...med,
+      price: parsedPrice,
+      secondaryPrice: parsedSecondary,
+      updatedAt: new Date().toISOString(),
+    };
+    setInventory(prev => prev.map(m => (m.id === medId ? updatedMed : m)));
+    if (currentUser) {
       setDoc(doc(db, 'users', currentUser.uid, 'inventory', medId), updatedMed)
         .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${currentUser.uid}/inventory/${medId}`));
     }
-    if (updatedMed) {
-      const m = updatedMed as Medicine;
-      addAuditEntry({
-        action: 'inventory_edit',
-        amount: 0,
-        description: `تعديل سعر ${m.nameAr} → ${Number(m.price).toLocaleString()} د.ع`,
-        relatedId: medId,
-      });
-    }
+    addAuditEntry({
+      action: 'inventory_edit',
+      amount: 0,
+      description: `تعديل سعر ${updatedMed.nameAr} → ${Number(updatedMed.price).toLocaleString()} د.ع`,
+      relatedId: medId,
+    });
     setEditingPriceId(null);
     setEditingPriceValue('');
     setEditingSecondaryPriceValue('');
@@ -1489,6 +1499,30 @@ export default function Dashboard() {
       console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/suppliers`);
     });
 
+    // 12. Sync Wallet Balance (رصيد الصندوق النقدي — مستند واحد مشترك بين كل الأجهزة)
+    // كان الرصيد يعيش في ذاكرة الجلسة فقط ويتصفّر مع كل تحديث صفحة — الآن مصدره الخادم.
+    const unsubWallet = onSnapshot(doc(db, 'users', userId, 'meta', 'wallet'), (snap) => {
+      const bal = snap.data()?.balance;
+      if (typeof bal === 'number') setWalletBalance(bal);
+    }, () => {
+      console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/meta/wallet`);
+    });
+
+    // 13. Sync Expiry Dates (تواريخ انتهاء الصلاحية — كانت تُكتب إلى Firestore ولا تُقرأ أبداً،
+    // فتنبيهات الصلاحية كانت تعمل على بيانات الجلسة فقط وتتبخر عند كل تحديث صفحة)
+    const unsubExpiry = onSnapshot(collection(db, 'users', userId, 'expiryDates'), (snapshot) => {
+      if (!snapshot.empty) {
+        const loaded: Record<string, string> = {};
+        snapshot.forEach(d => {
+          const v = (d.data() as { expiry?: string }).expiry;
+          if (typeof v === 'string' && v) loaded[d.id] = v;
+        });
+        setExpiryDates(loaded);
+      }
+    }, () => {
+      console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/expiryDates`);
+    });
+
     setIsSyncing(false);
 
     return () => {
@@ -1501,6 +1535,8 @@ export default function Dashboard() {
       unsubReturns();
       unsubAuditLog();
       unsubSuppliers();
+      unsubWallet();
+      unsubExpiry();
     };
   }, [currentUser]);
 
@@ -1519,6 +1555,20 @@ export default function Dashboard() {
       const userId = currentUser.uid;
       setDoc(doc(db, 'users', userId, 'auditLog', full.id), { ...full, userId })
         .catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${userId}/auditLog/${full.id}`));
+    }
+  };
+
+  // --- WALLET HELPER (تعديل رصيد الصندوق محلياً + على الخادم) ---
+  // المصدر الحقيقي للرصيد: مستند users/{uid}/meta/wallet. الكتابة بـ increment()
+  // فتُجمع الحركات المتزامنة من عدة أجهزة بدل أن تمحو إحداها الأخرى.
+  // في وضع التجاوز (بلا حساب) يبقى الرصيد محلياً كما كان سابقاً.
+  const adjustWallet = (delta: number) => {
+    if (!delta) return;
+    setWalletBalance(prev => prev + delta);
+    if (currentUser) {
+      const userId = currentUser.uid;
+      setDoc(doc(db, 'users', userId, 'meta', 'wallet'), { balance: increment(delta), userId }, { merge: true })
+        .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/meta/wallet`));
     }
   };
 
@@ -1551,7 +1601,7 @@ export default function Dashboard() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `anwar-backup-${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `anwar-backup-${todayLocalISO()}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -1595,7 +1645,7 @@ export default function Dashboard() {
   useEffect(() => {
     let last: string | null = null;
     try { last = localStorage.getItem(BACKUP_DAILY_KEY); } catch {}
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayLocalISO();
     if (last === today) return;
     const t = setTimeout(() => {
       try {
@@ -1620,7 +1670,15 @@ export default function Dashboard() {
     if (Array.isArray(snap.receivables)) setReceivables(snap.receivables);
     if (Array.isArray(snap.salesReturns)) setSalesReturns(snap.salesReturns);
     if (Array.isArray(snap.b2bOrders)) setB2bOrders(snap.b2bOrders);
-    if (typeof snap.walletBalance === 'number') setWalletBalance(snap.walletBalance);
+    if (typeof snap.walletBalance === 'number') {
+      setWalletBalance(snap.walletBalance);
+      // الاستعادة تكتب الرصيد كقيمة مطلقة للخادم أيضاً (لا increment — هذه قيمة نهائية)
+      if (currentUser) {
+        const userId = currentUser.uid;
+        setDoc(doc(db, 'users', userId, 'meta', 'wallet'), { balance: snap.walletBalance, userId })
+          .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/meta/wallet`));
+      }
+    }
     if (Array.isArray(snap.suppliers)) setSuppliers(snap.suppliers);
     if (Array.isArray(snap.auditLog)) setAuditLog(snap.auditLog);
     if (snap.expiryDates && typeof snap.expiryDates === 'object') setExpiryDates(snap.expiryDates);
@@ -1683,18 +1741,21 @@ export default function Dashboard() {
     }
 
     // 1. أعِد الكمية إلى المخزون (محلياً + جمع المواد المتغيّرة لمزامنتها مع Firestore)
-    const restoredMeds: Medicine[] = [];
+    // المطابقة بالمعرّف أولاً (يصمد أمام إعادة التسمية)، ثم بالاسم للفواتير القديمة
+    const restoredMeds: { med: Medicine; qty: number }[] = [];
     const invAfterReturn = inventory.map(med => {
       const fullName = `${med.nameAr} (${med.nameEn})`;
-      const matched = returnedItems.find(it => fullName === it.name || med.nameAr === it.name);
+      const matched = returnedItems.find(it =>
+        it.medicineId ? it.medicineId === med.id : (fullName === it.name || med.nameAr === it.name)
+      );
       if (matched) {
         const nextQty = med.availableQuantity + matched.quantity;
         const updated = {
           ...med,
           availableQuantity: nextQty,
-          status: (nextQty > 15 ? 'available' : nextQty > 0 ? 'low' : 'unavailable') as Medicine['status'],
+          status: deriveStockStatus(nextQty),
         } as Medicine;
-        restoredMeds.push(updated);
+        restoredMeds.push({ med: updated, qty: matched.quantity });
         return updated;
       }
       return med;
@@ -1703,7 +1764,7 @@ export default function Dashboard() {
 
     // 2. إذا كان الاسترداد نقداً → اخصم من الصندوق
     if (returnRefundMethod === 'cash') {
-      setWalletBalance(prev => prev - returnTotal);
+      adjustWallet(-returnTotal);
     }
 
     // 3. سجّل المرتجع
@@ -1721,9 +1782,14 @@ export default function Dashboard() {
       const userId = currentUser.uid;
       setDoc(doc(db, 'users', userId, 'returns', newReturn.returnId), { ...newReturn, userId })
         .catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${userId}/returns/${newReturn.returnId}`));
-      // مزامنة كميات المخزون المُعادة حتى لا تُعكَس عند إعادة التحميل
-      restoredMeds.forEach(med => {
-        setDoc(doc(db, 'users', userId, 'inventory', med.id), { ...med, userId })
+      // مزامنة كميات المخزون المُعادة — بإرجاع تزايدي (increment) حتى لا تُمحى عملية متزامنة من جهاز آخر
+      restoredMeds.forEach(({ med, qty }) => {
+        setDoc(doc(db, 'users', userId, 'inventory', med.id), {
+          availableQuantity: increment(qty),
+          // الحالة تقديرية من القيمة المحلية — تُصحَّح ذاتياً عند القراءة التالية من الخادم
+          status: med.status,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true })
           .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/inventory/${med.id}`));
       });
     }
@@ -1738,109 +1804,133 @@ export default function Dashboard() {
     setTimeout(() => setReturnSuccess(false), 3000);
   };
 
+  // --- تصحيح الأثر المالي لتغيّر إجمالي فاتورة ---
+  // فاتورة آجلة (لها ذمّة مرتبطة عبر relatedInvoiceId): تُعدَّل الذمّة ولا يُلمس الصندوق —
+  // النقد لم يُقبض أصلاً. فاتورة نقدية: يُصحَّح الصندوق بالفرق كما كان.
+  const applyInvoiceTotalChange = (invoiceId: string, newTotal: number, diff: number) => {
+    if (diff === 0) return;
+    const rec = receivables.find(r => r.relatedInvoiceId === invoiceId);
+    if (rec) {
+      const newAmount = Math.max(0, newTotal);
+      const newStatus: Receivable['status'] = rec.paidAmount >= newAmount ? 'paid' : rec.paidAmount > 0 ? 'partial' : 'open';
+      setReceivables(prev => prev.map(r => r.id === rec.id ? { ...r, amount: newAmount, status: newStatus } : r));
+      if (currentUser) {
+        const userId = currentUser.uid;
+        setDoc(doc(db, 'users', userId, 'receivables', rec.id), { amount: newAmount, status: newStatus, userId }, { merge: true })
+          .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/receivables/${rec.id}`));
+      }
+      if (rec.paidAmount > newAmount) {
+        alert(`تنبيه: الزبون «${rec.customerName}» سدّد ${rec.paidAmount.toLocaleString()} د.ع بينما أصبح إجمالي الفاتورة ${newAmount.toLocaleString()} د.ع.\nالفائض ${(rec.paidAmount - newAmount).toLocaleString()} د.ع يحتاج معالجة يدوية (استرداد للزبون).`);
+      }
+    } else {
+      adjustWallet(diff);
+    }
+  };
+
   // --- EDIT INVOICE ITEMS (تعديل أصناف فاتورة مبيعات موجودة) ---
   const handleSaveInvoiceEdit = (invoiceId: string) => {
-    let updatedRecord: SaleRecord | null = null;
-    setSalesLedger(prev => prev.map(s => {
-      if (s.invoiceId !== invoiceId) return s;
-      const newTotal = editingItems.reduce((sum, it) => sum + it.quantity * it.price, 0);
-      const newTotalCost = editingItems.reduce((sum, it) => sum + it.quantity * (it.costPrice ?? 0), 0);
-      const newGrossProfit = newTotal - newTotalCost;
-      const diff = newTotal - s.total;
-      // تعديل فاتورة قديمة يصحّح الصندوق بالفرق — مع منع نزول الرصيد تحت الصفر
-      if (diff !== 0) setWalletBalance(w => Math.max(0, w + diff));
-      updatedRecord = {
-        ...s,
-        items: editingItems.map(it => ({
-          ...it,
-          lineProfit: it.quantity * (it.price - (it.costPrice ?? 0)),
-        })),
-        subtotal: newTotal,
-        total: newTotal,
-        totalCost: newTotalCost,
-        grossProfit: newGrossProfit,
-        profitMargin: newTotal > 0 ? Math.round((newGrossProfit / newTotal) * 100) : 0,
-      };
-      return updatedRecord;
-    }));
+    const sale = salesLedger.find(s => s.invoiceId === invoiceId);
+    if (!sale) return;
+    // كل الحسابات خارج setState — التحديث داخلها قد يتكرر مرتين (StrictMode) فيفسد الرصيد
+    const newTotal = editingItems.reduce((sum, it) => sum + it.quantity * it.price, 0);
+    const newTotalCost = editingItems.reduce((sum, it) => sum + it.quantity * (it.costPrice ?? 0), 0);
+    const newGrossProfit = newTotal - newTotalCost;
+    const diff = newTotal - sale.total;
+    const updatedRecord: SaleRecord = {
+      ...sale,
+      items: editingItems.map(it => ({
+        ...it,
+        lineProfit: it.quantity * (it.price - (it.costPrice ?? 0)),
+      })),
+      subtotal: newTotal,
+      total: newTotal,
+      totalCost: newTotalCost,
+      grossProfit: newGrossProfit,
+      profitMargin: newTotal > 0 ? Math.round((newGrossProfit / newTotal) * 100) : 0,
+    };
+    setSalesLedger(prev => prev.map(s => (s.invoiceId === invoiceId ? updatedRecord : s)));
+    // آجل → تعديل الذمّة، نقدي → تصحيح الصندوق
+    applyInvoiceTotalChange(invoiceId, newTotal, diff);
     // مزامنة الفاتورة المعدّلة مع Firestore حتى لا يُفقد التعديل عند إعادة التحميل
-    if (currentUser && updatedRecord) {
+    if (currentUser) {
       const userId = currentUser.uid;
-      setDoc(doc(db, 'users', userId, 'salesLedger', invoiceId), { ...(updatedRecord as SaleRecord), userId })
+      setDoc(doc(db, 'users', userId, 'salesLedger', invoiceId), { ...updatedRecord, userId })
         .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/salesLedger/${invoiceId}`));
     }
     setExpandedInvoiceId(null);
   };
 
   // --- DELETE ONE ITEM FROM A SALES INVOICE (حذف صنف من فاتورة مبيعات + إرجاع عدده للمخزون) ---
-  // تصحيح كامل: يُزال الصنف، تُعاد كميته للمخزون، يَنقص الإجمالي، ويُصحَّح الصندوق بالفرق
-  // (نفس المنطق المالي لـ handleSaveInvoiceEdit + إعادة للمخزون بمطابقة الاسم كما في المرتجعات).
+  // يُزال الصنف، تُعاد كميته للمخزون، يَنقص الإجمالي، ويُصحَّح الأثر المالي حسب نوع الفاتورة:
+  // آجلة → تُعدَّل ذمّة الزبون، نقدية → يُصحَّح الصندوق (عبر applyInvoiceTotalChange).
   const handleDeleteInvoiceItem = (invoiceId: string, itemIndex: number) => {
     const sale = salesLedger.find(s => s.invoiceId === invoiceId);
     const item = sale?.items[itemIndex];
     if (!sale || !item) return;
 
-    // مطابقة المادة بالمخزون (نفس نمط الإرجاع: الاسم الكامل أو الاسم العربي)
-    const med = inventory.find(m => `${m.nameAr} (${m.nameEn})` === item.name || m.nameAr === item.name);
+    // مطابقة المادة بالمخزون: بالمعرّف أولاً (يصمد أمام إعادة التسمية)، ثم بالاسم للفواتير القديمة
+    const med = (item.medicineId ? inventory.find(m => m.id === item.medicineId) : undefined)
+      ?? inventory.find(m => `${m.nameAr} (${m.nameEn})` === item.name || m.nameAr === item.name);
     const restoreQty = item.quantity;
     const lineAmount = item.quantity * item.price;
+    const isCredit = receivables.some(r => r.relatedInvoiceId === invoiceId);
 
     // تأكيد سريع قبل التنفيذ
     const ok = window.confirm(
       `حذف «${item.name}» من الفاتورة ${invoiceId}؟\n` +
       (med ? `سيُعاد ${restoreQty} إلى المخزون` : `⚠ تعذّرت مطابقة المادة بالمخزون — لن يُعاد العدد`) +
-      `، ويَنقص الإجمالي ${lineAmount.toLocaleString()} د.ع ويُصحَّح الصندوق.`
+      `، ويَنقص الإجمالي ${lineAmount.toLocaleString()} د.ع ` +
+      (isCredit ? 'وتُصحَّح ذمّة الزبون (فاتورة آجلة — لا يُمسّ الصندوق).' : 'ويُصحَّح الصندوق.')
     );
     if (!ok) return;
 
-    // 1) أزل الصنف من الفاتورة + أعد حساب الإجماليات (نفس حساب handleSaveInvoiceEdit)
-    let updatedRecord: SaleRecord | null = null;
-    setSalesLedger(prev => prev.map(s => {
-      if (s.invoiceId !== invoiceId) return s;
-      const newItems = s.items.filter((_, i) => i !== itemIndex);
-      const newTotal = newItems.reduce((sum, it) => sum + it.quantity * it.price, 0);
-      const newTotalCost = newItems.reduce((sum, it) => sum + it.quantity * (it.costPrice ?? 0), 0);
-      const newGrossProfit = newTotal - newTotalCost;
-      updatedRecord = {
-        ...s,
-        items: newItems,
-        subtotal: newTotal,
-        total: newTotal,
-        totalCost: newTotalCost,
-        grossProfit: newGrossProfit,
-        profitMargin: newTotal > 0 ? Math.round((newGrossProfit / newTotal) * 100) : 0,
-      };
-      return updatedRecord;
-    }));
+    // 1) أزل الصنف من الفاتورة + أعد حساب الإجماليات
+    // (كل الحسابات خارج setState — التحديث داخلها قد يتكرر مرتين في StrictMode)
+    const newItems = sale.items.filter((_, i) => i !== itemIndex);
+    const newTotal = newItems.reduce((sum, it) => sum + it.quantity * it.price, 0);
+    const newTotalCost = newItems.reduce((sum, it) => sum + it.quantity * (it.costPrice ?? 0), 0);
+    const newGrossProfit = newTotal - newTotalCost;
+    const updatedRecord: SaleRecord = {
+      ...sale,
+      items: newItems,
+      subtotal: newTotal,
+      total: newTotal,
+      totalCost: newTotalCost,
+      grossProfit: newGrossProfit,
+      profitMargin: newTotal > 0 ? Math.round((newGrossProfit / newTotal) * 100) : 0,
+    };
+    setSalesLedger(prev => prev.map(s => (s.invoiceId === invoiceId ? updatedRecord : s)));
 
-    // 2) صحّح الصندوق بفرق المبلغ (نفس سلوك «حفظ التعديلات» — مع منع النزول تحت الصفر)
-    setWalletBalance(w => Math.max(0, w - lineAmount));
+    // 2) صحّح الأثر المالي: آجل → الذمّة، نقدي → الصندوق
+    applyInvoiceTotalChange(invoiceId, newTotal, -lineAmount);
 
     // 3) أعِد الكمية إلى المخزون (إن طوبقت المادة) + جهّز المزامنة
     let restoredMed: Medicine | null = null;
     if (med) {
-      setInventory(prev => prev.map(m => {
-        if (m.id !== med.id) return m;
-        const nextQty = m.availableQuantity + restoreQty;
-        restoredMed = {
-          ...m,
-          availableQuantity: nextQty,
-          status: (nextQty > 15 ? 'available' : nextQty > 0 ? 'low' : 'unavailable') as Medicine['status'],
-        } as Medicine;
-        return restoredMed;
-      }));
+      const nextQty = med.availableQuantity + restoreQty;
+      restoredMed = {
+        ...med,
+        availableQuantity: nextQty,
+        status: deriveStockStatus(nextQty),
+      } as Medicine;
+      const rm = restoredMed;
+      setInventory(prev => prev.map(m => (m.id === med.id ? rm : m)));
     }
 
     // 4) مزامنة Firestore (الفاتورة المعدّلة + المخزون المُعاد)
     if (currentUser) {
       const userId = currentUser.uid;
-      if (updatedRecord) {
-        setDoc(doc(db, 'users', userId, 'salesLedger', invoiceId), { ...(updatedRecord as SaleRecord), userId })
-          .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/salesLedger/${invoiceId}`));
-      }
+      setDoc(doc(db, 'users', userId, 'salesLedger', invoiceId), { ...updatedRecord, userId })
+        .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/salesLedger/${invoiceId}`));
       if (restoredMed) {
-        const rm = restoredMed as Medicine;
-        setDoc(doc(db, 'users', userId, 'inventory', rm.id), { ...rm, userId })
+        const rm = restoredMed;
+        // إرجاع تزايدي (increment) بدل كتابة الكمية كرقم مطلق — لا يمحو بيعة متزامنة من جهاز آخر
+        setDoc(doc(db, 'users', userId, 'inventory', rm.id), {
+          availableQuantity: increment(restoreQty),
+          // الحالة تقديرية من القيمة المحلية — تُصحَّح ذاتياً عند القراءة التالية من الخادم
+          status: rm.status,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true })
           .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/inventory/${rm.id}`));
       }
     }
@@ -1850,7 +1940,7 @@ export default function Dashboard() {
     addAuditEntry({
       action: 'inventory_edit',
       amount: lineAmount,
-      description: `حذف صنف «${item.name}» (${restoreQty}) من فاتورة ${invoiceId}${med ? ' وإعادته للمخزون' : ''} — تصحيح الإجمالي والصندوق`,
+      description: `حذف صنف «${item.name}» (${restoreQty}) من فاتورة ${invoiceId}${med ? ' وإعادته للمخزون' : ''} — ${isCredit ? 'تصحيح الإجمالي وذمّة الزبون' : 'تصحيح الإجمالي والصندوق'}`,
       relatedId: invoiceId,
     });
   };
@@ -1867,7 +1957,7 @@ export default function Dashboard() {
     const expId = generateDocId('EXP');
     const newExpense: Expense = {
       id: expId,
-      date: new Date().toISOString().split('T')[0],
+      date: todayLocalISO(),
       category: newExpCategory,
       amount: Math.round(newExpAmount),
       description: newExpDesc,
@@ -1881,7 +1971,7 @@ export default function Dashboard() {
       setExpenses(prev => [newExpense, ...prev]);
     }
     // المصروف يُخصم من السيولة المتاحة بالصندوق
-    setWalletBalance(prev => Math.max(0, prev - newExpense.amount));
+    adjustWallet(-newExpense.amount);
     addAuditEntry({
       action: 'expense',
       amount: newExpense.amount,
@@ -1905,7 +1995,7 @@ export default function Dashboard() {
       supplierId: matchedSup?.id,
       amount: Math.round(newPayAmount),
       paidAmount: 0,
-      date: new Date().toISOString().split('T')[0],
+      date: todayLocalISO(),
       status: 'open',
       ...(newPayDueDate ? { dueDate: newPayDueDate } : {}),
       ...(newPayDesc ? { description: newPayDesc } : {}),
@@ -1954,7 +2044,7 @@ export default function Dashboard() {
     }
     const newPaid = p.paidAmount + pay;
     const newStatus: Payable['status'] = newPaid >= p.amount ? 'paid' : 'partial';
-    setWalletBalance(prev => prev - pay);
+    adjustWallet(-pay);
     setPayables(prev => prev.map(x => x.id === p.id ? { ...x, paidAmount: newPaid, status: newStatus } : x));
     if (currentUser) {
       const userId = currentUser.uid;
@@ -2042,7 +2132,7 @@ export default function Dashboard() {
     });
 
     setPayables(updated);
-    setWalletBalance(prev => prev - payTotal);
+    adjustWallet(-payTotal);
     // حفظ الذمم المتغيّرة في Firestore حتى لا تُعكَس عند إعادة التحميل
     if (currentUser) {
       const userId = currentUser.uid;
@@ -2066,7 +2156,7 @@ export default function Dashboard() {
       customerName: newRecCustomer.trim(),
       amount: Math.round(newRecAmount),
       paidAmount: 0,
-      date: new Date().toISOString().split('T')[0],
+      date: todayLocalISO(),
       status: 'open',
       ...(newRecDueDate ? { dueDate: newRecDueDate } : {}),
       ...(newRecDesc ? { description: newRecDesc } : {}),
@@ -2110,7 +2200,7 @@ export default function Dashboard() {
     if (collect <= 0) return;
     const newPaid = r.paidAmount + collect;
     const newStatus: Receivable['status'] = newPaid >= r.amount ? 'paid' : 'partial';
-    setWalletBalance(prev => prev + collect); // CASH IN — إضافة للسيولة، عكس الذمم الدائنة
+    adjustWallet(collect); // CASH IN — إضافة للسيولة، عكس الذمم الدائنة
     setReceivables(prev => prev.map(x => x.id === r.id ? { ...x, paidAmount: newPaid, status: newStatus } : x));
     if (currentUser) {
       const userId = currentUser.uid;
@@ -2489,6 +2579,8 @@ export default function Dashboard() {
     const itemsWithCost = sellableCart.map(item => {
       const unitCost = resolveUnitCost(item.medicine.costPrice, item.medicine.price, defaultCostPercent);
       return {
+        // معرّف الدواء يُخزَّن مع الصنف — المطابقة عند الحذف/الإرجاع تتم به لا بالاسم القابل للتغيير
+        medicineId: item.medicine.id,
         name: `${item.medicine.nameAr} (${item.medicine.nameEn})`,
         quantity: item.quantity,
         price: item.medicine.price,
@@ -2520,7 +2612,7 @@ export default function Dashboard() {
         customerName: posCustomerName,
         amount: posTotal,
         paidAmount: 0,
-        date: new Date().toISOString().split('T')[0],
+        date: todayLocalISO(),
         status: 'open',
         relatedInvoiceId: invoiceId,
         description: `بيع آجل (${sellableCart.length} صنف)`,
@@ -2578,7 +2670,7 @@ export default function Dashboard() {
         .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/salesLedger/${invoiceId} (batch)`));
 
       // النقد من البيع النقدي يدخل الصندوق — كان مفقوداً في وضع تسجيل الدخول (يعمل فقط محلياً)
-      if (!posOnCredit) setWalletBalance(prev => prev + posTotal);
+      if (!posOnCredit) adjustWallet(posTotal);
 
       addAuditEntry({
         action: 'sale',
@@ -2611,7 +2703,7 @@ export default function Dashboard() {
 
       // Adjust financial counters — الإيراد يُعترف به دائماً، لكن النقد لا يُضاف عند البيع بالآجل
       setDailySalesRevenue(prev => prev + posTotal);
-      if (!posOnCredit) setWalletBalance(prev => prev + posTotal);
+      if (!posOnCredit) adjustWallet(posTotal);
 
       // Store sales record local fallback
       setSalesLedger([newSaleRecord, ...salesLedger]);
@@ -2643,9 +2735,8 @@ export default function Dashboard() {
       return;
     }
 
-    // إنشاء ID آمن بأخذ أعلى ID موجود + 1 لتجنّب التصادم عند الحذف
-    const maxExistingId = inventory.reduce((max, item) => Math.max(max, Number(item.id) || 0), 0);
-    const newId = String(maxExistingId + 1);
+    // معرّف مضمون ضد التصادم — «أعلى رقم + 1» يتصادم عندما يضيف جهازان دواءً بنفس اللحظة
+    const newId = generateDocId('MED');
 
     const newMedItem: Medicine = {
       id: newId,
@@ -2689,10 +2780,9 @@ export default function Dashboard() {
   const handleSeedTestData = async () => {
     if (!currentUser) return;
     const userId = currentUser.uid;
-    const maxId = inventory.reduce((max, item) => Math.max(max, Number(item.id) || 0), 0);
     const testMeds: Medicine[] = [
       {
-        id: String(maxId + 1),
+        id: generateDocId('MED'),
         nameAr: 'زيثروماكس 500 ملغ',
         nameEn: 'Zithromax 500mg',
         scientificName: 'Azithromycin',
@@ -2704,7 +2794,7 @@ export default function Dashboard() {
         barcode: '6281100000001'
       },
       {
-        id: String(maxId + 2),
+        id: generateDocId('MED'),
         nameAr: 'نيكسيوم 40 ملغ',
         nameEn: 'Nexium 40mg',
         scientificName: 'Esomeprazole',
@@ -2716,7 +2806,7 @@ export default function Dashboard() {
         barcode: '6281100000002'
       },
       {
-        id: String(maxId + 3),
+        id: generateDocId('MED'),
         nameAr: 'ديكساميثازون 4 ملغ',
         nameEn: 'Dexamethasone 4mg',
         scientificName: 'Dexamethasone',
@@ -2728,7 +2818,7 @@ export default function Dashboard() {
         barcode: '6281100000003'
       },
       {
-        id: String(maxId + 4),
+        id: generateDocId('MED'),
         nameAr: 'ميترونيدازول 500 ملغ',
         nameEn: 'Metronidazole 500mg',
         scientificName: 'Metronidazole',
@@ -2740,7 +2830,7 @@ export default function Dashboard() {
         barcode: '6281100000004'
       },
       {
-        id: String(maxId + 5),
+        id: generateDocId('MED'),
         nameAr: 'أوميبرازول 20 ملغ',
         nameEn: 'Omeprazole 20mg',
         scientificName: 'Omeprazole',
@@ -2758,15 +2848,16 @@ export default function Dashboard() {
     alert('✅ تمت إضافة 5 أدوية تجريبية بنجاح!');
   };
 
-  // --- BULK INVENTORY IMPORT (استيراد المخزون الكامل من ES-PRO) ---
-  const handleBulkImportInventory = async () => {
+  // --- BULK INVENTORY IMPORT (استيراد المخزون الكامل من ملف على الجهاز) ---
+  // الملف يُختار محلياً عبر منتقي الملفات — كان يُجلب من الاستضافة العلنية حيث
+  // يستطيع أي شخص تحميل المخزون كاملاً بأسعار الكلفة بلا تسجيل دخول.
+  const handleBulkImportInventory = async (file: File) => {
     setShowBulkImportConfirm(false);
     setBulkImportStatus('loading');
-    setBulkImportMsg('جارٍ تحميل ملف الأدوية...');
+    setBulkImportMsg('جارٍ قراءة ملف الأدوية...');
     try {
-      const res = await fetch('/inventory-seed.json', { cache: 'no-store' });
-      if (!res.ok) throw new Error('تعذّر تحميل ملف البيانات');
-      const meds: Medicine[] = await res.json();
+      const meds: Medicine[] = JSON.parse(await file.text());
+      if (!Array.isArray(meds) || meds.length === 0) throw new Error('الملف لا يحتوي قائمة أصناف صالحة');
 
       // معرّفات المواد القديمة التي ستُحذف (استبدال كامل — كل ما ليس ضمن الملف الجديد)
       const newIdSet = new Set(meds.map(m => m.id));
@@ -2863,18 +2954,18 @@ export default function Dashboard() {
       return field === 'nameAr' ? { ...d, nameAr: val || d.nameAr } : { ...d, barcode: val };
     }));
     // الانتشار للمخزون الرئيسي + Firestore (فقط لو الصنف مرتبط بمادة في المخزون)
+    // الحساب خارج setState — نفس نمط بقية الدوال المُصلَحة
     if (medicineId) {
-      let updatedMed: Medicine | null = null;
-      setInventory(prev => prev.map(m => {
-        if (m.id !== medicineId) return m;
-        updatedMed = (field === 'nameAr'
-          ? { ...m, nameAr: val || m.nameAr, updatedAt: new Date().toISOString() }
-          : { ...m, barcode: val, updatedAt: new Date().toISOString() }) as Medicine;
-        return updatedMed!;
-      }));
-      if (currentUser && updatedMed) {
-        setDoc(doc(db, 'users', currentUser.uid, 'inventory', medicineId), updatedMed)
-          .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${currentUser.uid}/inventory/${medicineId}`));
+      const med = inventory.find(m => m.id === medicineId);
+      if (med) {
+        const updatedMed: Medicine = field === 'nameAr'
+          ? { ...med, nameAr: val || med.nameAr, updatedAt: new Date().toISOString() }
+          : { ...med, barcode: val, updatedAt: new Date().toISOString() };
+        setInventory(prev => prev.map(m => (m.id === medicineId ? updatedMed : m)));
+        if (currentUser) {
+          setDoc(doc(db, 'users', currentUser.uid, 'inventory', medicineId), updatedMed)
+            .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${currentUser.uid}/inventory/${medicineId}`));
+        }
       }
     }
     setEditingDraftField(null);
@@ -2925,7 +3016,7 @@ export default function Dashboard() {
 
     const archivedOrder: Order = {
       id: orderId,
-      date: new Date().toISOString().split('T')[0],
+      date: todayLocalISO(),
       warehouseName: 'قائمة توريد طلبيات الشراء اليومية للـ صيدلية',
       itemsCount: purchaseDraft.length,
       totalAmount: totalCost,
@@ -2946,10 +3037,14 @@ export default function Dashboard() {
     // نجمع معرّفات المواد المتغيّرة فقط — الكتابة السحابية كانت ترفع كل المخزون
     // (آلاف المستندات) عند كل اعتماد، ما يبطئ ويخاطر بمحو تعديلات أجهزة أخرى.
     const changedMedIds = new Set<string>();
+    const changedExpiryIds = new Set<string>();
+    // فرق الكمية لكل مادة — يُكتب للخادم بـ increment() بدل الرقم المطلق (سلامة التزامن)
+    const qtyDeltas = new Map<string, number>();
 
     purchaseDraft.forEach(draftItem => {
       if (draftItem.medicineId) {
         changedMedIds.add(draftItem.medicineId);
+        qtyDeltas.set(draftItem.medicineId, (qtyDeltas.get(draftItem.medicineId) || 0) + (Number(draftItem.qty) || 0));
         // Exists in inventory!
         updatedInventory = updatedInventory.map(med => {
           if (med.id === draftItem.medicineId) {
@@ -2980,6 +3075,7 @@ export default function Dashboard() {
         });
         if (draftItem.expiryDate) {
           updatedExpiries[draftItem.medicineId] = draftItem.expiryDate;
+          changedExpiryIds.add(draftItem.medicineId);
         }
       } else {
         // Brand new drug to add to inventory list!
@@ -3006,8 +3102,10 @@ export default function Dashboard() {
         };
         updatedInventory.push(newMedRecord);
         changedMedIds.add(brandNewId);
+        qtyDeltas.set(brandNewId, Number(draftItem.qty) || 0);
         if (draftItem.expiryDate) {
           updatedExpiries[brandNewId] = draftItem.expiryDate;
+          changedExpiryIds.add(brandNewId);
         }
       }
     });
@@ -3022,11 +3120,22 @@ export default function Dashboard() {
         const batch = writeBatch(db);
         if (i === 0) batch.set(doc(db, 'users', userId, 'b2bOrders', orderId), { ...archivedOrder, userId });
         changedMeds.slice(i, i + CHUNK).forEach(med => {
-          batch.set(doc(db, 'users', userId, 'inventory', med.id), med);
+          // الكمية وحدها تُكتب تزايدياً فتُجمَع مع أي حركة متزامنة من جهاز آخر بدل محوها؛
+          // بقية الحقول (الأسعار/التكلفة/الباركود) قيم محسوبة تُكتب كما هي.
+          batch.set(doc(db, 'users', userId, 'inventory', med.id), {
+            ...med,
+            availableQuantity: increment(qtyDeltas.get(med.id) || 0),
+          }, { merge: true });
         });
         batch.commit()
           .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/b2bOrders/${orderId} (batch ${i / CHUNK + 1})`));
       }
+
+      // مزامنة تواريخ الانتهاء المتغيّرة — كانت تُحفظ محلياً فقط وتتبخر عند تحديث الصفحة
+      changedExpiryIds.forEach(medId => {
+        setDoc(doc(db, 'users', userId, 'expiryDates', medId), { expiry: updatedExpiries[medId], userId })
+          .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/expiryDates/${medId}`));
+      });
     }
 
     setB2bOrders(prev => [archivedOrder, ...prev]);
@@ -3049,7 +3158,7 @@ export default function Dashboard() {
         supplierId: matchedSupplier?.id,
         amount: totalCost,
         paidAmount: 0,
-        date: new Date().toISOString().split('T')[0],
+        date: todayLocalISO(),
         status: 'open',
         relatedOrderId: orderId,
         description: `فاتورة شراء آجلة (${purchaseDraft.length} صنف)`,
@@ -3075,7 +3184,7 @@ export default function Dashboard() {
       }
     } else {
       // الدفع النقدي المعتاد: خصم قيمة الفاتورة من السيولة بالصندوق (مفحوصة مسبقاً أعلاه)
-      setWalletBalance(prev => prev - totalCost);
+      adjustWallet(-totalCost);
     }
 
     setPurchaseDraft([]);
@@ -3192,7 +3301,7 @@ export default function Dashboard() {
       payableToDelete = payables.find(p => p.relatedOrderId === orderId);
       setPayables(prev => prev.filter(p => p.relatedOrderId !== orderId));
     } else {
-      setWalletBalance(prev => prev + (order.totalAmount || 0));
+      adjustWallet(order.totalAmount || 0);
     }
 
     // 3) قيد تدقيق عاكس (مبلغ سالب) ليبقى صافي المشتريات صحيحاً بعد إعادة الاعتماد
@@ -3215,10 +3324,16 @@ export default function Dashboard() {
         deleteDoc(doc(db, 'users', userId, 'payables', payableToDelete.id))
           .catch(e => handleFirestoreError(e, OperationType.DELETE, `users/${userId}/payables/${payableToDelete!.id}`));
       }
-      revertedInventory.forEach(med => {
-        if (changedMedIds.has(med.id)) {
-          setDoc(doc(db, 'users', userId, 'inventory', med.id), med)
-            .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/inventory/${med.id}`));
+      // العكس يُكتب تزايدياً وبلا قصّ عند الصفر: لو بِيعت بضاعة الطلبية قبل إعادة فتحها
+      // يبقى حساب الخادم صحيحاً رياضياً (قد يهبط مؤقتاً تحت الصفر ويُصحَّح عند إعادة الاعتماد)؛
+      // الكتابة المطلقة المقصوصة كانت تضخّم المخزون بفارق وهمي. العرض يطبَّع في المستمع.
+      reverseQtys.forEach(rq => {
+        if (rq.medicineId && rq.qty) {
+          setDoc(doc(db, 'users', userId, 'inventory', rq.medicineId), {
+            availableQuantity: increment(-rq.qty),
+            updatedAt: new Date().toISOString(),
+          }, { merge: true })
+            .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/inventory/${rq.medicineId}`));
         }
       });
     }
@@ -3379,7 +3494,7 @@ export default function Dashboard() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `التقرير_المالي_صيدلية_انوار_الحسن_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `التقرير_المالي_صيدلية_انوار_الحسن_${todayLocalISO()}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -4089,7 +4204,7 @@ export default function Dashboard() {
                     <div className="flex justify-end">
                       <button
                         type="button"
-                        title={showVirtualPriceInPOS ? 'السعر الرسمي (مفعّل)' : 'السعر الجمهوري (مفعّل)'}
+                        title={showVirtualPriceInPOS ? 'عرض السعر الرسمي كمرجع (البيع دائماً بالجمهوري)' : 'إظهار السعر الرسمي كمرجع'}
                         onClick={() => setShowVirtualPriceInPOS(!showVirtualPriceInPOS)}
                         className={`w-7 h-7 rounded-full border-2 transition-all cursor-pointer shadow-sm ${
                           showVirtualPriceInPOS
@@ -4924,7 +5039,7 @@ export default function Dashboard() {
                                 <h2>قائمة الطلب العاجل — صيدلية انوار الحسن</h2>
                                 <p style="color:#666;font-size:12px">${new Date().toLocaleDateString('ar-IQ')}</p>
                                 <table><thead><tr><th>الدواء</th><th>الكمية الحالية</th><th>الكمية المقترحة للطلب</th></tr></thead>
-                                <tbody>${lowItems.map(m => `<tr><td>${m.nameAr}</td><td>${m.availableQuantity} علبة</td><td>${getSuggestedQty(m)} علبة</td></tr>`).join('')}
+                                <tbody>${lowItems.map(m => `<tr><td>${escapeHtml(m.nameAr)}</td><td>${m.availableQuantity} علبة</td><td>${getSuggestedQty(m)} علبة</td></tr>`).join('')}
                                 </tbody></table></body></html>
                               `);
                               win.document.close();
@@ -6544,7 +6659,7 @@ export default function Dashboard() {
                                 creditLimit: newSupCreditLimit > 0 ? newSupCreditLimit : undefined,
                                 paymentTerms: newSupPaymentTerms > 0 ? newSupPaymentTerms : undefined,
                                 notes: newSupNotes.trim() || undefined,
-                                createdAt: new Date().toISOString().split('T')[0],
+                                createdAt: todayLocalISO(),
                               };
                               addSupplier(newSup);
                               setNewSupName(''); setNewSupPhone(''); setNewSupContact('');
@@ -8115,11 +8230,11 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <h3 className="font-extrabold text-sm text-slate-900">استيراد المخزون الكامل</h3>
-                  <p className="text-[10px] text-slate-400 font-bold">من ملف بيانات المخازن</p>
+                  <p className="text-[10px] text-slate-400 font-bold">من ملف على هذا الجهاز</p>
                 </div>
               </div>
               <p className="text-xs text-slate-600 font-medium leading-relaxed">
-                سيُستبدل مخزونك بالكامل بـ <strong className="text-slate-900">6,978 صنف</strong> من الملف، مع الباركود والأسعار (شراء وبيع) والكميات.
+                اختر ملف المخزون <strong className="text-slate-900">(JSON)</strong> من جهازك — مثل ملف تصدير ES-PRO — وسيُستبدل مخزونك بالكامل بأصنافه، مع الباركود والأسعار (شراء وبيع) والكميات.
                 الكميات السالبة ستُحوَّل إلى صفر. {currentUser ? 'ستُرفع إلى حسابك السحابي.' : 'ستُحفظ محلياً (غير مسجّل الدخول).'}
               </p>
               <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-[10px] text-rose-800 font-bold">
@@ -8130,11 +8245,22 @@ export default function Dashboard() {
                   className="flex-1 border border-slate-200 rounded-xl py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer">
                   إلغاء
                 </button>
-                <button onClick={handleBulkImportInventory}
+                <button onClick={() => bulkImportFileRef.current?.click()}
                   className="flex-1 bg-rose-600 hover:bg-rose-700 text-white rounded-xl py-2.5 text-xs font-extrabold transition cursor-pointer">
-                  استبدل المخزون الآن
+                  اختر الملف واستبدل المخزون
                 </button>
               </div>
+              <input
+                ref={bulkImportFileRef}
+                type="file"
+                accept=".json,application/json"
+                className="hidden"
+                onChange={e => {
+                  const f = e.target.files?.[0];
+                  e.target.value = '';
+                  if (f) handleBulkImportInventory(f);
+                }}
+              />
             </motion.div>
           </div>
         )}

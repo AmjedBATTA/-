@@ -39,6 +39,16 @@ export function deriveStockStatus(qty: number): 'available' | 'low' | 'unavailab
 }
 
 /**
+ * تاريخ اليوم المحلي بصيغة YYYY-MM-DD — المصدر الوحيد لتواريخ القيود.
+ * toISOString() يعيد يوم UTC، والعراق يسبقه بثلاث ساعات: قيدٌ بين منتصف الليل
+ * والثالثة فجراً كان يُسجَّل بتاريخ الأمس فيختلط يومان في تقرير الإغلاق.
+ * (صيغة en-CA تعطي YYYY-MM-DD بالتوقيت المحلي مباشرة.)
+ */
+export function todayLocalISO(now: Date = new Date()): string {
+  return now.toLocaleDateString('en-CA');
+}
+
+/**
  * التكلفة الفعلية للوحدة: التكلفة المسجلة إن وُجدت وكانت موجبة،
  * وإلا تقدير بنسبة مئوية قابلة للضبط من سعر البيع.
  */
