@@ -402,6 +402,62 @@ body {
 }
 
 /* ══════════════════════════════════════════════════════════
+   POS CART PANEL — سطح «جوزي فاتح» (light walnut)
+   يخصّ لوحة السلة (.lux-dark-panel) وحدها — لا يمسّ بطاقة الامتثال العريضة.
+   يفتّح الإطار والبطاقات والإجماليات ويغمّق النصوص لتبقى واضحة.
+   ══════════════════════════════════════════════════════════ */
+.pastel .lux-dark-panel {
+  background-image: linear-gradient(160deg, #EFE0CB 0%, #E3CDAF 100%) !important;
+  background-color: transparent !important;
+  /* إعادة ضبط الحجم/الموضع/التكرار — القاعدة الأصلية كانت لثلاث طبقات (علامتان مائيتان
+     + تدرّج) فورّثت background-size:130px الذي حصر تدرّجنا الواحد في شريط وكشف ما خلفه */
+  background-position: 0 0 !important;
+  background-size: cover !important;
+  background-repeat: no-repeat !important;
+  border: 1px solid rgba(120, 74, 32, 0.30) !important;
+  box-shadow:
+    0 20px 60px rgba(120, 74, 20, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.55) !important;
+}
+/* بطاقات الأصناف + صندوق الإجماليات + الحقول → جوزي أفتح */
+.pastel .lux-dark-panel .bg-slate-800 {
+  background-color: #F6EAD8 !important;
+  border-color: rgba(120, 74, 32, 0.20) !important;
+}
+/* أزرار الكمية → جوزي متوسط + حالات المرور */
+.pastel .lux-dark-panel .bg-slate-700 { background-color: #D8BE9A !important; }
+.pastel .lux-dark-panel .hover\:bg-slate-600:hover { background-color: #C9A87E !important; }
+.pastel .lux-dark-panel .hover\:bg-emerald-700:hover { background-color: #A9CBA6 !important; }
+/* حدود داخلية دافئة فاتحة */
+.pastel .lux-dark-panel .border-slate-700,
+.pastel .lux-dark-panel .border-slate-600 { border-color: rgba(120, 74, 32, 0.22) !important; }
+/* الحقول (بحث/باركود + اسم المريض) → فاتحة متناسقة (كانت تُصبّغ داكناً بقاعدة إدخالات اللوحة الداكنة) */
+.pastel .lux-dark-panel input {
+  background-color: #FBF3E6 !important;
+  border-color: rgba(120, 74, 32, 0.28) !important;
+  color: #3A1E0A !important;
+}
+.pastel .lux-dark-panel input::placeholder { color: #9A7248 !important; }
+
+/* النصوص: بيضاء/فاتحة → بنّي غامق واضح على الفاتح */
+.pastel .lux-dark-panel .text-white     { color: #3A1E0A !important; }
+.pastel .lux-dark-panel .text-slate-200 { color: #4A2C12 !important; }
+.pastel .lux-dark-panel .text-slate-300 { color: #6A4522 !important; }
+.pastel .lux-dark-panel .text-slate-400 { color: #7C5226 !important; }
+.pastel .lux-dark-panel .text-slate-500 { color: #8A5C2C !important; }
+.pastel .lux-dark-panel .text-slate-600 { color: #9A6A38 !important; }
+/* أرقام السعر والإجمالي بدرجات غامقة واضحة */
+.pastel .lux-dark-panel .text-emerald-400   { color: #067A45 !important; }
+.pastel .lux-dark-panel .text-amber-400     { color: #B4530A !important; }
+.pastel .lux-dark-panel .text-amber-500     { color: #B4530A !important; }
+.pastel .lux-dark-panel .text-amber-500\/80 { color: #C4700F !important; }
+.pastel .lux-dark-panel .text-purple-400    { color: #7A3FB0 !important; }
+.pastel .lux-dark-panel .text-rose-400      { color: #C0324E !important; }
+/* العناصر الخضراء (شارة العدد + زر الإتمام) تبقى بنصّ أبيض — بعد قاعدة text-white */
+.pastel .lux-dark-panel .bg-emerald-500,
+.pastel .lux-dark-panel button[type="submit"] { color: #FFFFFF !important; }
+
+/* ══════════════════════════════════════════════════════════
    SPECIAL EFFECTS
    ══════════════════════════════════════════════════════════ */
 

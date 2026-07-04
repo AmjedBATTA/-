@@ -37,6 +37,13 @@ const escapeHtml = (s: string) => String(s)
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
 
+// حدود عرض القوائم الكبيرة — المخزون الحقيقي ~7000 صنف، وتركيب آلاف البطاقات في
+// DOM دفعة واحدة يجمّد الواجهة (قياس فعلي: 6.3 ثانية لفتح تبويب POS بدون حد)
+const POS_SHELF_LIMIT = 60;          // رف POS: يكفي للنقر السريع، والبحث يُظهر البقية
+const MOVEMENT_DROPDOWN_LIMIT = 50;  // قائمة اختيار المادة في عارض حركة المخزون
+const NOTIF_LIST_LIMIT = 15;         // مركز الإشعارات: أقصى عدد لكل فئة تنبيه
+const EXPIRY_LIST_LIMIT = 100;       // قوائم الصلاحيات (30 يوماً / أفق 6 أشهر)
+
 interface SaleRecord {
   invoiceId: string;
   timestamp: string;
@@ -1275,7 +1282,9 @@ export default function Dashboard() {
             status: deriveStockStatus(qty),
           });
         });
-        loadedInventory.sort((a, b) => Number(a.id) - Number(b.id));
+        // المعرّفات لم تعد أرقاماً ('MED-…'/'new-…') فـ Number() يعطي NaN ومقارِناً غير صالح
+        // (ترتيب غير مستقر وعمل ضائع) — نرتّب أبجدياً بالاسم العربي: رخيص ومستقر ومفيد للعرض
+        loadedInventory.sort((a, b) => (a.nameAr || '').localeCompare(b.nameAr || '', 'ar'));
         setInventory(loadedInventory);
       }
     }, (error) => {
@@ -2776,10 +2785,9 @@ export default function Dashboard() {
     setNewDrugMinStock(15);
   };
 
-  // --- SEED TEST DATA (مؤقت للاختبار فقط) ---
+  // --- SEED TEST DATA (بذر أدوية تجريبية للتجربة) ---
+  // تعمل محلياً دائماً — حتى في وضع التجاوز بلا تسجيل دخول — وتُرفع سحابياً إن كان مسجّلاً.
   const handleSeedTestData = async () => {
-    if (!currentUser) return;
-    const userId = currentUser.uid;
     const testMeds: Medicine[] = [
       {
         id: generateDocId('MED'),
@@ -2842,10 +2850,24 @@ export default function Dashboard() {
         barcode: '6281100000005'
       }
     ];
-    for (const med of testMeds) {
-      await setDoc(doc(db, 'users', userId, 'inventory', med.id), { ...med, userId });
+    // تجنّب التكرار عند الضغط أكثر من مرة: تخطَّ ما وُجد باركوده مسبقاً في المخزون
+    const existingBarcodes = new Set(inventory.map(m => m.barcode).filter(Boolean));
+    const toAdd = testMeds.filter(m => !existingBarcodes.has(m.barcode));
+    if (toAdd.length === 0) {
+      alert('الأدوية التجريبية موجودة مسبقاً في المخزون.');
+      return;
     }
-    alert('✅ تمت إضافة 5 أدوية تجريبية بنجاح!');
+    // تُضاف محلياً دائماً (تعمل حتى في وضع التجاوز)
+    setInventory(prev => [...toAdd, ...prev]);
+    // وإن كان مسجّل الدخول تُرفع إلى Firestore أيضاً
+    if (currentUser) {
+      const userId = currentUser.uid;
+      for (const med of toAdd) {
+        await setDoc(doc(db, 'users', userId, 'inventory', med.id), { ...med, userId })
+          .catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${userId}/inventory/${med.id}`));
+      }
+    }
+    alert(`✅ تمت إضافة ${toAdd.length} أدوية تجريبية${currentUser ? ' ومزامنتها سحابياً' : ' محلياً (وضع التجاوز)'}!`);
   };
 
   // --- BULK INVENTORY IMPORT (استيراد المخزون الكامل من ملف على الجهاز) ---
@@ -3837,18 +3859,33 @@ export default function Dashboard() {
                     <span className="text-xs font-black text-slate-800">مركز الإشعارات</span>
                     <button onClick={() => setShowNotifDropdown(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X className="w-4 h-4" /></button>
                   </div>
-                  {inventory.filter(m => expiryDates[m.id] && new Date(expiryDates[m.id]) < new Date()).map(m => (
-                    <div key={m.id} className="text-[10px] text-rose-700 bg-rose-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
-                      <AlertCircle className="w-3 h-3 shrink-0" />
-                      <span>{m.nameAr} — منتهية الصلاحية</span>
-                    </div>
-                  ))}
-                  {inventory.filter(m => m.availableQuantity <= (m.minStock ?? 15) && m.availableQuantity > 0).map(m => (
-                    <div key={m.id} className="text-[10px] text-amber-700 bg-amber-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
-                      <AlertCircle className="w-3 h-3 shrink-0" />
-                      <span>{m.nameAr} — مخزون منخفض ({m.availableQuantity})</span>
-                    </div>
-                  ))}
+                  {/* سقف العرض لكل فئة: مع ~7000 صنف قد تتطابق آلاف المواد فتجمّد فتح القائمة */}
+                  {(() => {
+                    const expired = inventory.filter(m => expiryDates[m.id] && new Date(expiryDates[m.id]) < new Date());
+                    const lowStock = inventory.filter(m => m.availableQuantity <= (m.minStock ?? 15) && m.availableQuantity > 0);
+                    return (
+                      <>
+                        {expired.slice(0, NOTIF_LIST_LIMIT).map(m => (
+                          <div key={m.id} className="text-[10px] text-rose-700 bg-rose-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
+                            <AlertCircle className="w-3 h-3 shrink-0" />
+                            <span>{m.nameAr} — منتهية الصلاحية</span>
+                          </div>
+                        ))}
+                        {expired.length > NOTIF_LIST_LIMIT && (
+                          <p className="text-[9px] text-rose-400 font-bold text-center">+{(expired.length - NOTIF_LIST_LIMIT).toLocaleString()} مادة منتهية أخرى — راجع تبويب المخزون</p>
+                        )}
+                        {lowStock.slice(0, NOTIF_LIST_LIMIT).map(m => (
+                          <div key={m.id} className="text-[10px] text-amber-700 bg-amber-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
+                            <AlertCircle className="w-3 h-3 shrink-0" />
+                            <span>{m.nameAr} — مخزون منخفض ({m.availableQuantity})</span>
+                          </div>
+                        ))}
+                        {lowStock.length > NOTIF_LIST_LIMIT && (
+                          <p className="text-[9px] text-amber-500 font-bold text-center">+{(lowStock.length - NOTIF_LIST_LIMIT).toLocaleString()} مادة منخفضة أخرى — راجع تبويب المخزون</p>
+                        )}
+                      </>
+                    );
+                  })()}
                   {payables.filter(p => p.dueDate && new Date(p.dueDate) < new Date() && p.status !== 'paid').map(p => (
                     <div key={p.id} className="text-[10px] text-slate-700 bg-slate-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
                       <Clock className="w-3 h-3 shrink-0" />
@@ -4215,8 +4252,9 @@ export default function Dashboard() {
                     </div>
 
                     {/* Inventory grid for POS shelf */}
+                    {/* سقف العرض: تركيب 7000 بطاقة دفعة واحدة يجمّد الواجهة — البحث يصل لأي صنف */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 max-h-[480px] overflow-y-auto pl-1">
-                      {filteredPOSMeds.map((med) => (
+                      {filteredPOSMeds.slice(0, POS_SHELF_LIMIT).map((med) => (
                         <MedicineCard
                           key={med.id}
                           med={med}
@@ -4226,6 +4264,11 @@ export default function Dashboard() {
                         />
                       ))}
                     </div>
+                    {filteredPOSMeds.length > POS_SHELF_LIMIT && (
+                      <div className="text-[10px] text-slate-400 font-bold text-center">
+                        يُعرض {POS_SHELF_LIMIT} من أصل {filteredPOSMeds.length.toLocaleString()} صنف — اكتب في البحث لعرض المزيد
+                      </div>
+                    )}
 
                     {/* حركة مبيع اليوم — مسندلة */}
                     <div className="pt-4 border-t border-slate-100">
@@ -4509,7 +4552,8 @@ export default function Dashboard() {
 
                         {showNearExpiry30 && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
-                          {getNearExpiryMeds().map(med => {
+                          {/* سقف العرض: القائمة قد تضم مئات المواد مع مخزون بحجم ~7000 صنف */}
+                          {getNearExpiryMeds().slice(0, EXPIRY_LIST_LIMIT).map(med => {
                             const days = getDaysUntilExpiry(med.id);
                             const expDate = expiryDates[med.id] || '';
                             return (
@@ -4546,6 +4590,11 @@ export default function Dashboard() {
                               </div>
                             );
                           })}
+                          {getNearExpiryMeds().length > EXPIRY_LIST_LIMIT && (
+                            <div className="md:col-span-2 text-[10px] text-slate-400 font-bold text-center py-1">
+                              يُعرض {EXPIRY_LIST_LIMIT} من أصل {getNearExpiryMeds().length.toLocaleString()} مستحضر — راجع سجلّ الصلاحيات الموسّع أدناه
+                            </div>
+                          )}
                         </div>
                         )}
                       </div>
@@ -4604,9 +4653,15 @@ export default function Dashboard() {
                             </div>
 
                             {/* القائمة المرتّبة بالأولوية */}
+                            {/* سقف العرض: أفق 6 أشهر قد يضم آلاف المواد مع مخزون ~7000 صنف —
+                                نُظهر الأعلى أولوية (الأقرب انتهاءً) وتصفية الشهر تُظهر البقية */}
+                            {(() => {
+                              const horizonFiltered = getHorizonExpiryMeds()
+                                .filter(med => selectedExpiryMonth === null || (expiryDates[med.id] || '').substring(0, 7) === selectedExpiryMonth);
+                              return (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                              {getHorizonExpiryMeds()
-                                .filter(med => selectedExpiryMonth === null || (expiryDates[med.id] || '').substring(0, 7) === selectedExpiryMonth)
+                              {horizonFiltered
+                                .slice(0, EXPIRY_LIST_LIMIT)
                                 .map(med => {
                                   const days = getDaysUntilExpiry(med.id);
                                   const sev = expirySeverity(days);
@@ -4641,7 +4696,14 @@ export default function Dashboard() {
                                     </div>
                                   );
                                 })}
+                              {horizonFiltered.length > EXPIRY_LIST_LIMIT && (
+                                <div className="md:col-span-2 text-[10px] text-slate-400 font-bold text-center py-1">
+                                  يُعرض {EXPIRY_LIST_LIMIT} من أصل {horizonFiltered.length.toLocaleString()} مستحضر (الأقرب انتهاءً أولاً) — اختر شهراً لتضييق القائمة
+                                </div>
+                              )}
                             </div>
+                              );
+                            })()}
                           </div>
                         )}
                       </div>
@@ -4841,7 +4903,8 @@ export default function Dashboard() {
                             <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
                               {filtered.length === 0 ? (
                                 <p className="text-[10px] text-slate-400 font-bold text-center py-3">لا توجد نتائج مطابقة</p>
-                              ) : filtered.map(m => (
+                              ) : filtered.slice(0, MOVEMENT_DROPDOWN_LIMIT).map(m => (
+                                // سقف العرض: بدون بحث تتطابق كل الأصناف (~7000 زر) فتجمّد القائمة المنسدلة
                                 <button
                                   key={m.id}
                                   type="button"
@@ -4860,6 +4923,11 @@ export default function Dashboard() {
                                   <span className="text-[9px] text-slate-400 font-bold shrink-0 whitespace-nowrap">{m.availableQuantity} علبة</span>
                                 </button>
                               ))}
+                              {filtered.length > MOVEMENT_DROPDOWN_LIMIT && (
+                                <p className="text-[10px] text-slate-400 font-bold text-center py-2">
+                                  يُعرض {MOVEMENT_DROPDOWN_LIMIT} من أصل {filtered.length.toLocaleString()} صنف — اكتب في البحث لعرض المزيد
+                                </p>
+                              )}
                             </div>
                           );
                         })()}
