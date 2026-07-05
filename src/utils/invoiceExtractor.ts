@@ -6,9 +6,18 @@ const GEMINI_KEY_STORAGE = 'anwar_gemini_api_key';
 // المفتاح يُدخله المستخدم من الواجهة فقط ويُحفظ محلياً على هذا الجهاز.
 // لا تقرأ المفتاح من import.meta.env: أي متغير VITE_ يُدمج في ملفات JS المنشورة
 // ويصبح مكشوفاً لأي زائر للموقع.
+// تنظيف مفتاح Gemini: يزيل المسافات والمحارف الخفية (علامات الاتجاه/صفري العرض/BOM/المسافة
+// غير الفاصلة) التي تُلتقط عادةً عند النسخ على نظام عربي، ويستخرج توكن «AIza…» من أي نص محيط.
+export function sanitizeApiKey(raw: string): string {
+  if (!raw) return '';
+  const cleaned = String(raw).replace(/[\s ​-‏‪-‮⁦-⁩﻿]/g, '');
+  const m = cleaned.match(/AIza[0-9A-Za-z_-]{20,}/);
+  return m ? m[0] : cleaned;
+}
+
 export const getStoredApiKey = (): string =>
   localStorage.getItem(GEMINI_KEY_STORAGE) || '';
-export const saveApiKey = (key: string) => localStorage.setItem(GEMINI_KEY_STORAGE, key.trim());
+export const saveApiKey = (key: string) => localStorage.setItem(GEMINI_KEY_STORAGE, sanitizeApiKey(key));
 
 function normalizeName(s: string): string {
   return s
@@ -137,7 +146,9 @@ export async function extractInvoice(
   apiKey: string,
   inventory: Medicine[]
 ): Promise<ExtractedInvoice> {
-  const key = apiKey.trim();
+  // ننظّف المفتاح أولاً: نزيل المحارف الخفية ونستخرج توكن AIza… من أي نص محيط،
+  // فيَقبل اللصق حتى مع علامات اتجاه أو مسافات غير مرئية تُلتقط عند النسخ على نظام عربي.
+  const key = sanitizeApiKey(apiKey);
   // مفاتيح Gemini حروف وأرقام إنجليزية فقط (تبدأ بـ AIza). أي حرف غير ذلك (مثل النص العربي المؤقت)
   // سيُفشل طلب HTTP بخطأ غامض، لذا نتحقق مبكراً ونعطي رسالة واضحة.
   if (!key || !/^[\x20-\x7E]+$/.test(key) || !key.startsWith('AIza')) {

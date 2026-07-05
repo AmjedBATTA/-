@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseNumber, matchToInventory, ampouleVialCount } from './invoiceExtractor';
+import { parseNumber, matchToInventory, ampouleVialCount, sanitizeApiKey } from './invoiceExtractor';
 import type { Medicine } from '../types';
 
 describe('parseNumber', () => {
@@ -80,6 +80,25 @@ describe('matchToInventory', () => {
     // هنا نتأكد أن تمرير اسمين لا يكسر التطابق العربي الصحيح
     const { medicine } = matchToInventory('أموكسيسيلين', inv, 'Amoxicillin 500mg');
     expect(medicine?.id).toBe('9');
+  });
+});
+
+describe('sanitizeApiKey', () => {
+  const K = 'AIzaSyABCDEFGHIJKLMNOPqrstuvwxyz0123456';
+  it('يبقي المفتاح السليم كما هو', () => {
+    expect(sanitizeApiKey(K)).toBe(K);
+  });
+  it('يزيل المسافات الطرفية', () => {
+    expect(sanitizeApiKey('   ' + K + '  \n')).toBe(K);
+  });
+  it('يزيل المحارف الخفية (علامة اتجاه/مسافة غير فاصلة/صفري العرض)', () => {
+    expect(sanitizeApiKey('‏' + K + ' ​')).toBe(K);
+  });
+  it('يستخرج التوكن من نص محيط', () => {
+    expect(sanitizeApiKey('key: ' + K + ' (copied)')).toBe(K);
+  });
+  it('نص لا يحوي مفتاحاً = يعيده منظّفاً (يفشل التحقق لاحقاً)', () => {
+    expect(sanitizeApiKey('   ')).toBe('');
   });
 });
 
