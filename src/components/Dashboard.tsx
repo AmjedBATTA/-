@@ -3037,10 +3037,16 @@ export default function Dashboard() {
     const orderId = generateDocId('PO');
     const totalCost = purchaseDraft.reduce((acc, curr) => acc + (curr.price * curr.qty), 0);
 
-    // فحص مسبق: الشراء النقدي لا يتجاوز السيولة المتاحة — وإلا اختر الشراء بالآجل
+    // تنبيه (لا منع): الشراء النقدي أكبر من رصيد الصندوق. كان منعاً صارماً يظهر تنبيهاً
+    // سهل تفويته فيبدو أن «لا شيء يحدث» — صار سؤال تأكيد لا يمكن تجاهله يترك القرار للمستخدم.
+    // المتابعة تجعل الصندوق بالسالب (إشارة صادقة إلى الدفع من مصدر خارج الصندوق).
     if (!purchaseOnCredit && totalCost > walletBalance) {
-      alert(`لا يمكن اعتماد الشراء نقداً: قيمة الفاتورة (${totalCost.toLocaleString()} د.ع) أكبر من السيولة المتاحة بالصندوق (${walletBalance.toLocaleString()} د.ع).\n\nفعّل خيار "شراء بالآجل" لتسجيلها كذمّة على المورد، أو قلّل الكمية.`);
-      return;
+      const proceed = window.confirm(
+        `رصيد الصندوق (${walletBalance.toLocaleString()} د.ع) أقل من قيمة الشراء النقدي (${totalCost.toLocaleString()} د.ع).\n\n` +
+        `• «موافق» = المتابعة نقداً (سيصبح رصيد الصندوق بالسالب — أي دفعتَ من مصدر خارج الصندوق).\n` +
+        `• «إلغاء» = التوقف؛ يمكنك تفعيل «شراء بالآجل» لتسجيلها كذمّة على المذخر.`
+      );
+      if (!proceed) return;
     }
 
     const archivedOrder: Order = {
