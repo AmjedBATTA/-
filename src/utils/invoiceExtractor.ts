@@ -22,8 +22,25 @@ function normalizeName(s: string): string {
     .trim();
 }
 
-export function matchToInventory(name: string, inventory: Medicine[]): { medicine: Medicine | null; score: number } {
-  const normalizedInput = normalizeName(name);
+// درجة تطابق نصّين مُطبَّعين
+function scorePair(input: string, candidate: string): number {
+  if (!input || !candidate) return 0;
+  if (candidate === input) return 1;
+  if (candidate.includes(input) || input.includes(candidate)) return 0.85;
+  const wordsA = input.split(' ').filter(w => w.length > 2);
+  const wordsB = candidate.split(' ').filter(w => w.length > 2);
+  if (wordsA.length > 0 && wordsB.length > 0) {
+    const matchCount = wordsA.filter(wa => wordsB.some(wb => wa.includes(wb) || wb.includes(wa))).length;
+    return matchCount / Math.max(wordsA.length, wordsB.length);
+  }
+  return 0;
+}
+
+// المطابقة مع المخزون: نجرّب اسمين (الترجمة العربية + الاسم الإنجليزي الخام) لأن أغلب المخزون
+// محفوظ بالعربية بينما الفاتورة إنجليزية — فنطابق العربي بالعربي والإنجليزي بالإنجليزي معاً.
+export function matchToInventory(name: string, inventory: Medicine[], altName?: string): { medicine: Medicine | null; score: number } {
+  const inputs = [normalizeName(name)];
+  if (altName) { const n = normalizeName(altName); if (n && n !== inputs[0]) inputs.push(n); }
   let best: Medicine | null = null;
   let bestScore = 0;
 
@@ -34,34 +51,29 @@ export function matchToInventory(name: string, inventory: Medicine[]): { medicin
       normalizeName(med.scientificName || ''),
       normalizeName(med.activeIngredient || ''),
     ];
-
     for (const candidate of candidates) {
       if (!candidate) continue;
-      let score = 0;
-
-      if (candidate === normalizedInput) {
-        score = 1;
-      } else if (candidate.includes(normalizedInput) || normalizedInput.includes(candidate)) {
-        score = 0.85;
-      } else {
-        const wordsA = normalizedInput.split(' ').filter(w => w.length > 2);
-        const wordsB = candidate.split(' ').filter(w => w.length > 2);
-        if (wordsA.length > 0 && wordsB.length > 0) {
-          const matchCount = wordsA.filter(wa =>
-            wordsB.some(wb => wa.includes(wb) || wb.includes(wa))
-          ).length;
-          score = matchCount / Math.max(wordsA.length, wordsB.length);
-        }
-      }
-
-      if (score > bestScore) {
-        bestScore = score;
-        best = med;
+      for (const input of inputs) {
+        const score = scorePair(input, candidate);
+        if (score > bestScore) { bestScore = score; best = med; }
       }
     }
   }
 
   return { medicine: bestScore >= 0.5 ? best : null, score: bestScore };
+}
+
+// عدد الأمبولات/الفيالات في العلبة من نص الاسم (يُعدّ قطعاً ويُقسم السعر عليه).
+// يعيد null إذا لم يكن الصنف أمبولاً/فيالاً — فيبقى منطق الأشرطة للأقراص كما هو.
+export function ampouleVialCount(rawName: string): number | null {
+  const s = (rawName || '').toLowerCase();
+  // (?:\d|\b) قبل الوحدة: يلتقط «1amp» الملتصقة برقم دون التقاط «clamp/sample» الداخلية
+  if (!/(?:\d|\b)(amp|ampoule|ampule|vial|vials)\b/.test(s) && !/فيال|امبول|أمبول|امبولة/.test(s)) return null;
+  // «* 5 amp» أو «x10 vial» أو «10 oral vials»
+  const m = s.match(/[*x×]\s*(\d{1,3})\s*(amp|ampoule|ampule|vial|vials)/)
+    || s.match(/(\d{1,3})\s*(oral\s+)?(amp|ampoule|ampule|vial|vials|فيال|امبول)/);
+  if (m) return Math.max(1, parseInt(m[1], 10));
+  return 1; // أمبول/فيال بلا عدد صريح = قطعة واحدة
 }
 
 const EXTRACTION_PROMPT = `أنت نظام استخراج بيانات دقيق لفواتير أدوية الصيدليات العراقية.
@@ -88,12 +100,16 @@ const EXTRACTION_PROMPT = `أنت نظام استخراج بيانات دقيق 
 }
 
 القواعد:
+• rawName: انسخ الاسم الإنجليزي كما هو مكتوب تماماً في الفاتورة (مهم جداً — لا تترجمه ولا تختصره).
 • arabicName: حوّل الاسم إلى الاسم التجاري العربي المعروف في الصيدليات العراقية
   أمثلة: Panadol→بندول، Augmentin→أوجمنتين، Amoxicillin→أموكسيسيلين، Metformin→ميتفورمين، Omeprazole→أوميبرازول
+• company: اسم الشركة المصنّعة. في بعض الفواتير يكون بعمود مستقل، وفي فواتير «ساوة» يكون مدموجاً
+  في نهاية اسم المادة (مثل «Bactiflox neo 500 mg * 10 tab acino m» → الشركة = acino m). افصله دائماً.
 • stripsPerBox: احسبها من عدد الوحدات في الاسم:
   - "* X tab" أو "* X cap": stripsPerBox = X ÷ 10 (إذا كان X قابلاً للقسمة على 14 بالضبط وX≤56 فاستخدم 14)
-  - شراب/قطرة/كريم/جل/مرهم/فيال/أمبول/ساشيت/بودرة/مرش: stripsPerBox = 1
-• unitType: "strip" للأقراص والكبسولات | "unit" لكل الباقي
+  - أمبول/فيال (amp/vial): stripsPerBox = عدد الأمبولات/الفيالات في العلبة («* 5 amp» → 5، «10 oral vials» → 10، «* 1 amp» → 1)
+  - شراب/قطرة/كريم/جل/مرهم/ساشيت/بودرة/مرش/حقنة سائلة (injection بحجم مل): stripsPerBox = 1
+• unitType: "strip" للأقراص والكبسولات | "unit" لكل الباقي (شراب/كريم/أمبول/فيال...)
 • الأرقام: أزل الفاصلة العليا (14'765 → 14765) والنقطة العشرية (14'500.00 → 14500)
 • إذا لم يكن الحقل واضحاً اجعله null`;
 
@@ -176,8 +192,12 @@ export async function extractInvoice(
 
   const items: ExtractedInvoiceItem[] = rawItems.map((item, idx) => {
     const arabicName = (item.arabicName || item.rawName || '').trim();
-    const { medicine, score } = matchToInventory(arabicName, inventory);
-    const stripsPerBox = Math.max(1, parseNumber(item.stripsPerBox));
+    const rawName = (item.rawName || '').trim();
+    // نطابق بالعربي والإنجليزي معاً — أغلب المخزون عربي والفاتورة إنجليزية
+    const { medicine, score } = matchToInventory(arabicName, inventory, rawName);
+    // الأمبول/الفيال: عدد القطع من الاسم (يتجاوز تقدير Gemini). الأقراص تبقى بمنطق الأشرطة.
+    const avCount = ampouleVialCount(rawName || arabicName);
+    const stripsPerBox = avCount !== null ? avCount : Math.max(1, parseNumber(item.stripsPerBox));
     const pricePerStrip = stripsPerBox > 0 ? Math.round(parseNumber(item.pricePerBox) / stripsPerBox) : parseNumber(item.pricePerBox);
     // سعر البيع الافتراضي: من المخزن إن كان الدواء مطابقاً، وإلا هامش ربح فوق التكلفة
     const retailPrice = medicine?.price ?? Math.round(pricePerStrip * 1.25);

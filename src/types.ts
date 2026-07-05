@@ -14,6 +14,7 @@ export interface Medicine {
   status: 'available' | 'low' | 'unavailable';
   scientificName: string;
   barcode?: string;
+  manufacturer?: string; // الشركة المصنّعة — تُملأ تلقائياً من فاتورة الاستيراد عند المطابقة (إن كانت فارغة)
   updatedAt?: string; // ISO timestamp لآخر تعديل — كان يُكتب سابقاً عبر كاست يخفيه عن نظام الأنواع
 }
 

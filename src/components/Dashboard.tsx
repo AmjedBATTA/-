@@ -2502,6 +2502,7 @@ export default function Dashboard() {
       m.nameAr.toLowerCase().includes(q) ||
       m.nameEn.toLowerCase().includes(q) ||
       m.scientificName.toLowerCase().includes(q) ||
+      (m.manufacturer && m.manufacturer.toLowerCase().includes(q)) ||
       (m.barcode && m.barcode.toLowerCase().includes(q))
     );
   }, [inventory, deferredInvQuery]);
@@ -3015,6 +3016,7 @@ export default function Dashboard() {
         medicineId: med.id,
         nameAr: med.nameAr,
         nameEn: med.nameEn,
+        manufacturer: med.manufacturer || '',
         scientificName: med.scientificName || 'N/A',
         // سعر جملة يعتمد على آخر سعر شراء فعلي إن وُجد، وإلا التكلفة المتوسطة، وإلا تقدير 72%
         price: Number(med.lastCostPrice) || Number(med.costPrice) || resolveUnitCost(null, med.price, defaultCostPercent) || 3000,
@@ -3089,6 +3091,10 @@ export default function Dashboard() {
               availableQuantity: newQty,
               costPrice: movingAvgCost,
               lastCostPrice: purchaseUnitCost,
+              // إثراء تلقائي من الفاتورة: الاسم الإنكليزي والشركة يُملآن فقط إن كانا فارغين
+              // في المخزون — فلا نطمس قيمة أدخلها المستخدم يدوياً سابقاً.
+              nameEn: (med.nameEn && med.nameEn.trim()) ? med.nameEn : (draftItem.nameEn || med.nameEn),
+              manufacturer: (med.manufacturer && med.manufacturer.trim()) ? med.manufacturer : (draftItem.manufacturer || med.manufacturer),
               // سعر البيع: نحترم القيمة المعدّلة في الاستيراد إن وُجدت، وإلا التكلفة + هامش 25%
               price: draftItem.retailPrice && Number(draftItem.retailPrice) > 0
                 ? Number(draftItem.retailPrice)
@@ -3123,6 +3129,7 @@ export default function Dashboard() {
           id: brandNewId,
           nameAr: draftItem.nameAr,
           nameEn: draftItem.nameEn,
+          manufacturer: draftItem.manufacturer || undefined,
           activeIngredient: draftItem.scientificName || 'مركب فعال نشط',
           scientificName: draftItem.scientificName,
           category: '',
@@ -5281,6 +5288,9 @@ export default function Dashboard() {
                                   <td className="py-3 px-4 space-y-0.5">
                                     <strong className="text-slate-900 block font-bold">{med.nameAr}</strong>
                                     <span className="text-[10px] text-slate-400 font-mono block">{med.nameEn} • {med.scientificName}</span>
+                                    {med.manufacturer && (
+                                      <span className="text-[9px] text-slate-400 font-bold block">🏭 {med.manufacturer}</span>
+                                    )}
                                   </td>
                                   {editingPriceId === med.id ? (
                                     <>

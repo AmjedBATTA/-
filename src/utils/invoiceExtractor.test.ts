@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseNumber, matchToInventory } from './invoiceExtractor';
+import { parseNumber, matchToInventory, ampouleVialCount } from './invoiceExtractor';
 import type { Medicine } from '../types';
 
 describe('parseNumber', () => {
@@ -72,5 +72,32 @@ describe('matchToInventory', () => {
 
   it('مخزون فارغ = لا تطابق', () => {
     expect(matchToInventory('بندول', []).medicine).toBeNull();
+  });
+
+  it('يطابق عبر الاسم الإنجليزي البديل حين يفشل العربي (مخزون عربي/فاتورة إنجليزية)', () => {
+    const inv = [med('9', 'أموكسيسيلين', '')]; // مخزون بلا اسم إنجليزي
+    // الترجمة العربية جاءت خاطئة، لكن الاسم الإنجليزي الخام يطابق نفسه لو كان محفوظاً؛
+    // هنا نتأكد أن تمرير اسمين لا يكسر التطابق العربي الصحيح
+    const { medicine } = matchToInventory('أموكسيسيلين', inv, 'Amoxicillin 500mg');
+    expect(medicine?.id).toBe('9');
+  });
+});
+
+describe('ampouleVialCount', () => {
+  it('أمبول واحد = 1', () => {
+    expect(ampouleVialCount('Getamisin 80mg*2ml*1amp')).toBe(1);
+  });
+  it('عدة أمبولات صريحة', () => {
+    expect(ampouleVialCount('Piocine 20mg/1ml * 5 amp')).toBe(5);
+  });
+  it('فيالات فموية بعدد', () => {
+    expect(ampouleVialCount('Grozilla * 10 oral vials')).toBe(10);
+  });
+  it('فيال بلا عدد = 1', () => {
+    expect(ampouleVialCount('Ceftriaxone BP 1 g vial IV ldp')).toBe(1);
+  });
+  it('ليس أمبولاً/فيالاً = null (تبقى الأقراص بمنطق الأشرطة)', () => {
+    expect(ampouleVialCount('Inaprol fort 500 mg * 20 tab')).toBeNull();
+    expect(ampouleVialCount('Ribosan cough syrup 100 ml')).toBeNull();
   });
 });

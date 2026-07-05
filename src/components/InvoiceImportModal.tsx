@@ -12,6 +12,7 @@ interface DraftItem {
   medicineId?: string;
   nameAr: string;
   nameEn: string;
+  manufacturer: string; // الشركة المصنّعة من الفاتورة — تُملأ في المخزون عند المطابقة إن كان الحقل فارغاً
   scientificName: string;
   category: string;
   price: number;
@@ -122,6 +123,17 @@ export default function InvoiceImportModal({ inventory, onClose, onConfirm }: Pr
     updateItem(itemId, { matchedMedicine: null, matchScore: 0 });
   };
 
+  // في فواتير «ساوة» تُدمج الشركة بنهاية الاسم — نزيلها من الاسم الإنكليزي المخزَّن
+  // مع بقائها في حقلها المستقل، فيبقى اسم الدواء نظيفاً.
+  const cleanEnglishName = (raw: string, company: string) => {
+    let n = (raw || '').trim();
+    const c = (company || '').trim();
+    if (c && n.toLowerCase().endsWith(c.toLowerCase())) {
+      n = n.slice(0, n.length - c.length).replace(/[\s*·\-–—]+$/, '').trim();
+    }
+    return n;
+  };
+
   const handleConfirm = () => {
     const draftItems: DraftItem[] = items
       .filter(it => it.quantityBoxes > 0 && it.pricePerBox > 0)
@@ -133,7 +145,10 @@ export default function InvoiceImportModal({ inventory, onClose, onConfirm }: Pr
           id: `draft-inv-${it.id}`,
           medicineId: med?.id,
           nameAr: med?.nameAr || it.arabicName || it.rawName,
-          nameEn: med?.nameEn || it.rawName,
+          // الاسم الإنكليزي: نحترم المسجَّل في المخزون إن وُجد، وإلا الاسم الخام من الفاتورة (بلا الشركة)
+          nameEn: med?.nameEn || cleanEnglishName(it.rawName, it.company),
+          // الشركة: المسجَّلة في المخزون إن وُجدت، وإلا المكتشفة من الفاتورة
+          manufacturer: med?.manufacturer || it.company || '',
           scientificName: med?.scientificName || med?.activeIngredient || 'N/A',
           category: med?.category || 'مسكنات الألم',
           price: pricePerStrip,
@@ -396,6 +411,17 @@ export default function InvoiceImportModal({ inventory, onClose, onConfirm }: Pr
                           <span className={`shrink-0 text-[9px] font-extrabold px-2 py-0.5 rounded-full border ${badge.cls}`}>
                             {badge.label}
                           </span>
+                        </div>
+
+                        {/* Row 1b: الشركة المصنّعة (تُملأ في المخزون عند المطابقة إن كان الحقل فارغاً) */}
+                        <div className="flex items-center gap-2 pr-6">
+                          <span className="text-[9px] font-extrabold text-slate-400 shrink-0">🏭 الشركة</span>
+                          <input
+                            value={item.company}
+                            onChange={e => updateItem(item.id, { company: e.target.value })}
+                            className="flex-1 min-w-0 text-[10px] font-bold text-slate-700 bg-transparent border-b border-transparent focus:border-emerald-400 focus:outline-none pb-0.5"
+                            placeholder="اسم الشركة المصنّعة"
+                          />
                         </div>
 
                         {/* Row 2: medicine match */}
