@@ -97,6 +97,11 @@ describe('sanitizeApiKey', () => {
   it('يستخرج التوكن من نص محيط', () => {
     expect(sanitizeApiKey('key: ' + K + ' (copied)')).toBe(K);
   });
+  it('يقبل الصيغة الأحدث AQ. (لا يفترض بادئة AIza)', () => {
+    const aq = 'AQ.FAKE_test_key_for_unit_tests_only_000000000';
+    expect(sanitizeApiKey(aq)).toBe(aq);
+    expect(sanitizeApiKey('  ‏' + aq + ' ')).toBe(aq);
+  });
   it('نص لا يحوي مفتاحاً = يعيده منظّفاً (يفشل التحقق لاحقاً)', () => {
     expect(sanitizeApiKey('   ')).toBe('');
   });

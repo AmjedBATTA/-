@@ -233,7 +233,7 @@ export default function InvoiceImportModal({ inventory, onClose, onConfirm }: Pr
                       type={showKey ? 'text' : 'password'}
                       value={apiKey}
                       onChange={e => setApiKey(e.target.value)}
-                      placeholder="AIzaSy..."
+                      placeholder="AIzaSy... أو AQ...."
                       className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 pr-10 text-xs font-mono text-slate-900 focus:outline-emerald-500 text-left"
                       dir="ltr"
                     />
