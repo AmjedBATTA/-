@@ -27,6 +27,10 @@ try {
 export const db = initializeFirestore(
   app,
   {
+    // نتجاهل الحقول غير المعرّفة (undefined) بدل رفضها: أي مستند يحوي حقلاً بقيمة undefined
+    // كان يُفشل الكتابة فوراً (استثناء متزامن) فيتوقف الاعتماد صامتاً — مثل حقل الشركة
+    // الاختياري الجديد في المخزون. مع هذا الخيار يُحذف الحقل غير المعرّف بأمان بدل الكسر.
+    ignoreUndefinedProperties: true,
     localCache: persistentLocalCache({
       tabManager: persistentSingleTabManager(undefined),
     }),
