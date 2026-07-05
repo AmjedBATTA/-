@@ -190,7 +190,7 @@ const POSSearchBar = forwardRef<POSSearchHandle, POSSearchBarProps>(
                 if (onEnter(input)) { setInput(''); onQueryChange(''); }
               }
             }}
-            className="bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-3 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-emerald-500 w-full sm:w-52"
+            className="bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-3 py-[11px] text-xs text-slate-800 placeholder:text-slate-400 focus:outline-emerald-500 w-full sm:w-[27rem]"
             placeholder="امسح الباركود أو اكتب الاسم ثم Enter..."
           />
         </div>
@@ -355,9 +355,12 @@ interface CartItemRowProps {
 }
 
 const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove }: CartItemRowProps) => {
-  // السعر المُحاسَب دائماً هو الجمهوري — «الرسمي» معلومة مرجعية لا تدخل في سطر أو إجمالي
+  // السعر المُحاسَب دائماً هو الجمهوري — «الرسمي» للعرض فقط ولا يدخل في المحاسبة.
+  // وضع «السعر الرسمي» مفعّلاً: يُعرض الرسمي وحده (سعراً وإجمالياً) ويُخفى الجمهوري
+  // و«الشراء» — شاشة تواجه الزبون، لا تكشف السعر الداخلي ولا الكلفة.
   const unitPrice = item.medicine.price;
   const officialPrice = item.medicine.secondaryPrice || (item.medicine.price + 500);
+  const shownUnit = showVirtualPrice ? officialPrice : unitPrice;
 
   // مادة نافذة (رصيد صفر): سطر تذكير أحمر باهت — اسم + سعر بلا شطب، بلا أزرار كمية،
   // غير محتسب في الإجمالي ولا يُخصم من المخزون. زر الحذف فقط.
@@ -369,7 +372,7 @@ const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove
             <span className="font-extrabold text-rose-200 text-sm truncate">{item.medicine.nameAr}</span>
             <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-rose-900/60 text-rose-300 shrink-0">نفذ</span>
           </div>
-          <span className="text-sm text-rose-300/80 font-mono font-bold block">{unitPrice.toLocaleString()} د.ع</span>
+          <span className="text-sm text-rose-300/80 font-mono font-bold block">{shownUnit.toLocaleString()} د.ع</span>
         </div>
         <button type="button" onClick={() => onRemove(item.medicine.id)}
           className="w-9 h-9 text-rose-700 hover:text-rose-300 flex items-center justify-center cursor-pointer transition shrink-0">
@@ -379,29 +382,31 @@ const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove
     );
   }
 
-  const lineTotal = unitPrice * item.quantity;
+  const shownTotal = shownUnit * item.quantity;
 
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 flex items-center justify-between gap-3">
       <div className="flex-1 min-w-0 space-y-1.5">
         <span className="font-extrabold text-white text-base block truncate">{item.medicine.nameAr}</span>
-        {/* الصف البارز: سعر الوحدة ثم «البيع الكلي» كبيراً وواضحاً (نُقل لأعلى مكان «الشراء» سابقاً) */}
+        {/* وضع «الرسمي»: الإجمالي الرسمي وحده بلا أي تفاصيل (سعر وحدة/عدد/عبارات) — شاشة
+            نظيفة تواجه الزبون. الوضع العادي: سعر الوحدة × العدد ثم الإجمالي الكبير */}
         <div className="flex items-baseline gap-2 flex-wrap">
-          <span className="text-base text-emerald-400 font-mono font-bold">{unitPrice.toLocaleString()} د.ع</span>
-          <span className="text-sm text-slate-400 font-mono">× {item.quantity}</span>
-          <span className="text-2xl text-amber-400 font-mono font-black leading-none">
-            {lineTotal.toLocaleString()}<span className="text-sm font-bold text-amber-500/80 mr-1">د.ع</span>
+          {!showVirtualPrice && (
+            <>
+              <span className="text-base font-mono font-bold text-emerald-400">{shownUnit.toLocaleString()} د.ع</span>
+              <span className="text-sm text-slate-400 font-mono">× {item.quantity}</span>
+            </>
+          )}
+          <span className={`text-2xl font-mono font-black leading-none ${showVirtualPrice ? 'text-purple-400' : 'text-amber-400'}`}>
+            {shownTotal.toLocaleString()}<span className={`text-sm font-bold mr-1 ${showVirtualPrice ? 'text-purple-400' : 'text-amber-500/80'}`}>د.ع</span>
           </span>
         </div>
-        {/* الصف الثانوي: «الشراء» الكلي (نُقل لأسفل مكان «البيع الكلي» سابقاً) + الرسمي إن فُعّل */}
-        <div className="flex items-center gap-3">
-          {item.medicine.costPrice && (
+        {/* «الشراء» في الوضع العادي فقط — لا يُكشف في وضع الرسمي */}
+        {!showVirtualPrice && item.medicine.costPrice && (
+          <div className="flex items-center gap-3">
             <span className="text-sm text-slate-400 font-mono">الشراء: {(item.medicine.costPrice * item.quantity).toLocaleString()} د.ع</span>
-          )}
-          {showVirtualPrice && (
-            <span className="text-sm text-purple-400 font-mono font-bold">رسمي: {officialPrice.toLocaleString()}</span>
-          )}
-        </div>
+          </div>
+        )}
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
         <button type="button" onClick={() => onDec(item.medicine.id)}
@@ -4257,7 +4262,7 @@ export default function Dashboard() {
                     <div className="flex justify-end">
                       <button
                         type="button"
-                        title={showVirtualPriceInPOS ? 'عرض السعر الرسمي كمرجع (البيع دائماً بالجمهوري)' : 'إظهار السعر الرسمي كمرجع'}
+                        title={showVirtualPriceInPOS ? 'السلة تعرض السعر الرسمي وحده (المحاسبة تبقى بالجمهوري)' : 'عرض أسعار السلة بالسعر الرسمي'}
                         onClick={() => setShowVirtualPriceInPOS(!showVirtualPriceInPOS)}
                         className={`w-7 h-7 rounded-full border-2 transition-all cursor-pointer shadow-sm ${
                           showVirtualPriceInPOS
