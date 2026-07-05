@@ -73,7 +73,8 @@ export interface ExtractedInvoiceItem {
   retailPrice: number;
   officialPrice: number;
   batchNo?: string;
-  expiry?: string;
+  expiry?: string;    // قابل للتعديل في شاشة المراجعة، بصيغة YYYY-MM
+  barcode?: string;   // للمواد الجديدة غير المطابقة — قابل للإدخال في شاشة المراجعة
   matchedMedicine: Medicine | null;
   matchScore: number;
 }

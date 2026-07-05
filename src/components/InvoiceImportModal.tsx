@@ -26,11 +26,20 @@ interface DraftItem {
 
 interface Props {
   inventory: Medicine[];
+  expiryDates: Record<string, string>; // معرّف الدواء → تاريخ الانتهاء المخزَّن (YYYY-MM-DD) — لتعبئة المطابق
   onClose: () => void;
   onConfirm: (items: DraftItem[], supplierName: string) => void;
 }
 
 type Step = 'key' | 'upload' | 'processing' | 'review';
+
+const DEFAULT_EXPIRY_MONTH = '2028-12';
+// يوحّد أي تاريخ («2027/07» أو «2027-07-01») إلى صيغة إدخال الشهر YYYY-MM
+function toMonthInput(s?: string): string {
+  if (!s) return '';
+  const m = s.replace(/\//g, '-').match(/(\d{4})-(\d{1,2})/);
+  return m ? `${m[1]}-${m[2].padStart(2, '0')}` : '';
+}
 
 function matchBadge(score: number, isMatched: boolean) {
   if (!isMatched) return { label: 'جديد', cls: 'bg-amber-100 text-amber-700 border-amber-200' };
@@ -38,7 +47,7 @@ function matchBadge(score: number, isMatched: boolean) {
   return { label: 'تقريبي', cls: 'bg-blue-100 text-blue-700 border-blue-200' };
 }
 
-export default function InvoiceImportModal({ inventory, onClose, onConfirm }: Props) {
+export default function InvoiceImportModal({ inventory, expiryDates, onClose, onConfirm }: Props) {
   const initialKey = getStoredApiKey();
   const [step, setStep] = useState<Step>(initialKey ? 'upload' : 'key');
   const [apiKey, setApiKey] = useState(initialKey);
@@ -87,7 +96,18 @@ export default function InvoiceImportModal({ inventory, onClose, onConfirm }: Pr
       });
       const invoice = await extractInvoice(base64, imageFile.type, apiKey.trim(), inventory);
       setExtractedInvoice(invoice);
-      setItems(invoice.items);
+      // تهيئة كل صنف: تاريخ الانتهاء (YYYY-MM) = المخزَّن للمطابق، وإلا من الفاتورة، وإلا الافتراضي.
+      // الباركود = باركود المخزون للمطابق، ويُترك فارغاً للجديد ليُدخله المستخدم أو يُولَّد لاحقاً.
+      const prepared = invoice.items.map(it => {
+        const med = it.matchedMedicine;
+        const storedMonth = med ? toMonthInput(expiryDates[med.id]) : '';
+        return {
+          ...it,
+          expiry: storedMonth || toMonthInput(it.expiry) || DEFAULT_EXPIRY_MONTH,
+          barcode: med?.barcode || '',
+        };
+      });
+      setItems(prepared);
       setStep('review');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'حدث خطأ غير متوقع';
@@ -107,10 +127,14 @@ export default function InvoiceImportModal({ inventory, onClose, onConfirm }: Pr
   const selectMedicine = (itemId: string, med: Medicine) => {
     const it = items.find(x => x.id === itemId);
     const pricePerStrip = it && it.stripsPerBox > 0 ? Math.round(it.pricePerBox / it.stripsPerBox) : 0;
+    const storedMonth = toMonthInput(expiryDates[med.id]);
     updateItem(itemId, {
       matchedMedicine: med,
       matchScore: 1,
       arabicName: med.nameAr,
+      // عند الربط يدوياً: نعتمد تاريخ الانتهاء المخزَّن (إن وُجد) وباركود المخزون
+      ...(storedMonth ? { expiry: storedMonth } : {}),
+      barcode: med.barcode || '',
       // عند الربط بدواء موجود، نعتمد أسعار بيعه الحالية كقيم افتراضية قابلة للتعديل
       retailPrice: med.price || Math.round(pricePerStrip * 1.25),
       officialPrice: med.secondaryPrice || Math.round(pricePerStrip * 1.35),
@@ -155,8 +179,10 @@ export default function InvoiceImportModal({ inventory, onClose, onConfirm }: Pr
           retailPrice: it.retailPrice || Math.round(pricePerStrip * 1.25),
           officialPrice: it.officialPrice || Math.round(pricePerStrip * 1.35),
           qty: totalStrips,
-          expiryDate: it.expiry?.replace('/', '-').padEnd(10, '-01') || '2028-12-01',
-          barcode: med?.barcode || '62811' + Math.floor(Math.random() * 900000 + 100000),
+          // it.expiry بصيغة YYYY-MM بعد التهيئة → نُكمّلها إلى أول الشهر YYYY-MM-01
+          expiryDate: it.expiry ? `${it.expiry}-01` : `${DEFAULT_EXPIRY_MONTH}-01`,
+          // الباركود: باركود المخزون للمطابق، وإلا المُدخَل يدوياً للجديد، وإلا يُولَّد تلقائياً
+          barcode: med?.barcode || (it.barcode || '').trim() || '62811' + Math.floor(Math.random() * 900000 + 100000),
           warehouse: extractedInvoice?.supplierName || it.company || '',
         };
       });
@@ -568,18 +594,51 @@ export default function InvoiceImportModal({ inventory, onClose, onConfirm }: Pr
                           </div>
                         </div>
 
-                        {/* Row 4: computed totals + expiry */}
-                        <div className="flex items-center gap-3 text-right">
-                          <div className="flex-1 bg-slate-50 rounded-xl px-3 py-1.5 flex items-center justify-between">
-                            <span className="text-[9px] text-slate-500 font-bold">إجمالي الأشرطة</span>
-                            <span className="text-xs font-extrabold text-slate-800 font-mono">{totalStrips} شريط</span>
+                        {/* Row 4: تاريخ انتهاء قابل للتعديل + إجمالي الأشرطة */}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-extrabold text-slate-500 block">تاريخ الانتهاء (ص)</label>
+                            <input
+                              type="month"
+                              value={item.expiry || ''}
+                              onChange={e => updateItem(item.id, { expiry: e.target.value })}
+                              className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-extrabold text-slate-900 text-center focus:outline-emerald-400"
+                              dir="ltr"
+                            />
                           </div>
-                          {item.expiry && (
-                            <div className="text-[9px] text-slate-500 font-bold bg-slate-50 rounded-xl px-3 py-1.5">
-                              ص: {item.expiry}
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-extrabold text-slate-500 block">إجمالي الأشرطة</label>
+                            <div className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-extrabold text-slate-800 text-center font-mono">
+                              {totalStrips} شريط
                             </div>
-                          )}
+                          </div>
                         </div>
+
+                        {/* المخزون الحالي في المخزن (للمادة المطابقة فقط) */}
+                        {item.matchedMedicine && (
+                          <div className="bg-blue-50/50 border border-blue-100 rounded-xl px-3 py-1.5 flex items-center justify-between">
+                            <span className="text-[9px] text-blue-600 font-bold">📦 المخزون الحالي في المخزن</span>
+                            <span className="text-xs font-extrabold text-blue-800 font-mono">
+                              {item.matchedMedicine.availableQuantity.toLocaleString()} شريط
+                            </span>
+                          </div>
+                        )}
+
+                        {/* باركود المادة الجديدة (لغير المطابقة فقط — يُولَّد تلقائياً إن تُرك فارغاً) */}
+                        {!item.matchedMedicine && (
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-extrabold text-slate-500 block">باركود المادة الجديدة (اختياري)</label>
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              value={item.barcode || ''}
+                              onChange={e => updateItem(item.id, { barcode: e.target.value })}
+                              placeholder="امسح أو اكتب الباركود — يُولَّد تلقائياً إن تُرك فارغاً"
+                              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-[11px] font-mono font-bold text-slate-900 text-center focus:outline-emerald-400"
+                              dir="ltr"
+                            />
+                          </div>
+                        )}
                       </div>
                     );
                   })}

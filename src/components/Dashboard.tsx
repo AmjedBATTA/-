@@ -8417,6 +8417,7 @@ export default function Dashboard() {
           <Suspense fallback={null}>
           <InvoiceImportModal
             inventory={inventory}
+            expiryDates={expiryDates}
             onClose={() => setShowInvoiceImport(false)}
             onConfirm={(draftItems, supplierName) => {
               // Merge imported items into purchaseDraft
