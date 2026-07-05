@@ -39,6 +39,21 @@ export function deriveStockStatus(qty: number): 'available' | 'low' | 'unavailab
 }
 
 /**
+ * الحل الوسط لغياب تتبّع الوجبات (Batch): أي تاريخ انتهاء يُعتمد عند استلام وجبة جديدة؟
+ * التطبيق يخزّن تاريخاً واحداً لكل مادة، فلو استُبدل بالأحدث دائماً ضاع تنبيه الصلاحية
+ * عن بقايا الوجبة الأقدم على الرف. القاعدة الآمنة صيدلانياً: ما دامت كمية قديمة باقية
+ * وتاريخها المسجَّل أبكر من الجديد، نحتفظ بالأبكر. (مقارنة YYYY-MM-DD نصية صحيحة زمنياً.)
+ */
+export function resolveExpiryOnReceive(
+  prevExpiry: string | undefined,
+  newExpiry: string,
+  oldStockRemains: boolean
+): string {
+  if (oldStockRemains && prevExpiry && prevExpiry < newExpiry) return prevExpiry;
+  return newExpiry;
+}
+
+/**
  * تاريخ اليوم المحلي بصيغة YYYY-MM-DD — المصدر الوحيد لتواريخ القيود.
  * toISOString() يعيد يوم UTC، والعراق يسبقه بثلاث ساعات: قيدٌ بين منتصف الليل
  * والثالثة فجراً كان يُسجَّل بتاريخ الأمس فيختلط يومان في تقرير الإغلاق.

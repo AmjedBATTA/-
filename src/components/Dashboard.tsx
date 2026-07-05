@@ -16,7 +16,7 @@ import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
 import { collection, doc, getDoc, setDoc, onSnapshot, deleteDoc, writeBatch, increment, getCountFromServer, query, orderBy, limit } from 'firebase/firestore';
 import {
-  generateDocId, deriveStockStatus, resolveUnitCost, movingAverageCost, todayLocalISO,
+  generateDocId, deriveStockStatus, resolveUnitCost, movingAverageCost, todayLocalISO, resolveExpiryOnReceive,
   computeSaleTotals, computeProfit, loadDefaultCostPercent, saveDefaultCostPercent,
 } from '../utils/finance';
 import { downloadCSV, datedFilename } from '../utils/csvExport';
@@ -3062,6 +3062,8 @@ export default function Dashboard() {
     const changedExpiryIds = new Set<string>();
     // فرق الكمية لكل مادة — يُكتب للخادم بـ increment() بدل الرقم المطلق (سلامة التزامن)
     const qtyDeltas = new Map<string, number>();
+    // المواد التي احتُفظ لها بتاريخ الانتهاء الأبكر (بقايا وجبة قديمة على الرف) — للتنويه في البانر
+    const keptEarlierExpiry: string[] = [];
 
     purchaseDraft.forEach(draftItem => {
       if (draftItem.medicineId) {
@@ -3096,8 +3098,18 @@ export default function Dashboard() {
           return med;
         });
         if (draftItem.expiryDate) {
-          updatedExpiries[draftItem.medicineId] = draftItem.expiryDate;
-          changedExpiryIds.add(draftItem.medicineId);
+          // الحل الوسط لغياب تتبّع الوجبات: مع بقايا كمية قديمة نحتفظ بالتاريخ الأبكر
+          // (انظر resolveExpiryOnReceive) — فيبقى تنبيه الصلاحية يحمي الوجبة الأقدم على الرف
+          const prevExpiry = updatedExpiries[draftItem.medicineId];
+          const oldStockRemains = (inventory.find(m => m.id === draftItem.medicineId)?.availableQuantity ?? 0) > 0;
+          const effective = resolveExpiryOnReceive(prevExpiry, draftItem.expiryDate, oldStockRemains);
+          if (effective !== prevExpiry) {
+            updatedExpiries[draftItem.medicineId] = effective;
+            changedExpiryIds.add(draftItem.medicineId);
+          }
+          if (effective !== draftItem.expiryDate) {
+            keptEarlierExpiry.push(draftItem.nameAr || draftItem.medicineId);
+          }
         }
       } else {
         // Brand new drug to add to inventory list!
@@ -3211,10 +3223,14 @@ export default function Dashboard() {
 
     setPurchaseDraft([]);
     setPurchaseOnCredit(false);
+    const expiryNote = keptEarlierExpiry.length
+      ? ` ⚠ احتُفظ بتاريخ الانتهاء الأبكر لـ ${keptEarlierExpiry.length} مادة لديها كمية قديمة على الرف (${keptEarlierExpiry.slice(0, 3).join('، ')}${keptEarlierExpiry.length > 3 ? '…' : ''}) — يُحدَّث تلقائياً عند نفاد القديم وإعادة الشراء.`
+      : '';
     setPurchaseSuccessBanner(
-      purchaseOnCredit
+      (purchaseOnCredit
         ? `تم اعتماد فاتورة الشراء بقيمة ${totalCost.toLocaleString()} د.ع كذمّة آجلة على ${creditSupplierName.trim() || 'المذخر'} وتحديث المخزون لـ ${purchaseDraft.length} أدوية!`
         : `تم بنجاح اعتماد فاتورة الشراء اليومي بقيمة ${totalCost.toLocaleString()} د.ع وتحديث مستويات المخزون والصلاحيات لـ ${purchaseDraft.length} أدوية!`
+      ) + expiryNote
     );
     
     setTimeout(() => {

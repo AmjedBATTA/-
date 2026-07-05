@@ -7,8 +7,27 @@ import {
   computeSaleTotals,
   computeProfit,
   todayLocalISO,
+  resolveExpiryOnReceive,
   DEFAULT_COST_PERCENT,
 } from './finance';
+
+describe('resolveExpiryOnReceive', () => {
+  it('يحتفظ بالتاريخ الأبكر عندما تبقى كمية قديمة على الرف', () => {
+    expect(resolveExpiryOnReceive('2026-09-01', '2028-01-01', true)).toBe('2026-09-01');
+  });
+
+  it('يعتمد التاريخ الجديد عندما لا كمية قديمة (نفد المخزون)', () => {
+    expect(resolveExpiryOnReceive('2026-09-01', '2028-01-01', false)).toBe('2028-01-01');
+  });
+
+  it('يعتمد الجديد إن كان أبكر من المسجَّل (تصحيح لتاريخ خاطئ متفائل)', () => {
+    expect(resolveExpiryOnReceive('2029-01-01', '2027-03-01', true)).toBe('2027-03-01');
+  });
+
+  it('يعتمد الجديد عند غياب تاريخ سابق', () => {
+    expect(resolveExpiryOnReceive(undefined, '2028-01-01', true)).toBe('2028-01-01');
+  });
+});
 
 describe('todayLocalISO', () => {
   it('يعيد صيغة YYYY-MM-DD', () => {
