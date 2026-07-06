@@ -639,6 +639,15 @@ export default function Dashboard() {
   // تعديل اسم/باركود صف مسودة الشراء بالنقر ثلاث مرات — ينتشر للمخزون و POS تلقائياً
   const [editingDraftField, setEditingDraftField] = useState<{ id: string; field: 'nameAr' | 'barcode'; medicineId?: string } | null>(null);
   const [editingDraftValue, setEditingDraftValue] = useState('');
+  const [editingDraftStockId, setEditingDraftStockId] = useState<string | null>(null); // شارة «بالمخزن» قيد التعديل بالنقر المزدوج
+  // حفظ تصحيح المخزون الحالي لصنف المسودة — يُعتمد كرصيد فعلي عند اعتماد الشراء (تصحيح جرد)
+  const saveDraftStock = (id: string, liveQty: number, raw: string) => {
+    const v = Math.max(0, Math.round(Number(raw)));
+    setPurchaseDraft(prev => prev.map(d => d.id === id
+      ? { ...d, stockCorrection: (Number.isFinite(v) && v !== liveQty) ? v : undefined }
+      : d));
+    setEditingDraftStockId(null);
+  };
   const draftEditCancelRef = useRef(false);
 
   // المورّد النشط لمسودة الشراء الحالية — يُطبَّق على كل الأصناف ويُورَّث للأصناف الجديدة تلقائياً
@@ -5871,10 +5880,27 @@ export default function Dashboard() {
                                                 >{item.nameAr}</strong>
                                               )}
                                               {item.medicineId && liveMed ? (
-                                                <span
-                                                  className={`text-[8px] font-black px-1.5 py-0.5 rounded-full shrink-0 ${liveQty <= 0 ? 'bg-rose-100 text-rose-700' : liveQty < (liveMed.minStock ?? 15) ? 'bg-amber-100 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}
-                                                  title="الرصيد الحالي الحقيقي في المخزن"
-                                                >بالمخزن: {liveQty}</span>
+                                                editingDraftStockId === item.id ? (
+                                                  <input
+                                                    type="number"
+                                                    min={0}
+                                                    autoFocus
+                                                    defaultValue={item.stockCorrection ?? liveQty}
+                                                    onBlur={e => saveDraftStock(item.id, liveQty, e.target.value)}
+                                                    onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingDraftStockId(null); }}
+                                                    className="w-16 bg-white border border-blue-400 rounded-full px-2 py-0.5 text-[9px] font-black text-blue-900 text-center focus:outline-blue-500"
+                                                  />
+                                                ) : (() => {
+                                                  const effQty = item.stockCorrection ?? liveQty;
+                                                  const corrected = item.stockCorrection !== undefined && item.stockCorrection !== liveQty;
+                                                  return (
+                                                    <span
+                                                      onDoubleClick={() => setEditingDraftStockId(item.id)}
+                                                      className={`text-[8px] font-black px-1.5 py-0.5 rounded-full shrink-0 cursor-pointer ${corrected ? 'bg-amber-100 text-amber-800 border border-amber-300' : effQty <= 0 ? 'bg-rose-100 text-rose-700' : effQty < (liveMed.minStock ?? 15) ? 'bg-amber-100 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}
+                                                      title="الرصيد الحالي في المخزن — انقر مرتين لتصحيحه"
+                                                    >بالمخزن: {effQty}{corrected ? ' ✎' : ''}</span>
+                                                  );
+                                                })()
                                               ) : (
                                                 <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full shrink-0 bg-blue-50 text-blue-700" title="صنف جديد غير موجود بالمخزن بعد">جديد</span>
                                               )}
