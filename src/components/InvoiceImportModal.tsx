@@ -267,6 +267,15 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
   const newCount = items.filter(it => !it.matchedMedicine).length;
   const validCount = items.filter(it => it.quantityBoxes > 0 && it.pricePerBox > 0).length;
 
+  // صاحب باركود موجود مسبقاً في المخزون (للمنع لا الدمج): مادة جديدة أُدخل لها باركود مكرّر
+  const barcodeOwner = (barcode: string): Medicine | null => {
+    const b = (barcode || '').trim();
+    if (!b) return null;
+    return inventory.find(m => (m.barcode || '').trim() === b) || null;
+  };
+  // منع المتابعة إن كان أي صنف جديد يحمل باركوداً موجوداً لمادة أخرى
+  const hasDuplicateBarcode = items.some(it => !it.matchedMedicine && !!barcodeOwner(it.barcode || ''));
+
   const filteredInventory = inventory.filter(m => {
     const q = searchQuery.toLowerCase();
     return m.nameAr.toLowerCase().includes(q) || m.nameEn.toLowerCase().includes(q);
@@ -750,7 +759,9 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
                         })()}
 
                         {/* باركود المادة الجديدة (لغير المطابقة فقط — يُولَّد تلقائياً إن تُرك فارغاً) */}
-                        {!item.matchedMedicine && (
+                        {!item.matchedMedicine && (() => {
+                          const dupMed = barcodeOwner(item.barcode || '');
+                          return (
                           <div className="space-y-1">
                             <label className="text-[9px] font-extrabold text-slate-500 block">باركود المادة الجديدة (اختياري)</label>
                             <div className="flex items-center gap-2">
@@ -760,7 +771,7 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
                                 value={item.barcode || ''}
                                 onChange={e => updateItem(item.id, { barcode: e.target.value })}
                                 placeholder="امسح بالكاميرا أو اكتب الباركود — يُولَّد تلقائياً إن تُرك فارغاً"
-                                className="flex-1 min-w-0 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-[11px] font-mono font-bold text-slate-900 text-center focus:outline-emerald-400"
+                                className={`flex-1 min-w-0 bg-white border rounded-lg px-3 py-1.5 text-[11px] font-mono font-bold text-slate-900 text-center focus:outline-emerald-400 ${dupMed ? 'border-rose-400 bg-rose-50' : 'border-slate-200'}`}
                                 dir="ltr"
                               />
                               <button
@@ -773,8 +784,18 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
                                 <span className="hidden sm:inline">قارئ باركود</span>
                               </button>
                             </div>
+                            {/* تنبيه الباركود المكرّر — منع لا دمج */}
+                            {dupMed && (
+                              <div className="flex items-start gap-1.5 bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5">
+                                <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-px" />
+                                <p className="text-[10px] font-extrabold text-rose-700 leading-snug">
+                                  أقول لك المادة موجودة! هذا الباركود مُسجَّل مسبقاً للمادة «{dupMed.nameAr}» — غيّره أو اتركه فارغاً ليُولَّد تلقائياً.
+                                </p>
+                              </div>
+                            )}
                           </div>
-                        )}
+                          );
+                        })()}
                       </div>
                     );
                   })}
@@ -794,7 +815,7 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
                 إعادة
               </button>
               <button
-                disabled={validCount === 0}
+                disabled={validCount === 0 || hasDuplicateBarcode}
                 onClick={handleConfirm}
                 className="flex-1 bg-emerald-600 text-white rounded-xl py-3 text-xs font-extrabold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-emerald-700 transition flex items-center justify-center gap-2 cursor-pointer"
               >
@@ -802,7 +823,11 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
                 إضافة {validCount} صنف إلى مسودة الشراء
               </button>
             </div>
-            {newCount > 0 && (
+            {hasDuplicateBarcode ? (
+              <p className="text-[10px] text-rose-600 font-extrabold text-center mt-2">
+                ⚠ يوجد باركود مكرّر لمادة موجودة — صحّحه أو اتركه فارغاً قبل المتابعة.
+              </p>
+            ) : newCount > 0 && (
               <p className="text-[9px] text-amber-600 font-bold text-center mt-2">
                 {newCount} صنف جديد سيُضاف تلقائياً إلى المخزون عند اعتماد الشراء
               </p>
