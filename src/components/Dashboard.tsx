@@ -450,6 +450,9 @@ export default function Dashboard() {
   // Expiry states tracking
   // تواريخ انتهاء الصلاحية (medicineId → YYYY-MM-DD) — تبدأ فارغة وتُحمَّل من مستمع Firestore
   const [expiryDates, setExpiryDates] = useState<Record<string, string>>({});
+  // آخر تاريخ انتهاء أدخله المستخدم لكل مادة — مستقل عن expiryDates (الأبكر للتنبيهات).
+  // يُستخدم كبديل في شاشة الاستيراد حين لا تحمل الفاتورة تاريخاً.
+  const [lastEnteredExpiry, setLastEnteredExpiry] = useState<Record<string, string>>({});
 
   const [dismissedLowStock, setDismissedLowStock] = useState<Set<string>>(new Set());
 
@@ -1056,13 +1059,17 @@ export default function Dashboard() {
       status: qty <= 0 ? 'unavailable' : qty < (med.minStock ?? 15) ? 'low' : 'available',
     };
     setInventory(prev => prev.map(m => (m.id === medId ? updatedMed : m)));
-    if (qaExpiry) setExpiryDates(prev => ({ ...prev, [medId]: qaExpiry }));
+    // إدخال يدوي في الجرد = آخر تاريخ أدخله المستخدم؛ نحدّث القيمتين (الأبكر للتنبيهات + آخر مُدخَل)
+    if (qaExpiry) {
+      setExpiryDates(prev => ({ ...prev, [medId]: qaExpiry }));
+      setLastEnteredExpiry(prev => ({ ...prev, [medId]: qaExpiry }));
+    }
     if (currentUser) {
       const uid = currentUser.uid;
       setDoc(doc(db, 'users', uid, 'inventory', medId), updatedMed)
         .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${uid}/inventory/${medId}`));
       if (qaExpiry)
-        setDoc(doc(db, 'users', uid, 'expiryDates', medId), { expiry: qaExpiry, userId: uid })
+        setDoc(doc(db, 'users', uid, 'expiryDates', medId), { expiry: qaExpiry, lastEntered: qaExpiry, userId: uid }, { merge: true })
           .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${uid}/expiryDates/${medId}`));
     }
     addAuditEntry({ action: 'inventory_import', amount: 0, description: `جرد سريع: ${qaNameAr.trim()} — كمية: ${qty}، سعر: ${price.toLocaleString()} د.ع` });
@@ -1536,11 +1543,14 @@ export default function Dashboard() {
     const unsubExpiry = onSnapshot(collection(db, 'users', userId, 'expiryDates'), (snapshot) => {
       if (!snapshot.empty) {
         const loaded: Record<string, string> = {};
+        const loadedLast: Record<string, string> = {};
         snapshot.forEach(d => {
-          const v = (d.data() as { expiry?: string }).expiry;
-          if (typeof v === 'string' && v) loaded[d.id] = v;
+          const data = d.data() as { expiry?: string; lastEntered?: string };
+          if (typeof data.expiry === 'string' && data.expiry) loaded[d.id] = data.expiry;
+          if (typeof data.lastEntered === 'string' && data.lastEntered) loadedLast[d.id] = data.lastEntered;
         });
         setExpiryDates(loaded);
+        setLastEnteredExpiry(loadedLast);
       }
     }, () => {
       console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/expiryDates`);
@@ -3032,7 +3042,7 @@ export default function Dashboard() {
         retailPrice: med.price || 0,
         officialPrice: med.secondaryPrice || (med.price ? med.price + 500 : 0),
         qty: overrideQty ?? 1,
-        expiryDate: expiryDates[med.id] || '2028-12-01',
+        expiryDate: lastEnteredExpiry[med.id] || expiryDates[med.id] || '2028-12-01',
         barcode: med.barcode || '62811' + Math.floor(Math.random() * 900000 + 100000),
         warehouse: purchaseSupplier || med.warehouse || '',
       };
@@ -3078,6 +3088,7 @@ export default function Dashboard() {
 
     let updatedInventory = [...inventory];
     const updatedExpiries = { ...expiryDates };
+    const updatedLastEntered = { ...lastEnteredExpiry }; // آخر تاريخ أدخله المستخدم (للعرض لاحقاً)
     // نجمع معرّفات المواد المتغيّرة فقط — الكتابة السحابية كانت ترفع كل المخزون
     // (آلاف المستندات) عند كل اعتماد، ما يبطئ ويخاطر بمحو تعديلات أجهزة أخرى.
     const changedMedIds = new Set<string>();
@@ -3136,14 +3147,14 @@ export default function Dashboard() {
         });
         if (draftItem.expiryDate) {
           // الحل الوسط لغياب تتبّع الوجبات: مع بقايا كمية قديمة نحتفظ بالتاريخ الأبكر
-          // (انظر resolveExpiryOnReceive) — فيبقى تنبيه الصلاحية يحمي الوجبة الأقدم على الرف
+          // (انظر resolveExpiryOnReceive) — فيبقى تنبيه الصلاحية يحمي الوجبة الأقدم على الرف.
+          // ونسجّل آخر تاريخ أدخله المستخدم مستقلاً (للعرض في الاستيراد حين تخلو الفاتورة منه).
           const prevExpiry = updatedExpiries[draftItem.medicineId];
           const oldStockRemains = (inventory.find(m => m.id === draftItem.medicineId)?.availableQuantity ?? 0) > 0;
           const effective = resolveExpiryOnReceive(prevExpiry, draftItem.expiryDate, oldStockRemains);
-          if (effective !== prevExpiry) {
-            updatedExpiries[draftItem.medicineId] = effective;
-            changedExpiryIds.add(draftItem.medicineId);
-          }
+          updatedExpiries[draftItem.medicineId] = effective;
+          updatedLastEntered[draftItem.medicineId] = draftItem.expiryDate;
+          changedExpiryIds.add(draftItem.medicineId);
           if (effective !== draftItem.expiryDate) {
             keptEarlierExpiry.push(draftItem.nameAr || draftItem.medicineId);
           }
@@ -3177,6 +3188,7 @@ export default function Dashboard() {
         qtyDeltas.set(brandNewId, Number(draftItem.qty) || 0);
         if (draftItem.expiryDate) {
           updatedExpiries[brandNewId] = draftItem.expiryDate;
+          updatedLastEntered[brandNewId] = draftItem.expiryDate;
           changedExpiryIds.add(brandNewId);
         }
       }
@@ -3203,9 +3215,13 @@ export default function Dashboard() {
           .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/b2bOrders/${orderId} (batch ${i / CHUNK + 1})`));
       }
 
-      // مزامنة تواريخ الانتهاء المتغيّرة — كانت تُحفظ محلياً فقط وتتبخر عند تحديث الصفحة
+      // مزامنة تواريخ الانتهاء المتغيّرة — نكتب الأبكر (للتنبيهات) وآخر مُدخَل (للعرض) معاً
       changedExpiryIds.forEach(medId => {
-        setDoc(doc(db, 'users', userId, 'expiryDates', medId), { expiry: updatedExpiries[medId], userId })
+        setDoc(doc(db, 'users', userId, 'expiryDates', medId), {
+          expiry: updatedExpiries[medId],
+          lastEntered: updatedLastEntered[medId] ?? updatedExpiries[medId],
+          userId,
+        }, { merge: true })
           .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/expiryDates/${medId}`));
       });
     }
@@ -3213,6 +3229,7 @@ export default function Dashboard() {
     setB2bOrders(prev => [archivedOrder, ...prev]);
     setInventory(updatedInventory);
     setExpiryDates(updatedExpiries);
+    setLastEnteredExpiry(updatedLastEntered);
 
     addAuditEntry({
       action: 'purchase',
@@ -8474,6 +8491,7 @@ export default function Dashboard() {
           <InvoiceImportModal
             inventory={inventory}
             expiryDates={expiryDates}
+            lastEnteredExpiry={lastEnteredExpiry}
             onClose={() => setShowInvoiceImport(false)}
             onConfirm={(draftItems, supplierName) => {
               // Merge imported items into purchaseDraft

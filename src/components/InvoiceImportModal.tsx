@@ -27,7 +27,8 @@ interface DraftItem {
 
 interface Props {
   inventory: Medicine[];
-  expiryDates: Record<string, string>; // معرّف الدواء → تاريخ الانتهاء المخزَّن (YYYY-MM-DD) — لتعبئة المطابق
+  expiryDates: Record<string, string>; // معرّف الدواء → تاريخ الانتهاء المخزَّن (الأبكر، للتنبيهات)
+  lastEnteredExpiry: Record<string, string>; // معرّف الدواء → آخر تاريخ أدخله المستخدم (بديل عند خلو الفاتورة)
   onClose: () => void;
   onConfirm: (items: DraftItem[], supplierName: string) => void;
 }
@@ -48,7 +49,7 @@ function matchBadge(score: number, isMatched: boolean) {
   return { label: 'تقريبي', cls: 'bg-blue-100 text-blue-700 border-blue-200' };
 }
 
-export default function InvoiceImportModal({ inventory, expiryDates, onClose, onConfirm }: Props) {
+export default function InvoiceImportModal({ inventory, expiryDates, lastEnteredExpiry, onClose, onConfirm }: Props) {
   const initialKey = getStoredApiKey();
   const [step, setStep] = useState<Step>(initialKey ? 'upload' : 'key');
   const [apiKey, setApiKey] = useState(initialKey);
@@ -162,14 +163,16 @@ export default function InvoiceImportModal({ inventory, expiryDates, onClose, on
       });
       const invoice = await extractInvoice(base64, imageFile.type, apiKey.trim(), inventory);
       setExtractedInvoice(invoice);
-      // تهيئة كل صنف: تاريخ الانتهاء (YYYY-MM) = المخزَّن للمطابق، وإلا من الفاتورة، وإلا الافتراضي.
+      // تهيئة كل صنف: تاريخ الانتهاء (YYYY-MM) — الأولوية: تاريخ الفاتورة الحالية (OCR) أولاً،
+      // وإلا آخر تاريخ أدخله المستخدم لهذه المادة، وإلا المخزَّن (الأبكر) للتوافق، وإلا الافتراضي.
       // الباركود = باركود المخزون للمطابق، ويُترك فارغاً للجديد ليُدخله المستخدم أو يُولَّد لاحقاً.
       const prepared = invoice.items.map(it => {
         const med = it.matchedMedicine;
+        const lastMonth = med ? toMonthInput(lastEnteredExpiry[med.id]) : '';
         const storedMonth = med ? toMonthInput(expiryDates[med.id]) : '';
         return {
           ...it,
-          expiry: storedMonth || toMonthInput(it.expiry) || DEFAULT_EXPIRY_MONTH,
+          expiry: toMonthInput(it.expiry) || lastMonth || storedMonth || DEFAULT_EXPIRY_MONTH,
           barcode: med?.barcode || '',
         };
       });
@@ -193,13 +196,15 @@ export default function InvoiceImportModal({ inventory, expiryDates, onClose, on
   const selectMedicine = (itemId: string, med: Medicine) => {
     const it = items.find(x => x.id === itemId);
     const pricePerStrip = it && it.stripsPerBox > 0 ? Math.round(it.pricePerBox / it.stripsPerBox) : 0;
-    const storedMonth = toMonthInput(expiryDates[med.id]);
+    // لا نطمس تاريخ الفاتورة (OCR) إن وُجد؛ نملأ من آخر مُدخَل ثم المخزَّن فقط إن كان الحقل افتراضياً
+    const wasDefault = !it?.expiry || it.expiry === DEFAULT_EXPIRY_MONTH;
+    const medMonth = toMonthInput(lastEnteredExpiry[med.id]) || toMonthInput(expiryDates[med.id]);
     updateItem(itemId, {
       matchedMedicine: med,
       matchScore: 1,
       arabicName: med.nameAr,
-      // عند الربط يدوياً: نعتمد تاريخ الانتهاء المخزَّن (إن وُجد) وباركود المخزون
-      ...(storedMonth ? { expiry: storedMonth } : {}),
+      // باركود المخزون + تاريخ المادة (آخر مُدخَل/مخزَّن) عند غياب تاريخ الفاتورة
+      ...(wasDefault && medMonth ? { expiry: medMonth } : {}),
       barcode: med.barcode || '',
       // عند الربط بدواء موجود، نعتمد أسعار بيعه الحالية كقيم افتراضية قابلة للتعديل
       retailPrice: med.price || Math.round(pricePerStrip * 1.25),
