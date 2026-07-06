@@ -13,6 +13,7 @@ interface DraftItem {
   nameAr: string;
   nameEn: string;
   manufacturer: string; // الشركة المصنّعة من الفاتورة — تُملأ في المخزون عند المطابقة إن كان الحقل فارغاً
+  stockCorrection?: number; // تصحيح المخزون الحالي يدوياً (للمطابق) — يُعتمد كرصيد فعلي عند الاعتماد
   scientificName: string;
   category: string;
   price: number;
@@ -59,6 +60,7 @@ export default function InvoiceImportModal({ inventory, expiryDates, onClose, on
   const [error, setError] = useState<string>('');
   const [searchOpen, setSearchOpen] = useState<string | null>(null); // item id
   const [searchQuery, setSearchQuery] = useState('');
+  const [editingStockId, setEditingStockId] = useState<string | null>(null); // المخزون الحالي قيد التعديل (بالنقر المزدوج)
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
 
@@ -173,6 +175,9 @@ export default function InvoiceImportModal({ inventory, expiryDates, onClose, on
           nameEn: med?.nameEn || cleanEnglishName(it.rawName, it.company),
           // الشركة: المسجَّلة في المخزون إن وُجدت، وإلا المكتشفة من الفاتورة
           manufacturer: med?.manufacturer || it.company || '',
+          // تصحيح المخزون: يُمرَّر فقط إن غيّره المستخدم فعلاً عن الرصيد الحالي للمادة المطابقة
+          stockCorrection: (med && it.stockOverride !== undefined && it.stockOverride !== med.availableQuantity)
+            ? it.stockOverride : undefined,
           scientificName: med?.scientificName || med?.activeIngredient || 'N/A',
           category: med?.category || 'مسكنات الألم',
           price: pricePerStrip,
@@ -614,15 +619,46 @@ export default function InvoiceImportModal({ inventory, expiryDates, onClose, on
                           </div>
                         </div>
 
-                        {/* المخزون الحالي في المخزن (للمادة المطابقة فقط) */}
-                        {item.matchedMedicine && (
-                          <div className="bg-blue-50/50 border border-blue-100 rounded-xl px-3 py-1.5 flex items-center justify-between">
-                            <span className="text-[9px] text-blue-600 font-bold">📦 المخزون الحالي في المخزن</span>
-                            <span className="text-xs font-extrabold text-blue-800 font-mono">
-                              {item.matchedMedicine.availableQuantity.toLocaleString()} شريط
-                            </span>
-                          </div>
-                        )}
+                        {/* المخزون الحالي في المخزن (للمادة المطابقة فقط) — قابل للتعديل بالنقر المزدوج.
+                            التصحيح يُعتمد كرصيد فعلي في المخزن عند تأكيد الاستيراد (تصحيح جرد). */}
+                        {item.matchedMedicine && (() => {
+                          const currentStock = item.stockOverride ?? item.matchedMedicine.availableQuantity;
+                          const corrected = item.stockOverride !== undefined && item.stockOverride !== item.matchedMedicine.availableQuantity;
+                          return editingStockId === item.id ? (
+                            <div className="bg-blue-50 border border-blue-300 rounded-xl px-3 py-1.5 flex items-center justify-between gap-2">
+                              <span className="text-[9px] text-blue-700 font-bold shrink-0">📦 صحّح المخزون الفعلي</span>
+                              <input
+                                type="number"
+                                min={0}
+                                autoFocus
+                                defaultValue={currentStock}
+                                onBlur={e => {
+                                  const v = Math.max(0, Math.round(Number(e.target.value)));
+                                  updateItem(item.id, { stockOverride: Number.isFinite(v) ? v : currentStock });
+                                  setEditingStockId(null);
+                                }}
+                                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingStockId(null); }}
+                                className="w-24 bg-white border border-blue-300 rounded-lg px-2 py-1 text-xs font-extrabold text-blue-900 text-center focus:outline-blue-500"
+                              />
+                            </div>
+                          ) : (
+                            <div
+                              onDoubleClick={() => setEditingStockId(item.id)}
+                              title="انقر مرتين لتصحيح المخزون الفعلي"
+                              className={`rounded-xl px-3 py-1.5 flex items-center justify-between cursor-pointer transition ${corrected ? 'bg-amber-50 border border-amber-300' : 'bg-blue-50/50 border border-blue-100 hover:border-blue-300'}`}
+                            >
+                              <span className={`text-[9px] font-bold ${corrected ? 'text-amber-700' : 'text-blue-600'}`}>
+                                📦 المخزون الحالي في المخزن {corrected ? '(مُصحَّح ✎)' : '— انقر مرتين للتعديل'}
+                              </span>
+                              <span className={`text-xs font-extrabold font-mono ${corrected ? 'text-amber-800' : 'text-blue-800'}`}>
+                                {corrected && (
+                                  <span className="text-[9px] text-slate-400 line-through mr-1">{item.matchedMedicine.availableQuantity.toLocaleString()}</span>
+                                )}
+                                {currentStock.toLocaleString()} شريط
+                              </span>
+                            </div>
+                          );
+                        })()}
 
                         {/* باركود المادة الجديدة (لغير المطابقة فقط — يُولَّد تلقائياً إن تُرك فارغاً) */}
                         {!item.matchedMedicine && (

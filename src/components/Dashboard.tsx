@@ -3075,8 +3075,12 @@ export default function Dashboard() {
     const changedExpiryIds = new Set<string>();
     // فرق الكمية لكل مادة — يُكتب للخادم بـ increment() بدل الرقم المطلق (سلامة التزامن)
     const qtyDeltas = new Map<string, number>();
+    // مواد صُحّح مخزونها يدوياً في شاشة الاستيراد → تُكتب بقيمة مطلقة لا بـ increment (تصحيح جرد مقصود)
+    const absoluteMedIds = new Set<string>();
     // المواد التي احتُفظ لها بتاريخ الانتهاء الأبكر (بقايا وجبة قديمة على الرف) — للتنويه في البانر
     const keptEarlierExpiry: string[] = [];
+    // تصحيحات المخزون اليدوية (اسم: من → إلى) — للتنويه وقيد التدقيق
+    const stockCorrections: string[] = [];
 
     purchaseDraft.forEach(draftItem => {
       if (draftItem.medicineId) {
@@ -3087,7 +3091,14 @@ export default function Dashboard() {
           if (med.id === draftItem.medicineId) {
             const purchaseQty = Number(draftItem.qty);
             const purchaseUnitCost = Number(draftItem.price);
-            const existingQty = med.availableQuantity;
+            // تصحيح مخزون يدوي من شاشة الاستيراد: نعتمد الرصيد المصحَّح كأساس (بدل الوهمي)،
+            // ونكتبه مطلقاً للخادم — عمليّة جرد مقصودة تتجاوز التزايد التلقائي.
+            const hasCorrection = draftItem.stockCorrection !== undefined && draftItem.stockCorrection !== null;
+            const existingQty = hasCorrection ? Math.max(0, Number(draftItem.stockCorrection)) : med.availableQuantity;
+            if (hasCorrection && existingQty !== med.availableQuantity) {
+              absoluteMedIds.add(med.id);
+              stockCorrections.push(`${med.nameAr}: ${med.availableQuantity} → ${existingQty}`);
+            }
             const existingCost = resolveUnitCost(med.costPrice, med.price, defaultCostPercent);
             const newQty = existingQty + purchaseQty;
             // Moving Average Cost: متوسط مرجّح بين تكلفة المخزون القديم وتكلفة الشراء الجديد
@@ -3172,11 +3183,11 @@ export default function Dashboard() {
         const batch = writeBatch(db);
         if (i === 0) batch.set(doc(db, 'users', userId, 'b2bOrders', orderId), { ...archivedOrder, userId });
         changedMeds.slice(i, i + CHUNK).forEach(med => {
-          // الكمية وحدها تُكتب تزايدياً فتُجمَع مع أي حركة متزامنة من جهاز آخر بدل محوها؛
-          // بقية الحقول (الأسعار/التكلفة/الباركود) قيم محسوبة تُكتب كما هي.
+          // الكمية عادةً تُكتب تزايدياً (increment) فتُجمَع مع أي حركة متزامنة من جهاز آخر؛
+          // أما المواد المصحَّح مخزونها يدوياً فتُكتب بقيمتها المطلقة (تصحيح جرد مقصود يتجاوز التزايد).
           batch.set(doc(db, 'users', userId, 'inventory', med.id), {
             ...med,
-            availableQuantity: increment(qtyDeltas.get(med.id) || 0),
+            availableQuantity: absoluteMedIds.has(med.id) ? med.availableQuantity : increment(qtyDeltas.get(med.id) || 0),
           }, { merge: true });
         });
         batch.commit()
@@ -3200,6 +3211,16 @@ export default function Dashboard() {
       description: `فاتورة شراء ${purchaseOnCredit ? 'آجلة' : 'نقدية'} (${purchaseDraft.length} صنف)${purchaseOnCredit ? ' — ' + (creditSupplierName.trim() || 'المذخر') : ''}`,
       relatedId: orderId,
     });
+
+    // قيد تدقيق منفصل لتصحيحات المخزون اليدوية من شاشة الاستيراد (شفافية الجرد)
+    if (stockCorrections.length) {
+      addAuditEntry({
+        action: 'inventory_edit',
+        amount: 0,
+        description: `تصحيح مخزون يدوي عند الاستيراد (${stockCorrections.length} مادة): ${stockCorrections.slice(0, 5).join('، ')}${stockCorrections.length > 5 ? '…' : ''}`,
+        relatedId: orderId,
+      });
+    }
 
     if (purchaseOnCredit) {
       // شراء بالآجل: تُسجَّل الفاتورة كذمّة على المذخر بدلاً من خصمها نقداً
@@ -3244,11 +3265,14 @@ export default function Dashboard() {
     const expiryNote = keptEarlierExpiry.length
       ? ` ⚠ احتُفظ بتاريخ الانتهاء الأبكر لـ ${keptEarlierExpiry.length} مادة لديها كمية قديمة على الرف (${keptEarlierExpiry.slice(0, 3).join('، ')}${keptEarlierExpiry.length > 3 ? '…' : ''}) — يُحدَّث تلقائياً عند نفاد القديم وإعادة الشراء.`
       : '';
+    const correctionNote = stockCorrections.length
+      ? ` 🔧 صُحّح مخزون ${stockCorrections.length} مادة يدوياً (${stockCorrections.slice(0, 3).join('، ')}${stockCorrections.length > 3 ? '…' : ''}).`
+      : '';
     setPurchaseSuccessBanner(
       (purchaseOnCredit
         ? `تم اعتماد فاتورة الشراء بقيمة ${totalCost.toLocaleString()} د.ع كذمّة آجلة على ${creditSupplierName.trim() || 'المذخر'} وتحديث المخزون لـ ${purchaseDraft.length} أدوية!`
         : `تم بنجاح اعتماد فاتورة الشراء اليومي بقيمة ${totalCost.toLocaleString()} د.ع وتحديث مستويات المخزون والصلاحيات لـ ${purchaseDraft.length} أدوية!`
-      ) + expiryNote
+      ) + expiryNote + correctionNote
     );
     
     setTimeout(() => {

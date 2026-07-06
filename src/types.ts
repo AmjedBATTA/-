@@ -75,6 +75,7 @@ export interface ExtractedInvoiceItem {
   batchNo?: string;
   expiry?: string;    // قابل للتعديل في شاشة المراجعة، بصيغة YYYY-MM
   barcode?: string;   // للمواد الجديدة غير المطابقة — قابل للإدخال في شاشة المراجعة
+  stockOverride?: number; // تصحيح المخزون الحالي يدوياً (للمطابق) — يُعتمد كرصيد فعلي عند الاستيراد
   matchedMedicine: Medicine | null;
   matchScore: number;
 }
