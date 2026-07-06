@@ -1,8 +1,8 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X, Upload, Loader2, CheckCircle2, AlertCircle, Search,
-  ChevronDown, Trash2, FileImage, KeyRound, Eye, EyeOff,
+  ChevronDown, Trash2, FileImage, KeyRound, Eye, EyeOff, Barcode,
 } from 'lucide-react';
 import type { Medicine, ExtractedInvoiceItem, ExtractedInvoice } from '../types';
 import { extractInvoice, getStoredApiKey, saveApiKey, matchToInventory } from '../utils/invoiceExtractor';
@@ -63,6 +63,70 @@ export default function InvoiceImportModal({ inventory, expiryDates, onClose, on
   const [editingStockId, setEditingStockId] = useState<string | null>(null); // المخزون الحالي قيد التعديل (بالنقر المزدوج)
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
+
+  // --- ماسح الباركود بالكاميرا (مكتفٍ بذاته داخل النافذة، بنفس تقنية BarcodeDetector) ---
+  const [scanningItemId, setScanningItemId] = useState<string | null>(null);
+  const [scanStream, setScanStream] = useState<MediaStream | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  const startScan = useCallback(async (itemId: string) => {
+    setScanError(null);
+    setScanningItemId(itemId);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      setScanStream(stream);
+    } catch {
+      setScanError('تعذّر الوصول للكاميرا — تحقّق من صلاحيات المتصفح، أو اكتب الباركود يدوياً.');
+    }
+  }, []);
+
+  const stopScan = useCallback(() => {
+    setScanStream(prev => { prev?.getTracks().forEach(t => t.stop()); return null; });
+    setScanningItemId(null);
+    setScanError(null);
+  }, []);
+
+  // ربط البثّ بعنصر الفيديو
+  useEffect(() => {
+    if (scanningItemId && scanStream && videoRef.current) {
+      videoRef.current.srcObject = scanStream;
+      videoRef.current.play().catch(() => setScanError('فشل تشغيل عرض الكاميرا.'));
+    }
+  }, [scanningItemId, scanStream]);
+
+  // حلقة الكشف: عند رصد باركود يُملأ حقل المادة ويُغلق الماسح
+  useEffect(() => {
+    if (!scanningItemId || !scanStream) return;
+    if (!('BarcodeDetector' in window)) {
+      setScanError('المتصفح لا يدعم قارئ الباركود — اكتب الباركود يدوياً.');
+      return;
+    }
+    let active = true;
+    let raf = 0;
+    const detector = new (window as unknown as { BarcodeDetector: new (o: unknown) => { detect: (v: unknown) => Promise<{ rawValue: string }[]> } })
+      .BarcodeDetector({ formats: ['ean_13', 'ean_8', 'qr_code', 'code_128', 'code_39', 'upc_a', 'upc_e'] });
+    const targetId = scanningItemId;
+    const check = async () => {
+      const v = videoRef.current;
+      if (!active || !v || v.paused || v.ended) return;
+      try {
+        const found = await detector.detect(v);
+        if (found && found.length > 0 && active) {
+          setItems(prev => prev.map(it => it.id === targetId ? { ...it, barcode: found[0].rawValue } : it));
+          active = false;
+          stopScan();
+          return;
+        }
+      } catch { /* إطار غير جاهز — نتجاهل ونعيد */ }
+      if (active) raf = requestAnimationFrame(check);
+    };
+    raf = requestAnimationFrame(check);
+    return () => { active = false; if (raf) cancelAnimationFrame(raf); };
+  }, [scanningItemId, scanStream, stopScan]);
+
+  // إيقاف الكاميرا عند إغلاق النافذة
+  useEffect(() => () => { scanStream?.getTracks().forEach(t => t.stop()); }, [scanStream]);
 
   const handleFilePicked = useCallback((file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -213,6 +277,26 @@ export default function InvoiceImportModal({ inventory, expiryDates, onClose, on
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
         onClick={onClose}
       />
+
+      {/* طبقة قارئ الباركود بالكاميرا (فوق كل شيء) */}
+      {scanningItemId && (
+        <div className="fixed inset-0 z-[60] bg-black/90 flex flex-col items-center justify-center p-4" onClick={stopScan}>
+          <div className="relative w-full max-w-sm" onClick={e => e.stopPropagation()}>
+            <video ref={videoRef} playsInline muted className="w-full rounded-2xl bg-black aspect-[3/4] object-cover" />
+            {/* إطار استهداف */}
+            <div className="absolute inset-8 border-2 border-emerald-400/80 rounded-2xl pointer-events-none" />
+            <p className="text-center text-white text-xs font-bold mt-3">وجّه الكاميرا نحو الباركود…</p>
+            {scanError && <p className="text-center text-rose-300 text-[11px] font-bold mt-2">{scanError}</p>}
+            <button
+              type="button"
+              onClick={stopScan}
+              className="mt-4 w-full bg-white/15 hover:bg-white/25 text-white rounded-xl py-2.5 text-xs font-extrabold transition cursor-pointer"
+            >
+              إلغاء
+            </button>
+          </div>
+        </div>
+      )}
 
       <motion.div
         initial={{ opacity: 0, y: 40 }}
@@ -664,15 +748,26 @@ export default function InvoiceImportModal({ inventory, expiryDates, onClose, on
                         {!item.matchedMedicine && (
                           <div className="space-y-1">
                             <label className="text-[9px] font-extrabold text-slate-500 block">باركود المادة الجديدة (اختياري)</label>
-                            <input
-                              type="text"
-                              inputMode="numeric"
-                              value={item.barcode || ''}
-                              onChange={e => updateItem(item.id, { barcode: e.target.value })}
-                              placeholder="امسح أو اكتب الباركود — يُولَّد تلقائياً إن تُرك فارغاً"
-                              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-[11px] font-mono font-bold text-slate-900 text-center focus:outline-emerald-400"
-                              dir="ltr"
-                            />
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={item.barcode || ''}
+                                onChange={e => updateItem(item.id, { barcode: e.target.value })}
+                                placeholder="امسح بالكاميرا أو اكتب الباركود — يُولَّد تلقائياً إن تُرك فارغاً"
+                                className="flex-1 min-w-0 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-[11px] font-mono font-bold text-slate-900 text-center focus:outline-emerald-400"
+                                dir="ltr"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => startScan(item.id)}
+                                title="قراءة الباركود بالكاميرا"
+                                className="shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-3 py-1.5 flex items-center gap-1.5 text-[10px] font-bold transition cursor-pointer"
+                              >
+                                <Barcode className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">قارئ باركود</span>
+                              </button>
+                            </div>
                           </div>
                         )}
                       </div>
