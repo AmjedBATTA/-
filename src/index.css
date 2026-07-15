@@ -37,6 +37,34 @@ body {
   background-color: var(--lux-cream);
 }
 
+/* ── أندرويد edge-to-edge (تطبيق APK) — هوامش آمنة ──
+   في Android 15+ يُرسم المحتوى خلف شريط الحالة وشريط الإيماءات.
+   Capacitor يحقن ‎--safe-area-inset-*‎ بالقيم الصحيحة داخل التطبيق الأصيل،
+   وفي متصفح الويب تكون كلها صفراً فلا تتأثر النسخة الحالية إطلاقاً. */
+html {
+  padding-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  padding-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  padding-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+}
+/* شريط معتم خلف أيقونات شريط الحالة حتى لا يمرّ المحتوى المُمرَّر تحتها */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  background: var(--lux-cream);
+  z-index: 9999;
+  pointer-events: none;
+}
+/* العناوين اللاصقة تلتصق أسفل شريط الحالة بدل الاختباء خلفه
+   (خارج أي ‎@layer‎ فتتغلب على top-0 من Tailwind داخل التطبيق فقط) */
+.sticky.top-0 {
+  top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+}
+
 /* ── Scrollbar — warm gold ── */
 ::-webkit-scrollbar       { width: 7px; }
 ::-webkit-scrollbar-track { background: #F0E0C8; }

@@ -78,6 +78,8 @@ export interface ExtractedInvoiceItem {
   stockOverride?: number; // تصحيح المخزون الحالي يدوياً (للمطابق) — يُعتمد كرصيد فعلي عند الاستيراد
   matchedMedicine: Medicine | null;
   matchScore: number;
+  matchedByAlias?: boolean; // المطابقة جاءت من «ذاكرة المطابقات» المُتعلَّمة (مؤكَّدة سابقاً من المستخدم)
+  nameEnOverride?: string;  // تصحيح المستخدم للاسم الإنكليزي قبل حفظه الأول في المخزن (يسري فقط حين لا اسم إنكليزي للمادة)
 }
 
 export interface ExtractedInvoice {

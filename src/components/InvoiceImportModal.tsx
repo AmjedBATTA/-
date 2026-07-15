@@ -5,7 +5,8 @@ import {
   ChevronDown, Trash2, FileImage, KeyRound, Eye, EyeOff, Barcode,
 } from 'lucide-react';
 import type { Medicine, ExtractedInvoiceItem, ExtractedInvoice } from '../types';
-import { extractInvoice, getStoredApiKey, saveApiKey, matchToInventory } from '../utils/invoiceExtractor';
+import { extractInvoice, getStoredApiKey, saveApiKey, matchToInventory, normalizeName } from '../utils/invoiceExtractor';
+import type { InvoiceAliasMap } from '../utils/invoiceExtractor';
 
 interface DraftItem {
   id: string;
@@ -29,6 +30,9 @@ interface Props {
   inventory: Medicine[];
   expiryDates: Record<string, string>; // معرّف الدواء → تاريخ الانتهاء المخزَّن (الأبكر، للتنبيهات)
   lastEnteredExpiry: Record<string, string>; // معرّف الدواء → آخر تاريخ أدخله المستخدم (بديل عند خلو الفاتورة)
+  aliases: InvoiceAliasMap; // ذاكرة المطابقات المُتعلَّمة: اسم الفاتورة المطبَّع → معرّف الدواء
+  onLearnAliases: (pairs: Array<{ key: string; medicineId: string; label?: string }>) => void;
+  onForgetAliases: (keys: string[], medicineId: string) => void; // تُنسى فقط إن كانت تشير لهذا الدواء
   onClose: () => void;
   onConfirm: (items: DraftItem[], supplierName: string) => void;
 }
@@ -43,13 +47,14 @@ function toMonthInput(s?: string): string {
   return m ? `${m[1]}-${m[2].padStart(2, '0')}` : '';
 }
 
-function matchBadge(score: number, isMatched: boolean) {
+function matchBadge(score: number, isMatched: boolean, byAlias?: boolean) {
   if (!isMatched) return { label: 'جديد', cls: 'bg-amber-100 text-amber-700 border-amber-200' };
+  if (byAlias) return { label: 'محفوظ ✓', cls: 'bg-violet-100 text-violet-700 border-violet-200' };
   if (score >= 0.8) return { label: 'تطابق', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
   return { label: 'تقريبي', cls: 'bg-blue-100 text-blue-700 border-blue-200' };
 }
 
-export default function InvoiceImportModal({ inventory, expiryDates, lastEnteredExpiry, onClose, onConfirm }: Props) {
+export default function InvoiceImportModal({ inventory, expiryDates, lastEnteredExpiry, aliases, onLearnAliases, onForgetAliases, onClose, onConfirm }: Props) {
   const initialKey = getStoredApiKey();
   const [step, setStep] = useState<Step>(initialKey ? 'upload' : 'key');
   const [apiKey, setApiKey] = useState(initialKey);
@@ -161,7 +166,7 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
         reader.onerror = reject;
         reader.readAsDataURL(imageFile);
       });
-      const invoice = await extractInvoice(base64, imageFile.type, apiKey.trim(), inventory);
+      const invoice = await extractInvoice(base64, imageFile.type, apiKey.trim(), inventory, aliases);
       setExtractedInvoice(invoice);
       // تهيئة كل صنف: تاريخ الانتهاء (YYYY-MM) — الأولوية: تاريخ الفاتورة الحالية (OCR) أولاً،
       // وإلا آخر تاريخ أدخله المستخدم لهذه المادة، وإلا المخزَّن (الأبكر) للتوافق، وإلا الافتراضي.
@@ -193,8 +198,24 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
 
   const removeItem = (id: string) => setItems(prev => prev.filter(it => it.id !== id));
 
+  // مفاتيح الذاكرة لصنفٍ ما: الاسم الخام من الفاتورة + الترجمة العربية (مطبَّعين)
+  const aliasKeysOf = (it: ExtractedInvoiceItem): string[] =>
+    Array.from(new Set([normalizeName(it.rawName || ''), normalizeName(it.arabicName || '')].filter(k => k.length >= 3)));
+
+  // تعلُّم مطابقة مؤكَّدة: نحفظ (اسم الفاتورة → الدواء) ونستثني ما يطابق اسم الدواء نفسه
+  // (لا فائدة من حفظه — المطابقة النصية تجده فوراً أصلاً)
+  const learnItemAliases = (it: ExtractedInvoiceItem, med: Medicine) => {
+    const selfKeys = new Set([normalizeName(med.nameAr || ''), normalizeName(med.nameEn || '')]);
+    const pairs = aliasKeysOf(it)
+      .filter(k => !selfKeys.has(k))
+      .map(key => ({ key, medicineId: med.id, label: (it.rawName || it.arabicName || '').trim() }));
+    if (pairs.length) onLearnAliases(pairs);
+  };
+
   const selectMedicine = (itemId: string, med: Medicine) => {
     const it = items.find(x => x.id === itemId);
+    // مطابقة يدوية صريحة = أوثق إشارة تعلُّم: تُحفظ فوراً قبل أن يُستبدل الاسم العربي باسم المخزون
+    if (it) learnItemAliases(it, med);
     const pricePerStrip = it && it.stripsPerBox > 0 ? Math.round(it.pricePerBox / it.stripsPerBox) : 0;
     // لا نطمس تاريخ الفاتورة (OCR) إن وُجد؛ نملأ من آخر مُدخَل ثم المخزَّن فقط إن كان الحقل افتراضياً
     const wasDefault = !it?.expiry || it.expiry === DEFAULT_EXPIRY_MONTH;
@@ -202,6 +223,7 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
     updateItem(itemId, {
       matchedMedicine: med,
       matchScore: 1,
+      matchedByAlias: false,
       arabicName: med.nameAr,
       // باركود المخزون + تاريخ المادة (آخر مُدخَل/مخزَّن) عند غياب تاريخ الفاتورة
       ...(wasDefault && medMonth ? { expiry: medMonth } : {}),
@@ -215,7 +237,11 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
   };
 
   const clearMatch = (itemId: string) => {
-    updateItem(itemId, { matchedMedicine: null, matchScore: 0 });
+    const it = items.find(x => x.id === itemId);
+    // إلغاء المطابقة = تصحيح صريح: نمحو من الذاكرة ما كان يشير لهذا الدواء بهذه الأسماء،
+    // حتى لا تتكرر المطابقة الخاطئة في الفواتير القادمة
+    if (it?.matchedMedicine) onForgetAliases(aliasKeysOf(it), it.matchedMedicine.id);
+    updateItem(itemId, { matchedMedicine: null, matchScore: 0, matchedByAlias: false });
   };
 
   // في فواتير «ساوة» تُدمج الشركة بنهاية الاسم — نزيلها من الاسم الإنكليزي المخزَّن
@@ -230,6 +256,9 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
   };
 
   const handleConfirm = () => {
+    // اعتماد الفاتورة بعد المراجعة = تأكيد ضمني لكل المطابقات الظاهرة:
+    // نحفظها في الذاكرة فتُطابَق فوراً في الفواتير القادمة (المكرَّر يُهمَل في الأعلى)
+    items.forEach(it => { if (it.matchedMedicine) learnItemAliases(it, it.matchedMedicine); });
     const draftItems: DraftItem[] = items
       .filter(it => it.quantityBoxes > 0 && it.pricePerBox > 0)
       .map(it => {
@@ -240,8 +269,9 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
           id: `draft-inv-${it.id}`,
           medicineId: med?.id,
           nameAr: med?.nameAr || it.arabicName || it.rawName,
-          // الاسم الإنكليزي: نحترم المسجَّل في المخزون إن وُجد، وإلا الاسم الخام من الفاتورة (بلا الشركة)
-          nameEn: med?.nameEn || cleanEnglishName(it.rawName, it.company),
+          // الاسم الإنكليزي: نحترم المسجَّل في المخزون إن وُجد (لا يُستبدل بعد حفظه الأول)،
+          // وإلا تصحيح المستخدم في بطاقة المراجعة، وإلا الاسم الخام من الفاتورة (بلا الشركة)
+          nameEn: med?.nameEn || (it.nameEnOverride ?? cleanEnglishName(it.rawName, it.company)).trim(),
           // الشركة: المسجَّلة في المخزون إن وُجدت، وإلا المكتشفة من الفاتورة
           manufacturer: med?.manufacturer || it.company || '',
           // تصحيح المخزون: يُمرَّر فقط إن غيّره المستخدم فعلاً عن الرصيد الحالي للمادة المطابقة
@@ -469,113 +499,148 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
               <motion.div key="review" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                 className="flex flex-col">
 
-                {/* Summary banner */}
+                {/* لافتة الملخّص — اسم المورد يتصدّر، ورقم الفاتورة والتاريخ بيانات ثانوية هادئة */}
                 {extractedInvoice?.supplierName && (
-                  <div className="mx-5 mt-4 mb-2 bg-slate-50 border border-slate-200 rounded-2xl p-3 flex items-center gap-3 text-right">
+                  <div className="mx-4 sm:mx-5 mt-4 mb-2 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-1.5 text-right">
                     <div className="flex-1 min-w-0">
-                      <p className="text-[10px] text-slate-500 font-bold">المورد المكتشف</p>
-                      <p className="text-xs font-extrabold text-slate-900 truncate">{extractedInvoice.supplierName}</p>
+                      <p className="text-[10px] text-slate-400 font-bold">المورد المكتشف</p>
+                      <p className="text-sm font-extrabold text-slate-900 truncate">{extractedInvoice.supplierName}</p>
                     </div>
                     {extractedInvoice.invoiceNo && (
                       <div className="text-right">
-                        <p className="text-[10px] text-slate-500 font-bold">رقم الفاتورة</p>
-                        <p className="text-xs font-extrabold text-slate-900 font-mono">{extractedInvoice.invoiceNo}</p>
+                        <p className="text-[10px] text-slate-400 font-bold">رقم الفاتورة</p>
+                        <p className="text-xs font-extrabold text-slate-700 font-mono">{extractedInvoice.invoiceNo}</p>
                       </div>
                     )}
                     {extractedInvoice.date && (
                       <div className="text-right">
-                        <p className="text-[10px] text-slate-500 font-bold">التاريخ</p>
-                        <p className="text-xs font-extrabold text-slate-900 font-mono">{extractedInvoice.date}</p>
+                        <p className="text-[10px] text-slate-400 font-bold">التاريخ</p>
+                        <p className="text-xs font-extrabold text-slate-700 font-mono">{extractedInvoice.date}</p>
                       </div>
                     )}
                   </div>
                 )}
 
-                {/* Stats row */}
-                <div className="mx-5 mb-3 grid grid-cols-3 gap-2">
-                  <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-2.5 text-center">
-                    <p className="text-xs font-extrabold text-emerald-700">{matchedCount}</p>
-                    <p className="text-[9px] text-emerald-600 font-bold">مطابق</p>
-                  </div>
-                  <div className="bg-amber-50 border border-amber-100 rounded-xl p-2.5 text-center">
-                    <p className="text-xs font-extrabold text-amber-700">{newCount}</p>
-                    <p className="text-[9px] text-amber-600 font-bold">جديد</p>
-                  </div>
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center">
-                    <p className="text-xs font-extrabold text-slate-700">{items.length}</p>
-                    <p className="text-[9px] text-slate-500 font-bold">إجمالي</p>
-                  </div>
+                {/* صفّ الإحصاءات — أقراص مدمجة خفيفة بدل ثلاث بطاقات ضخمة */}
+                <div className="mx-4 sm:mx-5 mb-3 flex items-center gap-2">
+                  <span className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 bg-emerald-50 border border-emerald-100 rounded-full px-3.5 py-1.5">
+                    <span className="text-xs font-extrabold text-emerald-700">{matchedCount}</span>
+                    <span className="text-[10px] text-emerald-600 font-bold">مطابق</span>
+                  </span>
+                  <span className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 bg-amber-50 border border-amber-100 rounded-full px-3.5 py-1.5">
+                    <span className="text-xs font-extrabold text-amber-700">{newCount}</span>
+                    <span className="text-[10px] text-amber-600 font-bold">جديد</span>
+                  </span>
+                  <span className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 bg-slate-50 border border-slate-200 rounded-full px-3.5 py-1.5">
+                    <span className="text-xs font-extrabold text-slate-700">{items.length}</span>
+                    <span className="text-[10px] text-slate-500 font-bold">إجمالي</span>
+                  </span>
                 </div>
 
                 {/* Items list */}
-                <div className="px-4 pb-2 space-y-2">
+                <div className="px-4 sm:px-5 pb-3 space-y-2.5">
                   {items.map(item => {
                     const pricePerStrip = item.stripsPerBox > 0 ? Math.round(item.pricePerBox / item.stripsPerBox) : 0;
                     const totalStrips = item.quantityBoxes * item.stripsPerBox;
-                    const badge = matchBadge(item.matchScore, !!item.matchedMedicine);
+                    const badge = matchBadge(item.matchScore, !!item.matchedMedicine, item.matchedByAlias);
                     const isSearchingThis = searchOpen === item.id;
 
                     return (
                       <div key={item.id}
-                        className={`border rounded-2xl p-3.5 space-y-2.5 text-right transition
-                          ${item.matchedMedicine ? 'border-emerald-200 bg-emerald-50/30' : 'border-amber-200 bg-amber-50/30'}`}>
+                        className={`bg-slate-50 border rounded-2xl p-3.5 space-y-2.5 text-right transition
+                          ${item.matchedMedicine ? 'border-emerald-100' : 'border-amber-200'}`}>
 
-                        {/* Row 1: name + badge + delete */}
-                        <div className="flex items-start gap-2">
-                          <button onClick={() => removeItem(item.id)}
-                            className="shrink-0 mt-0.5 text-slate-300 hover:text-red-500 transition cursor-pointer">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                        {/* الصف الأول: الشارة على حافة القراءة (تصطفّ عمودياً عبر البطاقات) ثم الاسم، والحذف في الطرف البعيد */}
+                        <div className="flex items-start gap-2.5">
+                          <span className={`shrink-0 mt-0.5 text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${badge.cls}`}>
+                            {badge.label}
+                          </span>
                           <div className="flex-1 min-w-0">
                             <input
                               value={item.arabicName}
                               onChange={e => updateItem(item.id, { arabicName: e.target.value })}
-                              className="w-full text-xs font-extrabold text-slate-900 bg-transparent border-b border-transparent focus:border-emerald-400 focus:outline-none pb-0.5"
+                              className="w-full text-sm font-extrabold text-slate-900 bg-transparent border-b border-transparent focus:border-emerald-400 focus:outline-none pb-0.5"
                               placeholder="الاسم العربي"
                             />
                             {item.rawName !== item.arabicName && (
-                              <p className="text-[9px] text-slate-400 font-mono truncate mt-0.5">{item.rawName}</p>
+                              <p className="text-[10px] text-slate-400 font-mono truncate mt-0.5">{item.rawName}</p>
                             )}
                           </div>
-                          <span className={`shrink-0 text-[9px] font-extrabold px-2 py-0.5 rounded-full border ${badge.cls}`}>
-                            {badge.label}
-                          </span>
+                          <button onClick={() => removeItem(item.id)}
+                            className="shrink-0 mt-0.5 p-1 rounded-lg text-slate-300 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
 
-                        {/* Row 1b: الشركة المصنّعة (تُملأ في المخزون عند المطابقة إن كان الحقل فارغاً) */}
-                        <div className="flex items-center gap-2 pr-6">
-                          <span className="text-[9px] font-extrabold text-slate-400 shrink-0">🏭 الشركة</span>
-                          <input
-                            value={item.company}
-                            onChange={e => updateItem(item.id, { company: e.target.value })}
-                            className="flex-1 min-w-0 text-[10px] font-bold text-slate-700 bg-transparent border-b border-transparent focus:border-emerald-400 focus:outline-none pb-0.5"
-                            placeholder="اسم الشركة المصنّعة"
-                          />
+                        {/* كتلة التعريف الهادئة: الشركة + الاسم الإنكليزي — عمودان على الشاشات الواسعة */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 pr-1">
+                          {/* الشركة المصنّعة (تُملأ في المخزون عند المطابقة إن كان الحقل فارغاً) */}
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-slate-400 shrink-0">الشركة</span>
+                            <input
+                              value={item.company}
+                              onChange={e => updateItem(item.id, { company: e.target.value })}
+                              className="flex-1 min-w-0 text-[11px] font-bold text-slate-700 bg-transparent border-b border-slate-100 focus:border-emerald-400 focus:outline-none pb-0.5"
+                              placeholder="اسم الشركة المصنّعة"
+                            />
+                          </div>
+
+                          {/* الاسم الإنكليزي — المحفوظ في المخزون يُعرض فقط (يُعدَّل من شاشة المخزون)؛
+                              وإن لم يكن للمادة اسم إنكليزي بعد، يُعرض اسم الفاتورة قابلاً للتصحيح
+                              قبل حفظه الأول (يُحفظ مرة واحدة ولا يتغيّر في الفواتير القادمة) */}
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-slate-400 shrink-0">الاسم الإنكليزي</span>
+                            {item.matchedMedicine?.nameEn?.trim() ? (
+                              <>
+                                <p dir="ltr" className="flex-1 min-w-0 truncate text-left text-[11px] font-mono font-bold text-slate-500">
+                                  {item.matchedMedicine.nameEn}
+                                </p>
+                                <span className="shrink-0 text-[10px] font-bold text-slate-400 bg-slate-100 border border-slate-200 rounded-full px-1.5 py-0.5"
+                                  title="محفوظ من مطابقة سابقة — يُعدَّل من شاشة المخزون فقط">
+                                  من المخزن
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <input
+                                  dir="ltr"
+                                  value={item.nameEnOverride ?? cleanEnglishName(item.rawName, item.company)}
+                                  onChange={e => updateItem(item.id, { nameEnOverride: e.target.value })}
+                                  className="flex-1 min-w-0 text-left text-[11px] font-mono font-bold text-slate-700 bg-transparent border-b border-slate-100 focus:border-emerald-400 focus:outline-none pb-0.5"
+                                  placeholder="English name"
+                                />
+                                <span className="shrink-0 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-full px-1.5 py-0.5"
+                                  title="سيُحفظ مع المادة في المخزن عند الاعتماد — لأول مرة فقط، ولن يتغيّر في الفواتير القادمة">
+                                  يُحفظ لأول مرة
+                                </span>
+                              </>
+                            )}
+                          </div>
                         </div>
 
                         {/* Row 2: medicine match */}
                         <div className="relative">
                           {item.matchedMedicine ? (
-                            <div className="flex items-center gap-2 bg-white border border-emerald-200 rounded-xl px-3 py-2">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                              <span className="flex-1 text-[10px] font-extrabold text-slate-900 truncate">
+                            <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                              <span className="flex-1 text-[11px] font-extrabold text-emerald-800 truncate">
                                 {item.matchedMedicine.nameAr}
                               </span>
                               <button onClick={() => clearMatch(item.id)}
-                                className="text-slate-300 hover:text-red-400 transition cursor-pointer">
+                                className="text-slate-400 hover:text-rose-600 transition cursor-pointer">
                                 <X className="w-3 h-3" />
                               </button>
                             </div>
                           ) : (
                             <button
                               onClick={() => { setSearchOpen(isSearchingThis ? null : item.id); setSearchQuery(''); }}
-                              className="w-full flex items-center gap-2 bg-white border border-dashed border-amber-300 rounded-xl px-3 py-2 text-right cursor-pointer hover:border-amber-400 transition"
+                              className="w-full flex items-center gap-2 bg-amber-50 border border-dashed border-amber-300 rounded-xl px-3 py-2 text-right cursor-pointer hover:border-amber-400 transition"
                             >
-                              <Search className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                              <span className="flex-1 text-[10px] font-bold text-amber-600 text-right">
+                              <Search className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                              <span className="flex-1 text-[11px] font-bold text-amber-700 text-right">
                                 ابحث لربطه بدواء موجود في المخزون
                               </span>
-                              <ChevronDown className={`w-3 h-3 text-amber-400 transition ${isSearchingThis ? 'rotate-180' : ''}`} />
+                              <ChevronDown className={`w-3 h-3 text-amber-600 transition ${isSearchingThis ? 'rotate-180' : ''}`} />
                             </button>
                           )}
 
@@ -595,12 +660,12 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
                                     value={searchQuery}
                                     onChange={e => setSearchQuery(e.target.value)}
                                     placeholder="ابحث بالاسم..."
-                                    className="w-full text-[10px] font-bold bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 focus:outline-emerald-400"
+                                    className="w-full text-[11px] font-bold bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 focus:outline-emerald-400"
                                   />
                                 </div>
                                 <div className="max-h-40 overflow-y-auto">
                                   {(searchQuery ? filteredInventory : (() => {
-                                    const { medicine } = matchToInventory(item.arabicName || item.rawName, inventory);
+                                    const { medicine } = matchToInventory(item.arabicName || item.rawName, inventory, item.rawName, aliases);
                                     const topMatches = inventory
                                       .map(m => ({ m, score: [m.nameAr, m.nameEn, m.scientificName].map(n => {
                                         const na = (n || '').toLowerCase(); const nb = (item.arabicName || item.rawName).toLowerCase();
@@ -614,8 +679,8 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
                                   })()).map(med => (
                                     <button key={med.id} onClick={() => selectMedicine(item.id, med)}
                                       className="w-full px-3 py-2 hover:bg-emerald-50 text-right transition cursor-pointer">
-                                      <p className="text-[10px] font-extrabold text-slate-900">{med.nameAr}</p>
-                                      <p className="text-[9px] text-slate-400 font-mono">{med.nameEn}</p>
+                                      <p className="text-[11px] font-extrabold text-slate-900">{med.nameAr}</p>
+                                      <p className="text-[10px] text-slate-400 font-mono">{med.nameEn}</p>
                                     </button>
                                   ))}
                                 </div>
@@ -624,83 +689,79 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
                           </AnimatePresence>
                         </div>
 
-                        {/* Row 3: numbers grid */}
-                        <div className="grid grid-cols-4 gap-2">
+                        {/* قسم الأرقام: الكمية والتكلفة — فاصل شعري هادئ بدل الصناديق الملوّنة.
+                            الحقول البيضاء قابلة للتعديل، والقيمة المشتقّة (س/شريط) مظلَّلة */}
+                        <div className="border-t border-slate-100 pt-2.5 grid grid-cols-4 gap-2">
                           <div className="space-y-1">
-                            <label className="text-[9px] font-extrabold text-slate-500 block">علب</label>
+                            <label className="text-[10px] font-bold text-slate-500 block text-center">علب</label>
                             <input type="number" min={1} value={item.quantityBoxes}
                               onChange={e => updateItem(item.id, { quantityBoxes: Math.max(1, Number(e.target.value)) })}
                               className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-extrabold text-slate-900 text-center focus:outline-emerald-400" />
                           </div>
                           <div className="space-y-1">
-                            <label className="text-[9px] font-extrabold text-slate-500 block">شريط/علبة</label>
+                            <label className="text-[10px] font-bold text-slate-500 block text-center">شريط/علبة</label>
                             <input type="number" min={1} value={item.stripsPerBox}
                               onChange={e => updateItem(item.id, { stripsPerBox: Math.max(1, Number(e.target.value)) })}
                               className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-extrabold text-slate-900 text-center focus:outline-emerald-400" />
                           </div>
                           <div className="space-y-1">
-                            <label className="text-[9px] font-extrabold text-slate-500 block">سعر/علبة</label>
+                            <label className="text-[10px] font-bold text-slate-500 block text-center">سعر/علبة</label>
                             <input type="number" min={0} value={item.pricePerBox}
                               onChange={e => updateItem(item.id, { pricePerBox: Math.max(0, Number(e.target.value)) })}
                               className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-extrabold text-slate-900 text-center focus:outline-emerald-400" />
                           </div>
                           <div className="space-y-1">
-                            <label className="text-[9px] font-extrabold text-emerald-600 block">س/شريط ✓</label>
+                            <label className="text-[10px] font-bold text-emerald-700 block text-center">س/شريط</label>
                             <div className="w-full bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1.5 text-xs font-extrabold text-emerald-700 text-center">
                               {pricePerStrip.toLocaleString()}
                             </div>
                           </div>
                         </div>
 
-                        {/* Reference box: previous inventory prices (only when matched) */}
+                        {/* الأسعار المرجعية من المخزن (للمطابق) — سطر هادئ بدل صندوق رمادي كامل */}
                         {item.matchedMedicine && (
-                          <div className="bg-slate-100/70 border border-slate-200 rounded-xl px-3 py-2">
-                            <p className="text-[9px] font-extrabold text-slate-500 mb-1.5">📦 الأسعار الحالية في المخزن (للشريط):</p>
-                            <div className="grid grid-cols-3 gap-2">
-                              <div className="text-center">
-                                <span className="text-[8px] text-slate-400 font-bold block">تكلفة سابقة</span>
-                                <span className="text-[10px] font-extrabold text-slate-700 font-mono">
-                                  {(item.matchedMedicine.costPrice ?? item.matchedMedicine.lastCostPrice)
-                                    ? (item.matchedMedicine.costPrice ?? item.matchedMedicine.lastCostPrice)!.toLocaleString()
-                                    : '—'}
-                                </span>
-                              </div>
-                              <div className="text-center">
-                                <span className="text-[8px] text-slate-400 font-bold block">جمهور</span>
-                                <span className="text-[10px] font-extrabold text-slate-700 font-mono">
-                                  {item.matchedMedicine.price ? item.matchedMedicine.price.toLocaleString() : '—'}
-                                </span>
-                              </div>
-                              <div className="text-center">
-                                <span className="text-[8px] text-slate-400 font-bold block">رسمي</span>
-                                <span className="text-[10px] font-extrabold text-slate-700 font-mono">
-                                  {item.matchedMedicine.secondaryPrice ? item.matchedMedicine.secondaryPrice.toLocaleString() : '—'}
-                                </span>
-                              </div>
-                            </div>
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1">
+                            <span className="text-[10px] font-bold text-slate-400">الأسعار الحالية في المخزن (للشريط):</span>
+                            <span className="text-[10px] font-bold text-slate-500">
+                              تكلفة سابقة{' '}
+                              <span className="text-[11px] font-extrabold text-slate-700 font-mono">
+                                {(item.matchedMedicine.costPrice ?? item.matchedMedicine.lastCostPrice)
+                                  ? (item.matchedMedicine.costPrice ?? item.matchedMedicine.lastCostPrice)!.toLocaleString()
+                                  : '—'}
+                              </span>
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-500">
+                              جمهور{' '}
+                              <span className="text-[11px] font-extrabold text-slate-700 font-mono">
+                                {item.matchedMedicine.price ? item.matchedMedicine.price.toLocaleString() : '—'}
+                              </span>
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-500">
+                              رسمي{' '}
+                              <span className="text-[11px] font-extrabold text-slate-700 font-mono">
+                                {item.matchedMedicine.secondaryPrice ? item.matchedMedicine.secondaryPrice.toLocaleString() : '—'}
+                              </span>
+                            </span>
                           </div>
                         )}
 
-                        {/* Editable selling prices */}
-                        <div className="grid grid-cols-2 gap-2">
+                        {/* أسعار البيع + تاريخ الانتهاء + إجمالي الأشرطة — صفّ واحد على الشاشات الواسعة.
+                            لمسة لونية خفيفة تميّز سعر الجمهور (أزرق) عن الرسمي (بنفسجي) دون صراخ */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                           <div className="space-y-1">
-                            <label className="text-[9px] font-extrabold text-blue-600 block">سعر البيع للجمهور (شريط)</label>
+                            <label className="text-[10px] font-bold text-slate-500 block text-center">سعر البيع للجمهور (شريط)</label>
                             <input type="number" min={0} value={item.retailPrice}
                               onChange={e => updateItem(item.id, { retailPrice: Math.max(0, Number(e.target.value)) })}
-                              className="w-full bg-blue-50/50 border border-blue-200 rounded-lg px-2 py-1.5 text-xs font-extrabold text-blue-800 text-center focus:outline-blue-400" />
+                              className="w-full bg-blue-50/50 border border-blue-100 rounded-lg px-2 py-1.5 text-xs font-extrabold text-blue-700 text-center focus:outline-blue-400" />
                           </div>
                           <div className="space-y-1">
-                            <label className="text-[9px] font-extrabold text-violet-600 block">سعر البيع الرسمي (شريط)</label>
+                            <label className="text-[10px] font-bold text-slate-500 block text-center">سعر البيع الرسمي (شريط)</label>
                             <input type="number" min={0} value={item.officialPrice}
                               onChange={e => updateItem(item.id, { officialPrice: Math.max(0, Number(e.target.value)) })}
-                              className="w-full bg-violet-50/50 border border-violet-200 rounded-lg px-2 py-1.5 text-xs font-extrabold text-violet-800 text-center focus:outline-violet-400" />
+                              className="w-full bg-violet-50/50 border border-violet-100 rounded-lg px-2 py-1.5 text-xs font-extrabold text-violet-700 text-center focus:outline-violet-400" />
                           </div>
-                        </div>
-
-                        {/* Row 4: تاريخ انتهاء قابل للتعديل + إجمالي الأشرطة */}
-                        <div className="grid grid-cols-2 gap-2">
                           <div className="space-y-1">
-                            <label className="text-[9px] font-extrabold text-slate-500 block">تاريخ الانتهاء (ص)</label>
+                            <label className="text-[10px] font-bold text-slate-500 block text-center">تاريخ الانتهاء (ص)</label>
                             <input
                               type="month"
                               value={item.expiry || ''}
@@ -710,8 +771,8 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
                             />
                           </div>
                           <div className="space-y-1">
-                            <label className="text-[9px] font-extrabold text-slate-500 block">إجمالي الأشرطة</label>
-                            <div className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-extrabold text-slate-800 text-center font-mono">
+                            <label className="text-[10px] font-bold text-slate-500 block text-center">إجمالي الأشرطة</label>
+                            <div className="w-full bg-slate-100/70 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-extrabold text-slate-700 text-center font-mono">
                               {totalStrips} شريط
                             </div>
                           </div>
@@ -719,12 +780,12 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
 
                         {/* المخزون الحالي في المخزن (للمادة المطابقة فقط) — قابل للتعديل بالنقر المزدوج.
                             التصحيح يُعتمد كرصيد فعلي في المخزن عند تأكيد الاستيراد (تصحيح جرد). */}
-                        {item.matchedMedicine && (() => {
+                        {item.matchedMedicine && <div className="border-t border-slate-100 pt-2.5">{(() => {
                           const currentStock = item.stockOverride ?? item.matchedMedicine.availableQuantity;
                           const corrected = item.stockOverride !== undefined && item.stockOverride !== item.matchedMedicine.availableQuantity;
                           return editingStockId === item.id ? (
-                            <div className="bg-blue-50 border border-blue-300 rounded-xl px-3 py-1.5 flex items-center justify-between gap-2">
-                              <span className="text-[9px] text-blue-700 font-bold shrink-0">📦 صحّح المخزون الفعلي</span>
+                            <div className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 flex items-center justify-between gap-2">
+                              <span className="text-[10px] text-slate-600 font-bold shrink-0">صحّح المخزون الفعلي</span>
                               <input
                                 type="number"
                                 min={0}
@@ -736,34 +797,34 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
                                   setEditingStockId(null);
                                 }}
                                 onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingStockId(null); }}
-                                className="w-24 bg-white border border-blue-300 rounded-lg px-2 py-1 text-xs font-extrabold text-blue-900 text-center focus:outline-blue-500"
+                                className="w-24 bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-extrabold text-slate-900 text-center focus:outline-emerald-400"
                               />
                             </div>
                           ) : (
                             <div
                               onDoubleClick={() => setEditingStockId(item.id)}
                               title="انقر مرتين لتصحيح المخزون الفعلي"
-                              className={`rounded-xl px-3 py-1.5 flex items-center justify-between cursor-pointer transition ${corrected ? 'bg-amber-50 border border-amber-300' : 'bg-blue-50/50 border border-blue-100 hover:border-blue-300'}`}
+                              className={`rounded-xl px-3 py-1.5 flex items-center justify-between cursor-pointer transition border ${corrected ? 'bg-amber-50 border-amber-200' : 'bg-slate-100/70 border-slate-200 hover:border-slate-300'}`}
                             >
-                              <span className={`text-[9px] font-bold ${corrected ? 'text-amber-700' : 'text-blue-600'}`}>
-                                📦 المخزون الحالي في المخزن {corrected ? '(مُصحَّح ✎)' : '— انقر مرتين للتعديل'}
+                              <span className={`text-[10px] font-bold ${corrected ? 'text-amber-700' : 'text-slate-500'}`}>
+                                المخزون الحالي في المخزن {corrected ? '(مُصحَّح ✎)' : '— انقر مرتين للتعديل'}
                               </span>
-                              <span className={`text-xs font-extrabold font-mono ${corrected ? 'text-amber-800' : 'text-blue-800'}`}>
+                              <span className={`text-xs font-extrabold font-mono ${corrected ? 'text-amber-800' : 'text-slate-700'}`}>
                                 {corrected && (
-                                  <span className="text-[9px] text-slate-400 line-through mr-1">{item.matchedMedicine.availableQuantity.toLocaleString()}</span>
+                                  <span className="text-[10px] text-slate-400 line-through ml-1">{item.matchedMedicine.availableQuantity.toLocaleString()}</span>
                                 )}
                                 {currentStock.toLocaleString()} شريط
                               </span>
                             </div>
                           );
-                        })()}
+                        })()}</div>}
 
                         {/* باركود المادة الجديدة (لغير المطابقة فقط — يُولَّد تلقائياً إن تُرك فارغاً) */}
                         {!item.matchedMedicine && (() => {
                           const dupMed = barcodeOwner(item.barcode || '');
                           return (
-                          <div className="space-y-1">
-                            <label className="text-[9px] font-extrabold text-slate-500 block">باركود المادة الجديدة (اختياري)</label>
+                          <div className="border-t border-slate-100 pt-2.5 space-y-1">
+                            <label className="text-[10px] font-bold text-slate-500 block">باركود المادة الجديدة (اختياري)</label>
                             <div className="flex items-center gap-2">
                               <input
                                 type="text"
@@ -786,7 +847,7 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
                             </div>
                             {/* تنبيه الباركود المكرّر — منع لا دمج */}
                             {dupMed && (
-                              <div className="flex items-start gap-1.5 bg-rose-50 border border-rose-200 rounded-lg px-2.5 py-1.5">
+                              <div className="flex items-start gap-1.5 bg-rose-50 border border-rose-100 rounded-lg px-2.5 py-1.5">
                                 <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-px" />
                                 <p className="text-[10px] font-extrabold text-rose-700 leading-snug">
                                   أقول لك المادة موجودة! هذا الباركود مُسجَّل مسبقاً للمادة «{dupMed.nameAr}» — غيّره أو اتركه فارغاً ليُولَّد تلقائياً.
@@ -828,7 +889,7 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
                 ⚠ يوجد باركود مكرّر لمادة موجودة — صحّحه أو اتركه فارغاً قبل المتابعة.
               </p>
             ) : newCount > 0 && (
-              <p className="text-[9px] text-amber-600 font-bold text-center mt-2">
+              <p className="text-[10px] text-amber-600 font-bold text-center mt-2">
                 {newCount} صنف جديد سيُضاف تلقائياً إلى المخزون عند اعتماد الشراء
               </p>
             )}

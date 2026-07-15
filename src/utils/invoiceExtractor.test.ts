@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseNumber, matchToInventory, ampouleVialCount, sanitizeApiKey } from './invoiceExtractor';
+import { parseNumber, matchToInventory, ampouleVialCount, sanitizeApiKey, normalizeName } from './invoiceExtractor';
 import type { Medicine } from '../types';
 
 describe('parseNumber', () => {
@@ -80,6 +80,51 @@ describe('matchToInventory', () => {
     // هنا نتأكد أن تمرير اسمين لا يكسر التطابق العربي الصحيح
     const { medicine } = matchToInventory('أموكسيسيلين', inv, 'Amoxicillin 500mg');
     expect(medicine?.id).toBe('9');
+  });
+});
+
+describe('matchToInventory — دقة الجرعات (عيارات متعددة لنفس الدواء)', () => {
+  const inv: Medicine[] = [
+    med('a', 'أوجمنتين 625', 'Augmentin 625mg'),
+    med('b', 'أوجمنتين 1000', 'Augmentin 1g'),
+  ];
+
+  it('يختار العيار الصحيح لا الأول المشابه', () => {
+    const { medicine } = matchToInventory('أوجمنتين 1000', inv);
+    expect(medicine?.id).toBe('b');
+  });
+
+  it('يحوّل 1g إلى 1000 فيتطابق مع عيار 1000', () => {
+    const { medicine } = matchToInventory('', inv, 'Augmentin 1g * 14 tab');
+    expect(medicine?.id).toBe('b');
+  });
+
+  it('عيار غير موجود في المخزون لا يُطابَق بصمت (يظهر كمادة جديدة للمراجعة)', () => {
+    const { medicine } = matchToInventory('أوجمنتين 312', inv);
+    expect(medicine).toBeNull();
+  });
+});
+
+describe('matchToInventory — ذاكرة المطابقات المُتعلَّمة', () => {
+  const inventory: Medicine[] = [
+    med('1', 'بندول', 'Panadol'),
+    med('2', 'أوجمنتين', 'Augmentin'),
+  ];
+
+  it('اسم سبقت مطابقته يدوياً يُطابَق فوراً من الذاكرة بدرجة 1', () => {
+    // «ريفانين» لا يشبه «بندول» نصياً إطلاقاً — الذاكرة وحدها تعرف الربط
+    const aliases = { [normalizeName('Revanin 500mg * 20 tab')]: '1' };
+    const { medicine, score, byAlias } = matchToInventory('ريفانين', inventory, 'Revanin 500mg * 20 tab', aliases);
+    expect(medicine?.id).toBe('1');
+    expect(score).toBe(1);
+    expect(byAlias).toBe(true);
+  });
+
+  it('ذاكرة تشير لدواء محذوف تُتجاهَل ويُعاد للمطابقة النصية', () => {
+    const aliases = { [normalizeName('بندول')]: 'deleted-id' };
+    const { medicine, byAlias } = matchToInventory('بندول', inventory, undefined, aliases);
+    expect(medicine?.id).toBe('1');
+    expect(byAlias).toBeUndefined();
   });
 });
 

@@ -13,7 +13,9 @@ const InvoiceImportModal = lazy(() => import('./InvoiceImportModal'));
 
 // Firebase Authentication & Remote Firestore Synchronizer hooks
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
-import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from 'firebase/auth';
+import { GoogleAuthProvider, signInWithPopup, signInWithCredential, signOut, onAuthStateChanged, User } from 'firebase/auth';
+import { Capacitor } from '@capacitor/core';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { collection, doc, getDoc, setDoc, onSnapshot, deleteDoc, writeBatch, increment, getCountFromServer, query, orderBy, limit } from 'firebase/firestore';
 import {
   generateDocId, deriveStockStatus, resolveUnitCost, movingAverageCost, todayLocalISO, resolveExpiryOnReceive,
@@ -453,6 +455,11 @@ export default function Dashboard() {
   // آخر تاريخ انتهاء أدخله المستخدم لكل مادة — مستقل عن expiryDates (الأبكر للتنبيهات).
   // يُستخدم كبديل في شاشة الاستيراد حين لا تحمل الفاتورة تاريخاً.
   const [lastEnteredExpiry, setLastEnteredExpiry] = useState<Record<string, string>>({});
+
+  // ذاكرة مطابقات استيراد الفواتير: اسم الفاتورة المطبَّع → معرّف الدواء.
+  // تُتعلَّم من مطابقات المستخدم (اليدوية أو المعتمَدة عند الاستيراد) وتتزامن عبر Firestore،
+  // فيتعرّف التطبيق على نفس الاسم فوراً في كل فاتورة قادمة وعلى كل الأجهزة.
+  const [invoiceAliases, setInvoiceAliases] = useState<Record<string, string>>({});
 
   const [dismissedLowStock, setDismissedLowStock] = useState<Set<string>>(new Set());
 
@@ -1556,6 +1563,21 @@ export default function Dashboard() {
       console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/expiryDates`);
     });
 
+    // 14. Sync Invoice Match Memory (ذاكرة مطابقات استيراد الفواتير: اسم الفاتورة → الدواء)
+    // استبدال كامل لا دمج — حتى تسري عمليات النسيان (الحذف) القادمة من أجهزة أخرى.
+    const unsubAliases = onSnapshot(collection(db, 'users', userId, 'invoiceAliases'), (snapshot) => {
+      const loaded: Record<string, string> = {};
+      snapshot.forEach(d => {
+        const data = d.data() as { key?: string; medicineId?: string };
+        if (typeof data.key === 'string' && data.key && typeof data.medicineId === 'string' && data.medicineId) {
+          loaded[data.key] = data.medicineId;
+        }
+      });
+      setInvoiceAliases(loaded);
+    }, () => {
+      console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/invoiceAliases`);
+    });
+
     setIsSyncing(false);
 
     return () => {
@@ -1570,6 +1592,7 @@ export default function Dashboard() {
       unsubSuppliers();
       unsubWallet();
       unsubExpiry();
+      unsubAliases();
     };
   }, [currentUser]);
 
@@ -1604,6 +1627,53 @@ export default function Dashboard() {
         .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/meta/wallet`));
     }
   };
+
+  // --- INVOICE MATCH MEMORY (ذاكرة مطابقات استيراد الفواتير) ---
+  // معرّف المستند = المفتاح المطبَّع نفسه (لا يحوي «/» بعد التطبيع). نستبعد القيم
+  // المحجوزة في Firestore («.» و«..» و«__…__») والمفاتيح المطابقة أصلاً (لا كتابة بلا داعٍ).
+  const isValidAliasDocId = (key: string) =>
+    key.length >= 3 && key !== '.' && key !== '..' && !key.includes('/') && !/^__.*__$/.test(key);
+
+  const learnInvoiceAliases = useCallback((pairs: Array<{ key: string; medicineId: string; label?: string }>) => {
+    const fresh = pairs.filter(p => isValidAliasDocId(p.key) && invoiceAliases[p.key] !== p.medicineId);
+    if (!fresh.length) return;
+    setInvoiceAliases(prev => {
+      const next = { ...prev };
+      fresh.forEach(p => { next[p.key] = p.medicineId; });
+      return next;
+    });
+    if (currentUser) {
+      const userId = currentUser.uid;
+      fresh.forEach(p => {
+        setDoc(doc(db, 'users', userId, 'invoiceAliases', p.key), {
+          key: p.key,
+          medicineId: p.medicineId,
+          label: p.label || '',
+          userId,
+          updatedAt: new Date().toISOString(),
+        }).catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/invoiceAliases/${p.key}`));
+      });
+    }
+  }, [invoiceAliases, currentUser]);
+
+  // النسيان مشروط بأن يشير المفتاح لنفس الدواء الملغى — فلا يمحو إلغاءٌ لصنفٍ ما
+  // مطابقةً محفوظةً تخص دواءً آخر يصادف أنه يحمل اسماً مشابهاً.
+  const forgetInvoiceAliases = useCallback((keys: string[], medicineId: string) => {
+    const targets = keys.filter(k => isValidAliasDocId(k) && invoiceAliases[k] === medicineId);
+    if (!targets.length) return;
+    setInvoiceAliases(prev => {
+      const next = { ...prev };
+      targets.forEach(k => { delete next[k]; });
+      return next;
+    });
+    if (currentUser) {
+      const userId = currentUser.uid;
+      targets.forEach(k => {
+        deleteDoc(doc(db, 'users', userId, 'invoiceAliases', k))
+          .catch(e => handleFirestoreError(e, OperationType.DELETE, `users/${userId}/invoiceAliases/${k}`));
+      });
+    }
+  }, [invoiceAliases, currentUser]);
 
   // =========================================================
   // النسخ الاحتياطي التلقائي على اللابتوب (يعمل بلا إنترنت)
@@ -2253,8 +2323,19 @@ export default function Dashboard() {
   const handleGoogleSignIn = async () => {
     setSignInError('');
     try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      if (Capacitor.isNativePlatform()) {
+        // داخل تطبيق أندرويد: Google تحظر OAuth في WebView المدمج،
+        // لذا نسجّل الدخول عبر الطبقة الأصيلة ثم نمرّر الاعتماد إلى Firebase JS SDK
+        // حتى تبقى قواعد Firestore والمزامنة تعمل كما في نسخة الويب تماماً.
+        const result = await FirebaseAuthentication.signInWithGoogle();
+        const idToken = result.credential?.idToken;
+        if (!idToken) throw new Error('auth/missing-id-token');
+        const credential = GoogleAuthProvider.credential(idToken, result.credential?.accessToken);
+        await signInWithCredential(auth, credential);
+      } else {
+        const provider = new GoogleAuthProvider();
+        await signInWithPopup(auth, provider);
+      }
     } catch (err: any) {
       console.error("Sign-in failed:", err);
       const code = err?.code ?? '';
@@ -2308,6 +2389,10 @@ export default function Dashboard() {
 
   const handleSignOut = async () => {
     try {
+      if (Capacitor.isNativePlatform()) {
+        // تسجيل الخروج من الطبقة الأصيلة أيضاً حتى لا تبقى جلسة Google محفوظة
+        await FirebaseAuthentication.signOut().catch(() => {});
+      }
       await signOut(auth);
     } catch (err) {
       console.error("Sign-out failed:", err);
@@ -8492,6 +8577,9 @@ export default function Dashboard() {
             inventory={inventory}
             expiryDates={expiryDates}
             lastEnteredExpiry={lastEnteredExpiry}
+            aliases={invoiceAliases}
+            onLearnAliases={learnInvoiceAliases}
+            onForgetAliases={forgetInvoiceAliases}
             onClose={() => setShowInvoiceImport(false)}
             onConfirm={(draftItems, supplierName) => {
               // Merge imported items into purchaseDraft

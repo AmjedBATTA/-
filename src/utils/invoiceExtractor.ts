@@ -21,13 +21,19 @@ export const getStoredApiKey = (): string =>
   localStorage.getItem(GEMINI_KEY_STORAGE) || '';
 export const saveApiKey = (key: string) => localStorage.setItem(GEMINI_KEY_STORAGE, sanitizeApiKey(key));
 
-function normalizeName(s: string): string {
+// تُصدَّر لأنها مفتاح «ذاكرة المطابقات»: نفس التطبيع يُستخدم للمطابقة ولمفاتيح الذاكرة.
+export function normalizeName(s: string): string {
   return s
     .toLowerCase()
     .replace(/[أإآ]/g, 'ا')
     .replace(/ة/g, 'ه')
     .replace(/ى/g, 'ي')
-    .replace(/\d+(\.\d+)?\s*(mg|ml|iu|mcg|g\b|ملغ|مل|وحده|وحدة|tab|cap|amp|vial)/gi, '')
+    // أعداد العبوة (× 14 tab / 5 amp) ليست جرعة — تُحذف بالكامل مع وحدتها
+    .replace(/\d+(\.\d+)?\s*(tab|cap|amp|vial)s?\b/gi, ' ')
+    // الغرامات تُحوَّل إلى ملغ (1g → 1000) حتى يتطابق «Augmentin 1g» مع «أوجمنتين 1000»
+    .replace(/(\d+(?:\.\d+)?)\s*(?:gm|g)\b/gi, (_, n) => String(Math.round(parseFloat(n) * 1000)))
+    // الجرعة: نُبقي الرقم ونحذف الوحدة — فيُفرّق «أوجمنتين 625» عن «أوجمنتين 1000»
+    .replace(/(\d+(?:\.\d+)?)\s*(mg|ml|iu|mcg|ملغ|مل|غم|جم|وحده|وحدة)/gi, '$1')
     .replace(/[^\w؀-ۿ\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -37,21 +43,49 @@ function normalizeName(s: string): string {
 function scorePair(input: string, candidate: string): number {
   if (!input || !candidate) return 0;
   if (candidate === input) return 1;
-  if (candidate.includes(input) || input.includes(candidate)) return 0.85;
-  const wordsA = input.split(' ').filter(w => w.length > 2);
-  const wordsB = candidate.split(' ').filter(w => w.length > 2);
-  if (wordsA.length > 0 && wordsB.length > 0) {
-    const matchCount = wordsA.filter(wa => wordsB.some(wb => wa.includes(wb) || wb.includes(wa))).length;
-    return matchCount / Math.max(wordsA.length, wordsB.length);
+  let score = 0;
+  if (candidate.includes(input) || input.includes(candidate)) {
+    score = 0.85;
+  } else {
+    const wordsA = input.split(' ').filter(w => w.length > 2);
+    const wordsB = candidate.split(' ').filter(w => w.length > 2);
+    if (wordsA.length > 0 && wordsB.length > 0) {
+      const matchCount = wordsA.filter(wa => wordsB.some(wb => wa.includes(wb) || wb.includes(wa))).length;
+      score = matchCount / Math.max(wordsA.length, wordsB.length);
+    }
   }
-  return 0;
+  // عقوبة اختلاف الجرعة: إذا حمل الاسمان أرقاماً (بعد التطبيع تبقى أرقام الجرعة فقط)
+  // ولم يشترك أي رقم بينهما، فالغالب أنهما عيّاران مختلفان لنفس الدواء — نُخفض الدرجة
+  // تحت عتبة القبول بدل مطابقة عيار خاطئ بصمت.
+  const numsA = input.match(/\d+(?:\.\d+)?/g);
+  const numsB = candidate.match(/\d+(?:\.\d+)?/g);
+  if (numsA && numsB && !numsA.some(n => numsB.includes(n))) score *= 0.6;
+  return score;
 }
 
-// المطابقة مع المخزون: نجرّب اسمين (الترجمة العربية + الاسم الإنجليزي الخام) لأن أغلب المخزون
+// ذاكرة المطابقات المُتعلَّمة: اسم الفاتورة المطبَّع → معرّف الدواء في المخزون.
+// تُبنى من مطابقات المستخدم السابقة وتتزامن عبر Firestore بين الأجهزة.
+export type InvoiceAliasMap = Record<string, string>;
+
+// المطابقة مع المخزون: الذاكرة المُتعلَّمة أولاً (تطابق فوري ومؤكَّد)، ثم المطابقة الضبابية.
+// نجرّب اسمين (الترجمة العربية + الاسم الإنجليزي الخام) لأن أغلب المخزون
 // محفوظ بالعربية بينما الفاتورة إنجليزية — فنطابق العربي بالعربي والإنجليزي بالإنجليزي معاً.
-export function matchToInventory(name: string, inventory: Medicine[], altName?: string): { medicine: Medicine | null; score: number } {
+export function matchToInventory(name: string, inventory: Medicine[], altName?: string, aliases?: InvoiceAliasMap): { medicine: Medicine | null; score: number; byAlias?: boolean } {
   const inputs = [normalizeName(name)];
   if (altName) { const n = normalizeName(altName); if (n && n !== inputs[0]) inputs.push(n); }
+
+  // الذاكرة أولاً: إن سبق للمستخدم مطابقة هذا الاسم بعينه، نعيد نفس الدواء فوراً —
+  // بشرط أن يكون الدواء ما يزال موجوداً في المخزون (وإلا نتجاهل الذاكرة ونكمل ضبابياً).
+  if (aliases) {
+    for (const input of inputs) {
+      const savedId = input ? aliases[input] : undefined;
+      if (savedId) {
+        const saved = inventory.find(m => m.id === savedId);
+        if (saved) return { medicine: saved, score: 1, byAlias: true };
+      }
+    }
+  }
+
   let best: Medicine | null = null;
   let bestScore = 0;
 
@@ -146,7 +180,8 @@ export async function extractInvoice(
   imageBase64: string,
   mimeType: string,
   apiKey: string,
-  inventory: Medicine[]
+  inventory: Medicine[],
+  aliases?: InvoiceAliasMap
 ): Promise<ExtractedInvoice> {
   // ننظّف المفتاح أولاً: نزيل المحارف الخفية ونستخرج توكن AIza… من أي نص محيط،
   // فيَقبل اللصق حتى مع علامات اتجاه أو مسافات غير مرئية تُلتقط عند النسخ على نظام عربي.
@@ -206,8 +241,9 @@ export async function extractInvoice(
   const items: ExtractedInvoiceItem[] = rawItems.map((item, idx) => {
     const arabicName = (item.arabicName || item.rawName || '').trim();
     const rawName = (item.rawName || '').trim();
-    // نطابق بالعربي والإنجليزي معاً — أغلب المخزون عربي والفاتورة إنجليزية
-    const { medicine, score } = matchToInventory(arabicName, inventory, rawName);
+    // نطابق بالعربي والإنجليزي معاً — أغلب المخزون عربي والفاتورة إنجليزية،
+    // مع أولوية «ذاكرة المطابقات» المُتعلَّمة من مطابقات المستخدم السابقة
+    const { medicine, score, byAlias } = matchToInventory(arabicName, inventory, rawName, aliases);
     // الأمبول/الفيال: عدد القطع من الاسم (يتجاوز تقدير Gemini). الأقراص تبقى بمنطق الأشرطة.
     const avCount = ampouleVialCount(rawName || arabicName);
     const stripsPerBox = avCount !== null ? avCount : Math.max(1, parseNumber(item.stripsPerBox));
@@ -231,6 +267,7 @@ export async function extractInvoice(
       expiry: item.expiry || undefined,
       matchedMedicine: medicine,
       matchScore: score,
+      matchedByAlias: byAlias || false,
     };
   });
 
