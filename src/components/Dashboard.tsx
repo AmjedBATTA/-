@@ -309,33 +309,37 @@ const MedicineCard = React.memo(({ med, showVirtualPrice, daysUntilExpiry, onAdd
         <p className="text-[9px] text-slate-400 font-mono truncate mt-0.5">{med.nameEn}</p>
       </div>
 
-      {/* Prices — وضع «الرسمي» يعرض الثلاثة موسومة (بيع/شراء/رسمي) معاً */}
+      {/* Prices — وضع «الرسمي»: الرسمي وحده بخط واضح، وتُخفى «بيع» و«شراء» ونسبة الربح
+          (شاشة تواجه الزبون — لا تكشف السعر الداخلي ولا الكلفة، كما في السلة) */}
       <div className="border-t border-slate-100 pt-2 flex justify-between items-end">
-        <div className="space-y-0.5">
-          <span className="text-sm font-black font-mono block text-emerald-700">
-            {showVirtualPrice && <span className="text-[9px] font-bold text-emerald-600 ml-0.5">بيع:</span>}
-            {med.price.toLocaleString()}
-            <span className="text-[9px] font-bold text-slate-400 mr-0.5">د.ع</span>
+        {showVirtualPrice ? (
+          <span className="text-base font-black font-mono block text-purple-700">
+            {officialPrice.toLocaleString()}
+            <span className="text-[9px] font-bold text-purple-400 mr-0.5">د.ع</span>
           </span>
-          {med.costPrice && med.costPrice > 0 && (
-            <span className="text-[9px] text-slate-400 font-mono block">
-              شراء: <span className="text-slate-500 font-bold">{med.costPrice.toLocaleString()}</span>
-            </span>
-          )}
-          {showVirtualPrice && (
-            <span className="text-[10px] text-purple-700 font-mono font-black block">
-              رسمي: {officialPrice.toLocaleString()}
-            </span>
-          )}
-        </div>
-        {margin !== null && (
-          <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
-            margin >= 20 ? 'bg-emerald-50 text-emerald-700'
-              : margin >= 10 ? 'bg-amber-50 text-amber-700'
-              : 'bg-rose-50 text-rose-700'
-          }`}>
-            {margin}%
-          </span>
+        ) : (
+          <>
+            <div className="space-y-0.5">
+              <span className="text-sm font-black font-mono block text-emerald-700">
+                {med.price.toLocaleString()}
+                <span className="text-[9px] font-bold text-slate-400 mr-0.5">د.ع</span>
+              </span>
+              {med.costPrice && med.costPrice > 0 && (
+                <span className="text-[9px] text-slate-400 font-mono block">
+                  شراء: <span className="text-slate-500 font-bold">{med.costPrice.toLocaleString()}</span>
+                </span>
+              )}
+            </div>
+            {margin !== null && (
+              <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
+                margin >= 20 ? 'bg-emerald-50 text-emerald-700'
+                  : margin >= 10 ? 'bg-amber-50 text-amber-700'
+                  : 'bg-rose-50 text-rose-700'
+              }`}>
+                {margin}%
+              </span>
+            )}
+          </>
         )}
       </div>
     </div>
