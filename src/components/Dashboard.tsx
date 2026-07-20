@@ -309,21 +309,22 @@ const MedicineCard = React.memo(({ med, showVirtualPrice, daysUntilExpiry, onAdd
         <p className="text-[9px] text-slate-400 font-mono truncate mt-0.5">{med.nameEn}</p>
       </div>
 
-      {/* Prices */}
+      {/* Prices — وضع «الرسمي» يعرض الثلاثة موسومة (بيع/شراء/رسمي) معاً */}
       <div className="border-t border-slate-100 pt-2 flex justify-between items-end">
         <div className="space-y-0.5">
           <span className="text-sm font-black font-mono block text-emerald-700">
+            {showVirtualPrice && <span className="text-[9px] font-bold text-emerald-600 ml-0.5">بيع:</span>}
             {med.price.toLocaleString()}
             <span className="text-[9px] font-bold text-slate-400 mr-0.5">د.ع</span>
           </span>
-          {showVirtualPrice && (
-            <span className="text-[9px] text-purple-700 font-mono font-bold block">
-              رسمي: {officialPrice.toLocaleString()}
-            </span>
-          )}
           {med.costPrice && med.costPrice > 0 && (
             <span className="text-[9px] text-slate-400 font-mono block">
               شراء: <span className="text-slate-500 font-bold">{med.costPrice.toLocaleString()}</span>
+            </span>
+          )}
+          {showVirtualPrice && (
+            <span className="text-[10px] text-purple-700 font-mono font-black block">
+              رسمي: {officialPrice.toLocaleString()}
             </span>
           )}
         </div>
@@ -354,9 +355,10 @@ interface CartItemRowProps {
   onInc: (medId: string) => void;
   onDec: (medId: string) => void;
   onRemove: (medId: string) => void;
+  onAddShortage: (med: Medicine) => void; // نقر مزدوج على اسم العنصر = إضافته لقائمة نواقص الأدوية
 }
 
-const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove }: CartItemRowProps) => {
+const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove, onAddShortage }: CartItemRowProps) => {
   // السعر المُحاسَب دائماً هو الجمهوري — «الرسمي» للعرض فقط ولا يدخل في المحاسبة.
   // وضع «السعر الرسمي» مفعّلاً: يُعرض الرسمي وحده (سعراً وإجمالياً) ويُخفى الجمهوري
   // و«الشراء» — شاشة تواجه الزبون، لا تكشف السعر الداخلي ولا الكلفة.
@@ -369,7 +371,9 @@ const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove
   if (item.outOfStock) {
     return (
       <div className="bg-rose-950/40 border border-rose-900/50 rounded-2xl p-4 flex items-center justify-between gap-3">
-        <div className="flex-1 min-w-0 space-y-1">
+        <div className="flex-1 min-w-0 space-y-1 select-none cursor-pointer"
+          onDoubleClick={() => onAddShortage(item.medicine)}
+          title="نقرة مزدوجة: إضافة إلى نواقص الأدوية">
           <div className="flex items-center gap-2">
             <span className="font-extrabold text-rose-200 text-sm truncate">{item.medicine.nameAr}</span>
             <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-rose-900/60 text-rose-300 shrink-0">نفذ</span>
@@ -388,7 +392,9 @@ const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove
 
   return (
     <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 flex items-center justify-between gap-3">
-      <div className="flex-1 min-w-0 space-y-1.5">
+      <div className="flex-1 min-w-0 space-y-1.5 select-none cursor-pointer"
+        onDoubleClick={() => onAddShortage(item.medicine)}
+        title="نقرة مزدوجة: إضافة إلى نواقص الأدوية">
         <span className="font-extrabold text-white text-base block truncate">{item.medicine.nameAr}</span>
         {/* وضع «الرسمي»: الإجمالي الرسمي وحده بلا أي تفاصيل (سعر وحدة/عدد/عبارات) — شاشة
             نظيفة تواجه الزبون. الوضع العادي: سعر الوحدة × العدد ثم الإجمالي الكبير */}
@@ -460,6 +466,15 @@ export default function Dashboard() {
   // تُتعلَّم من مطابقات المستخدم (اليدوية أو المعتمَدة عند الاستيراد) وتتزامن عبر Firestore،
   // فيتعرّف التطبيق على نفس الاسم فوراً في كل فاتورة قادمة وعلى كل الأجهزة.
   const [invoiceAliases, setInvoiceAliases] = useState<Record<string, string>>({});
+
+  // ذاكرة «شريط/علبة» المؤكَّدة: معرّف الدواء → العدد الذي اعتمده المستخدم في مراجعة استيراد سابقة.
+  // تتقدّم على تقدير Gemini في الفواتير القادمة وتتزامن عبر Firestore.
+  const [stripsMemory, setStripsMemory] = useState<Record<string, number>>({});
+
+  // قائمة نواقص الأدوية: أسماء فقط، تُضاف بالنقر المزدوج على عنصر في سلة البيع.
+  // معرّف الدواء يمنع التكرار، وتتزامن عبر Firestore بين الأجهزة.
+  const [shortages, setShortages] = useState<Array<{ id: string; name: string }>>([]);
+  const [showShortages, setShowShortages] = useState(false);
 
   const [dismissedLowStock, setDismissedLowStock] = useState<Set<string>>(new Set());
 
@@ -1578,6 +1593,37 @@ export default function Dashboard() {
       console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/invoiceAliases`);
     });
 
+    // 15. Sync Strips Memory (ذاكرة «شريط/علبة» المؤكَّدة: معرّف الدواء → العدد)
+    const unsubStrips = onSnapshot(collection(db, 'users', userId, 'stripsMemory'), (snapshot) => {
+      const loaded: Record<string, number> = {};
+      snapshot.forEach(d => {
+        const data = d.data() as { medicineId?: string; stripsPerBox?: number };
+        if (typeof data.medicineId === 'string' && data.medicineId
+          && typeof data.stripsPerBox === 'number' && data.stripsPerBox > 0) {
+          loaded[data.medicineId] = data.stripsPerBox;
+        }
+      });
+      setStripsMemory(loaded);
+    }, () => {
+      console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/stripsMemory`);
+    });
+
+    // 16. Sync Shortages List (قائمة نواقص الأدوية — أسماء فقط)
+    // استبدال كامل لا دمج — حتى يسري الحذف القادم من أجهزة أخرى.
+    const unsubShortages = onSnapshot(collection(db, 'users', userId, 'shortages'), (snapshot) => {
+      const loaded: Array<{ id: string; name: string }> = [];
+      snapshot.forEach(d => {
+        const data = d.data() as { name?: string };
+        if (typeof data.name === 'string' && data.name.trim()) {
+          loaded.push({ id: d.id, name: data.name.trim() });
+        }
+      });
+      loaded.sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+      setShortages(loaded);
+    }, () => {
+      console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/shortages`);
+    });
+
     setIsSyncing(false);
 
     return () => {
@@ -1593,6 +1639,8 @@ export default function Dashboard() {
       unsubWallet();
       unsubExpiry();
       unsubAliases();
+      unsubStrips();
+      unsubShortages();
     };
   }, [currentUser]);
 
@@ -1674,6 +1722,52 @@ export default function Dashboard() {
       });
     }
   }, [invoiceAliases, currentUser]);
+
+  // تعلُّم «شريط/علبة» المعتمَد في مراجعة الاستيراد — يُكتب فقط ما تغيّر عن المحفوظ
+  const learnStripsMemory = useCallback((pairs: Array<{ medicineId: string; stripsPerBox: number }>) => {
+    const fresh = pairs.filter(p => p.medicineId && p.stripsPerBox > 0 && stripsMemory[p.medicineId] !== p.stripsPerBox);
+    if (!fresh.length) return;
+    setStripsMemory(prev => {
+      const next = { ...prev };
+      fresh.forEach(p => { next[p.medicineId] = p.stripsPerBox; });
+      return next;
+    });
+    if (currentUser) {
+      const userId = currentUser.uid;
+      fresh.forEach(p => {
+        setDoc(doc(db, 'users', userId, 'stripsMemory', p.medicineId), {
+          medicineId: p.medicineId,
+          stripsPerBox: p.stripsPerBox,
+          userId,
+          updatedAt: new Date().toISOString(),
+        }).catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/stripsMemory/${p.medicineId}`));
+      });
+    }
+  }, [stripsMemory, currentUser]);
+
+  // إضافة دواء لقائمة النواقص (بالنقر المزدوج على عنصر السلة) — الاسم فقط، بلا تكرار
+  const addToShortages = useCallback((med: Medicine) => {
+    setShortages(prev => prev.some(s => s.id === med.id)
+      ? prev
+      : [...prev, { id: med.id, name: med.nameAr }].sort((a, b) => a.name.localeCompare(b.name, 'ar')));
+    if (currentUser) {
+      const userId = currentUser.uid;
+      setDoc(doc(db, 'users', userId, 'shortages', med.id), {
+        name: med.nameAr,
+        userId,
+        updatedAt: new Date().toISOString(),
+      }).catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/shortages/${med.id}`));
+    }
+  }, [currentUser]);
+
+  const removeFromShortages = useCallback((id: string) => {
+    setShortages(prev => prev.filter(s => s.id !== id));
+    if (currentUser) {
+      const userId = currentUser.uid;
+      deleteDoc(doc(db, 'users', userId, 'shortages', id))
+        .catch(e => handleFirestoreError(e, OperationType.DELETE, `users/${userId}/shortages/${id}`));
+    }
+  }, [currentUser]);
 
   // =========================================================
   // النسخ الاحتياطي التلقائي على اللابتوب (يعمل بلا إنترنت)
@@ -4334,6 +4428,7 @@ export default function Dashboard() {
                               onInc={incCartQty}
                               onDec={decCartQty}
                               onRemove={removeFromCart}
+                              onAddShortage={addToShortages}
                             />
                           ))}
                         </div>
@@ -4406,18 +4501,68 @@ export default function Dashboard() {
                       <p className="text-[10px] text-slate-400 font-semibold mt-0.5">انقر على الدواء المتوفر لإضافته إلى فاتورة العميل مباشرة</p>
                     </div>
 
-                    {/* Price Mode Toggle — زر دائري */}
-                    <div className="flex justify-end">
+                    {/* Price Mode Toggle — زر دائري + زر «نواقص الأدوية» أقصى اليسار */}
+                    <div className="flex justify-end items-center gap-2">
                       <button
                         type="button"
                         title={showVirtualPriceInPOS ? 'السلة تعرض السعر الرسمي وحده (المحاسبة تبقى بالجمهوري)' : 'عرض أسعار السلة بالسعر الرسمي'}
                         onClick={() => setShowVirtualPriceInPOS(!showVirtualPriceInPOS)}
-                        className={`w-7 h-7 rounded-full border-2 transition-all cursor-pointer shadow-sm ${
+                        className={`w-7 h-7 rounded-full border-2 transition-all cursor-pointer shadow-sm shrink-0 ${
                           showVirtualPriceInPOS
                             ? 'bg-purple-500 border-purple-400 shadow-purple-200'
                             : 'bg-slate-200 border-slate-300 hover:bg-purple-200 hover:border-purple-300'
                         }`}
                       />
+                      {/* نواقص الأدوية — قائمة منسدلة بأسماء فقط، تُملأ بالنقر المزدوج على عناصر السلة */}
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setShowShortages(p => !p)}
+                          title="قائمة نواقص الأدوية — أضف إليها بنقرة مزدوجة على أي علاج في سلة البيع"
+                          className={`flex items-center gap-1.5 text-[10px] font-black px-2.5 py-1.5 rounded-xl border transition cursor-pointer shadow-sm ${
+                            showShortages
+                              ? 'bg-amber-500 border-amber-400 text-white'
+                              : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+                          }`}
+                        >
+                          <ClipboardList className="w-3.5 h-3.5" />
+                          <span>نواقص الأدوية</span>
+                          {shortages.length > 0 && (
+                            <span className={`text-[9px] font-black px-1.5 py-px rounded-full ${showShortages ? 'bg-white/25 text-white' : 'bg-amber-200 text-amber-800'}`}>
+                              {shortages.length}
+                            </span>
+                          )}
+                          <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${showShortages ? 'rotate-180' : ''}`} />
+                        </button>
+                        {showShortages && (
+                          <div className="absolute left-0 top-full mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl z-20 overflow-hidden">
+                            <div className="px-3 py-2 border-b border-slate-100 bg-amber-50/60 text-[10px] font-black text-amber-800">
+                              نواقص الأدوية ({shortages.length})
+                            </div>
+                            {shortages.length === 0 ? (
+                              <p className="text-[10px] text-slate-400 font-bold text-center px-3 py-5 leading-relaxed">
+                                القائمة فارغة — نقرة مزدوجة على أي علاج في سلة البيع تضيفه هنا
+                              </p>
+                            ) : (
+                              <div className="max-h-72 overflow-y-auto divide-y divide-slate-50">
+                                {shortages.map(s => (
+                                  <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-slate-50 group">
+                                    <span className="text-[11px] font-extrabold text-slate-700 truncate">{s.name}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeFromShortages(s.id)}
+                                      title="حذف من النواقص"
+                                      className="text-slate-300 hover:text-rose-500 transition cursor-pointer shrink-0"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {/* Inventory grid for POS shelf */}
@@ -8578,8 +8723,10 @@ export default function Dashboard() {
             expiryDates={expiryDates}
             lastEnteredExpiry={lastEnteredExpiry}
             aliases={invoiceAliases}
+            stripsMemory={stripsMemory}
             onLearnAliases={learnInvoiceAliases}
             onForgetAliases={forgetInvoiceAliases}
+            onLearnStrips={learnStripsMemory}
             onClose={() => setShowInvoiceImport(false)}
             onConfirm={(draftItems, supplierName) => {
               // Merge imported items into purchaseDraft

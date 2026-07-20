@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseNumber, matchToInventory, ampouleVialCount, sanitizeApiKey, normalizeName } from './invoiceExtractor';
+import { parseNumber, matchToInventory, ampouleVialCount, sanitizeApiKey, normalizeName, resolveStripsPerBox } from './invoiceExtractor';
 import type { Medicine } from '../types';
 
 describe('parseNumber', () => {
@@ -125,6 +125,31 @@ describe('matchToInventory — ذاكرة المطابقات المُتعلَّ�
     const { medicine, byAlias } = matchToInventory('بندول', inventory, undefined, aliases);
     expect(medicine?.id).toBe('1');
     expect(byAlias).toBeUndefined();
+  });
+});
+
+describe('resolveStripsPerBox — أولوية ذاكرة «شريط/علبة»', () => {
+  it('ذاكرة المستخدم تتقدّم على تقدير Gemini', () => {
+    // Gemini قرأ 3 أشرطة والمستخدم صحّحها سابقاً إلى 2 — تُعتمد 2
+    expect(resolveStripsPerBox(2, null, 3)).toBe(2);
+  });
+
+  it('ذاكرة المستخدم تتقدّم حتى على عدّ الأمبولات من الاسم', () => {
+    expect(resolveStripsPerBox(2, 5, 3)).toBe(2);
+  });
+
+  it('بلا ذاكرة: عدّ الأمبولات يتقدّم على Gemini', () => {
+    expect(resolveStripsPerBox(undefined, 5, 3)).toBe(5);
+  });
+
+  it('بلا ذاكرة ولا أمبولات: تقدير Gemini بحد أدنى 1', () => {
+    expect(resolveStripsPerBox(undefined, null, 3)).toBe(3);
+    expect(resolveStripsPerBox(undefined, null, 0)).toBe(1);
+    expect(resolveStripsPerBox(undefined, null, null)).toBe(1);
+  });
+
+  it('ذاكرة بقيمة غير موجبة تُتجاهَل', () => {
+    expect(resolveStripsPerBox(0, null, 3)).toBe(3);
   });
 });
 

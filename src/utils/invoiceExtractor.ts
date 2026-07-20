@@ -67,6 +67,10 @@ function scorePair(input: string, candidate: string): number {
 // تُبنى من مطابقات المستخدم السابقة وتتزامن عبر Firestore بين الأجهزة.
 export type InvoiceAliasMap = Record<string, string>;
 
+// ذاكرة عدد الأشرطة المُتعلَّمة: معرّف الدواء → شريط/علبة كما أكّده المستخدم في مراجعة سابقة.
+// تصحيح المستخدم أوثق من أي تقدير — فيتقدّم على Gemini وعلى عدّ الأمبولات من الاسم.
+export type StripsMemoryMap = Record<string, number>;
+
 // المطابقة مع المخزون: الذاكرة المُتعلَّمة أولاً (تطابق فوري ومؤكَّد)، ثم المطابقة الضبابية.
 // نجرّب اسمين (الترجمة العربية + الاسم الإنجليزي الخام) لأن أغلب المخزون
 // محفوظ بالعربية بينما الفاتورة إنجليزية — فنطابق العربي بالعربي والإنجليزي بالإنجليزي معاً.
@@ -119,6 +123,17 @@ export function ampouleVialCount(rawName: string): number | null {
     || s.match(/(\d{1,3})\s*(oral\s+)?(amp|ampoule|ampule|vial|vials|فيال|امبول)/);
   if (m) return Math.max(1, parseInt(m[1], 10));
   return 1; // أمبول/فيال بلا عدد صريح = قطعة واحدة
+}
+
+// أولوية «شريط/علبة»: ذاكرة المستخدم المؤكَّدة ← عدّ الأمبولات من الاسم ← تقدير Gemini (بحد أدنى 1)
+export function resolveStripsPerBox(
+  memStrips: number | undefined,
+  avCount: number | null,
+  geminiRaw: number | string | null | undefined
+): number {
+  if (memStrips && memStrips > 0) return memStrips;
+  if (avCount !== null) return avCount;
+  return Math.max(1, parseNumber(geminiRaw));
 }
 
 const EXTRACTION_PROMPT = `أنت نظام استخراج بيانات دقيق لفواتير أدوية الصيدليات العراقية.
@@ -181,7 +196,8 @@ export async function extractInvoice(
   mimeType: string,
   apiKey: string,
   inventory: Medicine[],
-  aliases?: InvoiceAliasMap
+  aliases?: InvoiceAliasMap,
+  stripsMemory?: StripsMemoryMap
 ): Promise<ExtractedInvoice> {
   // ننظّف المفتاح أولاً: نزيل المحارف الخفية ونستخرج توكن AIza… من أي نص محيط،
   // فيَقبل اللصق حتى مع علامات اتجاه أو مسافات غير مرئية تُلتقط عند النسخ على نظام عربي.
@@ -246,7 +262,10 @@ export async function extractInvoice(
     const { medicine, score, byAlias } = matchToInventory(arabicName, inventory, rawName, aliases);
     // الأمبول/الفيال: عدد القطع من الاسم (يتجاوز تقدير Gemini). الأقراص تبقى بمنطق الأشرطة.
     const avCount = ampouleVialCount(rawName || arabicName);
-    const stripsPerBox = avCount !== null ? avCount : Math.max(1, parseNumber(item.stripsPerBox));
+    // ذاكرة الأشرطة أولاً: إن سبق للمستخدم تصحيح/تأكيد «شريط/علبة» لهذا الدواء،
+    // نعتمد قيمته المحفوظة ونتجاهل تقدير Gemini وعدّ الأمبولات معاً.
+    const stripsPerBox = resolveStripsPerBox(
+      medicine ? stripsMemory?.[medicine.id] : undefined, avCount, item.stripsPerBox);
     const pricePerStrip = stripsPerBox > 0 ? Math.round(parseNumber(item.pricePerBox) / stripsPerBox) : parseNumber(item.pricePerBox);
     // سعر البيع الافتراضي: من المخزن إن كان الدواء مطابقاً، وإلا هامش ربح فوق التكلفة
     const retailPrice = medicine?.price ?? Math.round(pricePerStrip * 1.25);

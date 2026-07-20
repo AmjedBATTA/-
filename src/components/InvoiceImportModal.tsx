@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import type { Medicine, ExtractedInvoiceItem, ExtractedInvoice } from '../types';
 import { extractInvoice, getStoredApiKey, saveApiKey, matchToInventory, normalizeName } from '../utils/invoiceExtractor';
-import type { InvoiceAliasMap } from '../utils/invoiceExtractor';
+import type { InvoiceAliasMap, StripsMemoryMap } from '../utils/invoiceExtractor';
 
 interface DraftItem {
   id: string;
@@ -31,8 +31,10 @@ interface Props {
   expiryDates: Record<string, string>; // معرّف الدواء → تاريخ الانتهاء المخزَّن (الأبكر، للتنبيهات)
   lastEnteredExpiry: Record<string, string>; // معرّف الدواء → آخر تاريخ أدخله المستخدم (بديل عند خلو الفاتورة)
   aliases: InvoiceAliasMap; // ذاكرة المطابقات المُتعلَّمة: اسم الفاتورة المطبَّع → معرّف الدواء
+  stripsMemory: StripsMemoryMap; // ذاكرة «شريط/علبة» المؤكَّدة: معرّف الدواء → العدد الذي اعتمده المستخدم سابقاً
   onLearnAliases: (pairs: Array<{ key: string; medicineId: string; label?: string }>) => void;
   onForgetAliases: (keys: string[], medicineId: string) => void; // تُنسى فقط إن كانت تشير لهذا الدواء
+  onLearnStrips: (pairs: Array<{ medicineId: string; stripsPerBox: number }>) => void;
   onClose: () => void;
   onConfirm: (items: DraftItem[], supplierName: string) => void;
 }
@@ -54,7 +56,7 @@ function matchBadge(score: number, isMatched: boolean, byAlias?: boolean) {
   return { label: 'تقريبي', cls: 'bg-blue-100 text-blue-700 border-blue-200' };
 }
 
-export default function InvoiceImportModal({ inventory, expiryDates, lastEnteredExpiry, aliases, onLearnAliases, onForgetAliases, onClose, onConfirm }: Props) {
+export default function InvoiceImportModal({ inventory, expiryDates, lastEnteredExpiry, aliases, stripsMemory, onLearnAliases, onForgetAliases, onLearnStrips, onClose, onConfirm }: Props) {
   const initialKey = getStoredApiKey();
   const [step, setStep] = useState<Step>(initialKey ? 'upload' : 'key');
   const [apiKey, setApiKey] = useState(initialKey);
@@ -166,7 +168,7 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
         reader.onerror = reject;
         reader.readAsDataURL(imageFile);
       });
-      const invoice = await extractInvoice(base64, imageFile.type, apiKey.trim(), inventory, aliases);
+      const invoice = await extractInvoice(base64, imageFile.type, apiKey.trim(), inventory, aliases, stripsMemory);
       setExtractedInvoice(invoice);
       // تهيئة كل صنف: تاريخ الانتهاء (YYYY-MM) — الأولوية: تاريخ الفاتورة الحالية (OCR) أولاً،
       // وإلا آخر تاريخ أدخله المستخدم لهذه المادة، وإلا المخزَّن (الأبكر) للتوافق، وإلا الافتراضي.
@@ -220,11 +222,14 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
     // لا نطمس تاريخ الفاتورة (OCR) إن وُجد؛ نملأ من آخر مُدخَل ثم المخزَّن فقط إن كان الحقل افتراضياً
     const wasDefault = !it?.expiry || it.expiry === DEFAULT_EXPIRY_MONTH;
     const medMonth = toMonthInput(lastEnteredExpiry[med.id]) || toMonthInput(expiryDates[med.id]);
+    // «شريط/علبة» المحفوظ لهذا الدواء من مراجعات سابقة — يحلّ محل تقدير Gemini فور الربط
+    const memStrips = stripsMemory[med.id];
     updateItem(itemId, {
       matchedMedicine: med,
       matchScore: 1,
       matchedByAlias: false,
       arabicName: med.nameAr,
+      ...(memStrips && memStrips > 0 ? { stripsPerBox: memStrips } : {}),
       // باركود المخزون + تاريخ المادة (آخر مُدخَل/مخزَّن) عند غياب تاريخ الفاتورة
       ...(wasDefault && medMonth ? { expiry: medMonth } : {}),
       barcode: med.barcode || '',
@@ -259,6 +264,13 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
     // اعتماد الفاتورة بعد المراجعة = تأكيد ضمني لكل المطابقات الظاهرة:
     // نحفظها في الذاكرة فتُطابَق فوراً في الفواتير القادمة (المكرَّر يُهمَل في الأعلى)
     items.forEach(it => { if (it.matchedMedicine) learnItemAliases(it, it.matchedMedicine); });
+    // وكذلك «شريط/علبة» المعتمَد لكل مادة مطابَقة — تصحيح المستخدم (أو إقراره للتقدير)
+    // يُحفَظ فتقرؤه الفواتير القادمة كما هو بدل إعادة التقدير
+    onLearnStrips(
+      items
+        .filter(it => it.matchedMedicine && it.stripsPerBox > 0)
+        .map(it => ({ medicineId: it.matchedMedicine!.id, stripsPerBox: it.stripsPerBox }))
+    );
     const draftItems: DraftItem[] = items
       .filter(it => it.quantityBoxes > 0 && it.pricePerBox > 0)
       .map(it => {
