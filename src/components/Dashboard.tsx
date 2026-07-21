@@ -585,6 +585,9 @@ export default function Dashboard() {
 
   // --- POS CART STATES ---
   const [currentCart, setCurrentCart] = useState<POSItem[]>([]);
+  // حاوية سلة البيع القابلة للتمرير — تُصعَّد لأعلاها كلما دخلت مادة جديدة إلى القمة
+  // (بالباركود أو الاسم أو النقر)، حتى لو كان المستخدم مرّر لمنتصف/نهاية القائمة.
+  const cartListRef = useRef<HTMLDivElement>(null);
   const [posCustomerName, setPosCustomerName] = useState('زبون نقدي / خارجي');
   const [posDiscountPercent, setPosDiscountPercent] = useState<number>(0);
   const [posOnCredit, setPosOnCredit] = useState(false); // بيع بالآجل: تسجيل ذمّة على الزبون بدل القبض النقدي
@@ -2744,6 +2747,18 @@ export default function Dashboard() {
     });
   }, []);
 
+  // كل إضافة عبر addToCart تضع المادة في رأس السلة — نُصعِّد الحاوية لأعلاها تلقائياً
+  // كلما تغيّر العنصر الأول فعلاً، فتظهر المادة المضافة توّاً بلا تمرير يدوي.
+  // مقصود ألا يستجيب لتعديل الكمية (+/−) أو الحذف — تلك لا تُغيّر هوية العنصر الأول.
+  const cartTopIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const topId = currentCart[0]?.medicine.id ?? null;
+    if (topId && topId !== cartTopIdRef.current) {
+      cartListRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    cartTopIdRef.current = topId;
+  }, [currentCart]);
+
   // Callbacks مستقرّة تُمرَّر إلى POSSearchBar (حتى لا يُعاد ضبط مؤقّت الـ debounce بلا داعٍ)
   const handlePOSQueryChange = useCallback((q: string) => setSearchPOSQuery(q), []);
   const handlePOSEnter = useCallback((value: string) => {
@@ -4423,7 +4438,7 @@ export default function Dashboard() {
                       <form onSubmit={handleCheckoutPOS} className="flex flex-col gap-4 flex-1">
 
                         {/* Cart Items */}
-                        <div className="space-y-2.5 max-h-[380px] overflow-y-auto pl-1">
+                        <div ref={cartListRef} className="space-y-2.5 max-h-[380px] overflow-y-auto pl-1">
                           {currentCart.map((item) => (
                             <CartItemRow
                               key={item.medicine.id}
