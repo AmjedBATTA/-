@@ -22,6 +22,8 @@ import {
   computeSaleTotals, computeProfit, loadDefaultCostPercent, saveDefaultCostPercent,
 } from '../utils/finance';
 import { downloadCSV, datedFilename } from '../utils/csvExport';
+// مطبِّع أسماء الأدوية (ملف مستقل — لا يجرّ @google/genai إلى الحزمة الرئيسية)
+import { normalizeName } from '../utils/normalizeName';
 
 // Let's declare our reactive state types inside the component
 interface POSItem {
@@ -3484,6 +3486,24 @@ export default function Dashboard() {
       adjustWallet(-totalCost);
     }
 
+    // شطب المُشترى من قائمة نواقص الأدوية: اعتماد الفاتورة يعني أن الصنف طُلب فعلاً.
+    // المطابقة بمعرّف المخزون أو بالاسم المُطبَّع (يلتقط أصناف استيراد الصور غير
+    // المطابَقة والمنتجات الجديدة اليدوية بعد إزالة لاحقة «جديد 🆕» قبل المقارنة).
+    // الحذف عند الاعتماد فقط — لا عند دخول المسودة — فحذف صنف من المسودة قبل
+    // الاعتماد يُبقيه في النواقص تلقائياً.
+    if (shortages.length > 0) {
+      // لاحقة «(جديد 🆕)» تُزال من الطرفين قبل التطبيع: تحملها المسودة للمنتجات
+      // اليدوية، ويحملها اسم الناقص إن كان أصل المادة منتجاً جديداً سابقاً.
+      const normName = (s: any) => normalizeName(String(s || '').replace(/\(جديد 🆕\)/g, ' '));
+      const boughtIds = new Set(purchaseDraft.map(d => d.medicineId).filter(Boolean));
+      const boughtNames = new Set(
+        purchaseDraft.flatMap(d => [normName(d.nameAr), normName(d.nameEn)]).filter(n => n.length >= 2)
+      );
+      shortages
+        .filter(s => boughtIds.has(s.id) || boughtNames.has(normName(s.name)))
+        .forEach(s => removeFromShortages(s.id));
+    }
+
     setPurchaseDraft([]);
     setPurchaseOnCredit(false);
     const expiryNote = keptEarlierExpiry.length
@@ -4554,7 +4574,7 @@ export default function Dashboard() {
                           <ChevronDown className={`w-3 h-3 transition-transform duration-200 ${showShortages ? 'rotate-180' : ''}`} />
                         </button>
                         {showShortages && (
-                          <div className="absolute left-0 top-full mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl z-20 overflow-hidden">
+                          <div className="absolute left-0 top-full mt-2 w-[333px] bg-white border border-slate-200 rounded-2xl shadow-xl z-20 overflow-hidden">
                             <div className="px-3 py-2 border-b border-slate-100 bg-amber-50/60 text-[10px] font-black text-amber-800">
                               نواقص الأدوية ({shortages.length})
                             </div>
@@ -4563,7 +4583,7 @@ export default function Dashboard() {
                                 القائمة فارغة — نقرة مزدوجة على أي علاج في سلة البيع تضيفه هنا
                               </p>
                             ) : (
-                              <div className="max-h-72 overflow-y-auto divide-y divide-slate-50">
+                              <div className="max-h-[374px] overflow-y-auto divide-y divide-slate-50">
                                 {shortages.map(s => (
                                   <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-slate-50 group">
                                     <span className="text-[11px] font-extrabold text-slate-700 truncate">{s.name}</span>
