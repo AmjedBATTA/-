@@ -479,7 +479,8 @@ export default function Dashboard() {
 
   // قائمة نواقص الأدوية: أسماء فقط، تُضاف بالنقر المزدوج على عنصر في سلة البيع.
   // معرّف الدواء يمنع التكرار، وتتزامن عبر Firestore بين الأجهزة.
-  const [shortages, setShortages] = useState<Array<{ id: string; name: string }>>([]);
+  // الترتيب بالتاريخ (الأحدث أعلاه) عبر addedAt — لا أبجدياً.
+  const [shortages, setShortages] = useState<Array<{ id: string; name: string; addedAt: string }>>([]);
   const [showShortages, setShowShortages] = useState(false);
 
   const [dismissedLowStock, setDismissedLowStock] = useState<Set<string>>(new Set());
@@ -1620,14 +1621,14 @@ export default function Dashboard() {
     // 16. Sync Shortages List (قائمة نواقص الأدوية — أسماء فقط)
     // استبدال كامل لا دمج — حتى يسري الحذف القادم من أجهزة أخرى.
     const unsubShortages = onSnapshot(collection(db, 'users', userId, 'shortages'), (snapshot) => {
-      const loaded: Array<{ id: string; name: string }> = [];
+      const loaded: Array<{ id: string; name: string; addedAt: string }> = [];
       snapshot.forEach(d => {
-        const data = d.data() as { name?: string };
+        const data = d.data() as { name?: string; updatedAt?: string };
         if (typeof data.name === 'string' && data.name.trim()) {
-          loaded.push({ id: d.id, name: data.name.trim() });
+          loaded.push({ id: d.id, name: data.name.trim(), addedAt: data.updatedAt || '' });
         }
       });
-      loaded.sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+      loaded.sort((a, b) => b.addedAt.localeCompare(a.addedAt));
       setShortages(loaded);
     }, () => {
       console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/shortages`);
@@ -1756,15 +1757,16 @@ export default function Dashboard() {
 
   // إضافة دواء لقائمة النواقص (بالنقر المزدوج على عنصر السلة) — الاسم فقط، بلا تكرار
   const addToShortages = useCallback((med: Medicine) => {
+    const addedAt = new Date().toISOString();
     setShortages(prev => prev.some(s => s.id === med.id)
       ? prev
-      : [...prev, { id: med.id, name: med.nameAr }].sort((a, b) => a.name.localeCompare(b.name, 'ar')));
+      : [{ id: med.id, name: med.nameAr, addedAt }, ...prev]);
     if (currentUser) {
       const userId = currentUser.uid;
       setDoc(doc(db, 'users', userId, 'shortages', med.id), {
         name: med.nameAr,
         userId,
-        updatedAt: new Date().toISOString(),
+        updatedAt: addedAt,
       }).catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/shortages/${med.id}`));
     }
   }, [currentUser]);
