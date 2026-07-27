@@ -24,6 +24,8 @@ import {
 import { downloadCSV, datedFilename } from '../utils/csvExport';
 // مطبِّع أسماء الأدوية (ملف مستقل — لا يجرّ @google/genai إلى الحزمة الرئيسية)
 import { normalizeName } from '../utils/normalizeName';
+// قواعد قائمة نواقص الأدوية: الترتيب بالأحدث أولاً، وتقسيمها على حدّ الـ 5 أيام
+import { compareShortagesNewestFirst, splitShortagesByAge } from '../utils/shortages';
 
 // Let's declare our reactive state types inside the component
 interface POSItem {
@@ -1628,7 +1630,7 @@ export default function Dashboard() {
           loaded.push({ id: d.id, name: data.name.trim(), addedAt: data.updatedAt || '' });
         }
       });
-      loaded.sort((a, b) => b.addedAt.localeCompare(a.addedAt));
+      loaded.sort(compareShortagesNewestFirst);
       setShortages(loaded);
     }, () => {
       console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/shortages`);
@@ -1779,6 +1781,14 @@ export default function Dashboard() {
         .catch(e => handleFirestoreError(e, OperationType.DELETE, `users/${userId}/shortages/${id}`));
     }
   }, [currentUser]);
+
+  // تقسيم النواقص لجزأين: أعلى القائمة ما أُضيف خلال آخر 5 أيام، وأسفلها — خلف خط
+  // فاصل — ما تجاوز 5 أيام دون أن يُشترى (شراء الصنف واعتماده يشطبه من القائمة أصلاً).
+  // showShortages ضمن التبعيات ليُعاد حساب حدّ الـ 5 أيام عند كل فتح للقائمة.
+  const { fresh: freshShortages, stale: staleShortages } = useMemo(
+    () => splitShortagesByAge(shortages),
+    [shortages, showShortages]
+  );
 
   // =========================================================
   // النسخ الاحتياطي التلقائي على اللابتوب (يعمل بلا إنترنت)
@@ -4585,20 +4595,49 @@ export default function Dashboard() {
                                 القائمة فارغة — نقرة مزدوجة على أي علاج في سلة البيع تضيفه هنا
                               </p>
                             ) : (
-                              <div className="max-h-[374px] overflow-y-auto divide-y divide-slate-50">
-                                {shortages.map(s => (
-                                  <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-slate-50 group">
-                                    <span className="text-[11px] font-extrabold text-slate-700 truncate">{s.name}</span>
-                                    <button
-                                      type="button"
-                                      onClick={() => removeFromShortages(s.id)}
-                                      title="حذف من النواقص"
-                                      className="text-slate-300 hover:text-rose-500 transition cursor-pointer shrink-0"
-                                    >
-                                      <X className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
-                                ))}
+                              <div className="max-h-[374px] overflow-y-auto">
+                                {/* الجزء العلوي: نواقص آخر 5 أيام (الأحدث أعلاه) */}
+                                <div className="divide-y divide-slate-50">
+                                  {freshShortages.map(s => (
+                                    <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-slate-50 group">
+                                      <span className="text-[11px] font-extrabold text-slate-700 truncate">{s.name}</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => removeFromShortages(s.id)}
+                                        title="حذف من النواقص"
+                                        className="text-slate-300 hover:text-rose-500 transition cursor-pointer shrink-0"
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                                {/* خط فاصل واضح ثم الجزء السفلي: ما تجاوز 5 أيام */}
+                                {staleShortages.length > 0 && (
+                                  <>
+                                    <div className="flex items-center gap-2 px-3 py-1.5 border-y-2 border-rose-300 bg-rose-50">
+                                      <Clock className="w-3 h-3 text-rose-600 shrink-0" />
+                                      <span className="text-[10px] font-black text-rose-700">
+                                        مضى عليها أكثر من 5 أيام ({staleShortages.length})
+                                      </span>
+                                    </div>
+                                    <div className="divide-y divide-slate-50 bg-rose-50/30">
+                                      {staleShortages.map(s => (
+                                        <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-rose-50 group">
+                                          <span className="text-[11px] font-extrabold text-rose-900/70 truncate">{s.name}</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => removeFromShortages(s.id)}
+                                            title="حذف من النواقص"
+                                            className="text-slate-300 hover:text-rose-500 transition cursor-pointer shrink-0"
+                                          >
+                                            <X className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </>
+                                )}
                               </div>
                             )}
                           </div>
