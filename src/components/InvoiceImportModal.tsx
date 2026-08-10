@@ -80,6 +80,7 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
   const [searchOpen, setSearchOpen] = useState<string | null>(null); // item id
   const [searchQuery, setSearchQuery] = useState('');
   const [editingStockId, setEditingStockId] = useState<string | null>(null); // المخزون الحالي قيد التعديل (بالنقر المزدوج)
+  const [expiryPickerId, setExpiryPickerId] = useState<string | null>(null); // منتقي شهر/سنة الانتهاء المفتوح (بطاقة واحدة كحد أقصى)
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
 
@@ -775,38 +776,66 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
                           </div>
                           <div className="space-y-1">
                             <label className="text-[10px] font-bold text-slate-500 block text-center">تاريخ الانتهاء (ص)</label>
-                            {/* مستطيل واحد مدموج بصرياً: الشهر قائمة منسدلة برقم صريح 1-12 (بدل
-                                اسم مثل Sep/Oct الذي تفرضه متصفحات أندرويد على input type=month)،
-                                والسنة رقم — كلاهما بلا حدود خاصة به، والحدّ على الحاوية الخارجية فقط */}
-                            {/* بلا bg-white هنا عمداً: تنسيق الحقول العام (.pastel select/input) يفرض
-                                لون تعبئة !important موحّداً على القائمة والحقل معاً، فتلقائياً يتطابقان
-                                تماماً بلا خيط فاصل — الحاوية توفّر الحدّ الخارجي فقط */}
-                            <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden focus-within:outline focus-within:outline-2 focus-within:outline-emerald-400" dir="ltr">
-                              <select
-                                value={item.expiry ? Number(item.expiry.split('-')[1]) : ''}
-                                onChange={e => {
-                                  const mm = e.target.value.padStart(2, '0');
-                                  const yyyy = item.expiry ? item.expiry.split('-')[0] : String(new Date().getFullYear());
-                                  updateItem(item.id, { expiry: `${yyyy}-${mm}` });
-                                }}
-                                className="flex-1 min-w-0 bg-transparent px-1 py-1.5 text-xs font-extrabold text-slate-900 text-center focus:outline-none cursor-pointer"
-                              >
-                                {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-                                  <option key={m} value={m}>{m}</option>
-                                ))}
-                              </select>
-                              <span className="text-slate-300 font-bold shrink-0">/</span>
-                              <input
-                                type="number" min={2000} max={2100} inputMode="numeric"
-                                value={item.expiry ? Number(item.expiry.split('-')[0]) : ''}
-                                onChange={e => {
-                                  const yyyy = Math.max(2000, Number(e.target.value) || new Date().getFullYear());
-                                  const mm = item.expiry ? item.expiry.split('-')[1] : '12';
-                                  updateItem(item.id, { expiry: `${yyyy}-${mm}` });
-                                }}
-                                className="flex-1 min-w-0 bg-transparent px-1 py-1.5 text-xs font-extrabold text-slate-900 text-center focus:outline-none [appearance:textfield]"
-                              />
-                            </div>
+                            {/* مستطيل واحد يعرض «شهر / سنة»؛ الضغط عليه يفتح منتقياً واحداً
+                                بعمودَين متجاورَين (الشهر 1-12 والسنة) — أرقام صريحة دائماً،
+                                لا أسماء أشهر مثل Sep/Oct التي يفرضها منتقي month على أندرويد */}
+                            {(() => {
+                              const curM = item.expiry ? Number(item.expiry.split('-')[1]) : 0;
+                              const curY = item.expiry ? Number(item.expiry.split('-')[0]) : 0;
+                              const baseYear = new Date().getFullYear();
+                              const years = Array.from({ length: 11 }, (_, i) => baseYear + i);
+                              if (curY && !years.includes(curY)) years.unshift(curY);
+                              const setExpiry = (m: number, y: number) =>
+                                updateItem(item.id, { expiry: `${y}-${String(m).padStart(2, '0')}` });
+                              const isOpen = expiryPickerId === item.id;
+                              return (
+                                <div className="relative">
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpiryPickerId(isOpen ? null : item.id)}
+                                    className="w-full flex items-center justify-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-extrabold text-slate-900 cursor-pointer focus:outline-emerald-400"
+                                    dir="ltr"
+                                  >
+                                    <span>{curM || '—'}</span>
+                                    <span className="text-slate-300">/</span>
+                                    <span>{curY || '—'}</span>
+                                  </button>
+                                  {isOpen && (
+                                    <>
+                                      {/* طبقة إغلاق بالنقر خارج المنتقي — تُزال معه فوراً (بلا AnimatePresence) */}
+                                      <div className="fixed inset-0 z-10" onClick={() => setExpiryPickerId(null)} />
+                                      <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-20 bg-white border border-slate-200 rounded-xl shadow-lg p-2 flex gap-2" dir="ltr">
+                                        {/* عمود الشهر */}
+                                        <div className="max-h-44 overflow-y-auto flex flex-col gap-0.5">
+                                          {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                                            <button key={m} type="button"
+                                              onClick={() => setExpiry(m, curY || baseYear)}
+                                              className={`w-11 py-1 rounded-md text-xs font-extrabold text-center cursor-pointer transition ${
+                                                m === curM ? 'bg-emerald-600 text-white' : 'text-slate-700 hover:bg-emerald-50'
+                                              }`}>
+                                              {m}
+                                            </button>
+                                          ))}
+                                        </div>
+                                        <div className="w-px bg-slate-100 shrink-0" />
+                                        {/* عمود السنة — اختيار السنة يُغلق المنتقي (الشهر ثم السنة هو التسلسل الطبيعي) */}
+                                        <div className="max-h-44 overflow-y-auto flex flex-col gap-0.5">
+                                          {years.map(y => (
+                                            <button key={y} type="button"
+                                              onClick={() => { setExpiry(curM || 12, y); setExpiryPickerId(null); }}
+                                              className={`w-14 py-1 rounded-md text-xs font-extrabold text-center cursor-pointer transition font-mono ${
+                                                y === curY ? 'bg-emerald-600 text-white' : 'text-slate-700 hover:bg-emerald-50'
+                                              }`}>
+                                              {y}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </div>
                           <div className="space-y-1">
                             <label className="text-[10px] font-bold text-slate-500 block text-center">إجمالي الأشرطة</label>
