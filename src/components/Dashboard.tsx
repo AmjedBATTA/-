@@ -1878,10 +1878,11 @@ export default function Dashboard() {
     }
   }, [currentUser]);
 
-  // فتح تلقائي لنافذة استيراد الفاتورة إن وُجدت مسودة معلَّقة من جهاز/جلسة سابقة لم تُغلَق بعد
+  // فتح تلقائي لنافذة استيراد الفاتورة إن وُجدت مسودة معلَّقة من جهاز/جلسة سابقة لم تُغلَق بعد —
+  // داخل تبويب طلبيات المذاخر فقط؛ لا تقفز فوق نقطة البيع أو المخزن أو غيرهما.
   useEffect(() => {
-    if (invoiceImportDraft && !showInvoiceImport) setShowInvoiceImport(true);
-  }, [invoiceImportDraft, showInvoiceImport]);
+    if (invoiceImportDraft && !showInvoiceImport && activeTab === 'b2b') setShowInvoiceImport(true);
+  }, [invoiceImportDraft, showInvoiceImport, activeTab]);
 
   // --- AUDIT LOG HELPER (يُضيف إدخالاً جديداً لسجل التدقيق محلياً وفي Firestore) ---
   const addAuditEntry = (entry: Omit<AuditEntry, 'id' | 'timestamp' | 'actor'>) => {
@@ -9040,9 +9041,13 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Invoice Import Modal — محمّل كسولاً */}
-      <AnimatePresence>
-        {showInvoiceImport && (
+      {/* Invoice Import Modal — محمّل كسولاً، ويُعرض داخل تبويب طلبيات المذاخر حصراً:
+          مغادرة التبويب تُخفيه دون مسح المسودة السحابية، ويعود عند الرجوع للتبويب.
+          بلا AnimatePresence عمداً: مع Suspense كابن مباشر لا يكتمل تتبّع الخروج،
+          فتبقى اللوحة وخلفيتها الشفافة معلّقتين في الصفحة وتبتلعان كل النقرات
+          بعد الإغلاق. الإزالة الفورية مضمونة، وحركة الدخول (initial/animate) باقية. */}
+      <>
+        {showInvoiceImport && activeTab === 'b2b' && (
           <Suspense fallback={null}>
           <InvoiceImportModal
             inventory={inventory}
@@ -9086,7 +9091,7 @@ export default function Dashboard() {
           />
           </Suspense>
         )}
-      </AnimatePresence>
+      </>
 
       {/* Hidden financial print div */}
       <div className='print-financial p-8 text-right' dir='rtl'>

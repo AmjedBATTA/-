@@ -152,7 +152,7 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
 
   // --- WRITE-BACK: مسودة المراجعة الحالية إلى السحابة (عبر onDraftChange الذي يكتبها الأب) ---
   // أي تعديل على الأصناف يُبلَّغ بعد نصف ثانية من التوقف عن التغيير. مغادرة خطوة المراجعة
-  // (زر «إعادة») أو تفريغ القائمة يُبلَّغ بـ null فتُمسَح المسودة السحابية تلقائياً —
+  // أو تفريغ القائمة يُبلَّغ بـ null فتُمسَح المسودة السحابية تلقائياً —
   // بلا أي كود خاص في كل نقطة خروج ممكنة.
   useEffect(() => {
     const snapshot: InvoiceImportDraft | null = (step === 'review' && items.length > 0) ? {
@@ -909,10 +909,7 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
         {step === 'review' && (
           <div className="p-4 border-t border-slate-100 shrink-0 bg-white rounded-b-3xl">
             <div className="flex items-center gap-3">
-              <button onClick={() => { setStep('upload'); setImageFile(null); setImagePreview(''); }}
-                className="flex-none px-4 py-3 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 transition cursor-pointer">
-                إعادة
-              </button>
+              {/* زر «إعادة» حُذف — علامة ✕ تغلق وتمسح المسودة، وإعادة الفتح تبدأ بصورة جديدة أصلاً */}
               <button
                 disabled={validCount === 0 || hasDuplicateBarcode}
                 onClick={handleConfirm}
