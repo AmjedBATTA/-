@@ -89,3 +89,19 @@ export interface ExtractedInvoice {
   items: ExtractedInvoiceItem[];
   totalAmount?: number;
 }
+
+// نسخة قابلة للحفظ سحابياً من صنف مُستخرَج: matchedMedicine (كائن دواء كامل) تُستبدَل بمعرّفه
+// فقط، ويُعاد ربطها بالدواء الفعلي من المخزون الحي عند استعادة المسودة (لا نُجمِّد سعراً قديماً).
+export interface InvoiceImportDraftItem extends Omit<ExtractedInvoiceItem, 'matchedMedicine'> {
+  matchedMedicineId: string | null;
+}
+
+// مسودة «استيراد فاتورة من صورة» المعلَّقة — تُحفظ في Firestore فور الوصول لخطوة المراجعة
+// وتُستعاد تلقائياً عند فتح التطبيق من جديد، حتى تُغلَق النافذة صراحة أو تُضاف أصنافها للشراء.
+export interface InvoiceImportDraft {
+  items: InvoiceImportDraftItem[];
+  supplierName: string;
+  invoiceNo?: string;
+  date?: string;
+  totalAmount?: number;
+}

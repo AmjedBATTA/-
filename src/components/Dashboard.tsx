@@ -5,9 +5,10 @@ import {
   Truck, HelpCircle, PlusCircle, Search, Trash2, ArrowLeft, 
   MapPin, UserCheck, ShieldCheck, Users, Sparkles, Plus, Check,
   TrendingUp, FileText, Ban, DollarSign, Calendar, RefreshCw, BarChart3, Pill, ClipboardList, ShieldAlert, Heart,
-  Barcode, X, Volume2, VolumeX, Camera, Download, Upload, Bell, Pencil, ScanLine, ChevronDown, CalendarClock
+  Barcode, X, Volume2, VolumeX, Camera, Download, Upload, Bell, Pencil, ScanLine, ChevronDown, CalendarClock,
+  Calculator as CalculatorIcon
 } from 'lucide-react';
-import { Medicine, Order, Supplier } from '../types';
+import { Medicine, Order, Supplier, InvoiceImportDraft } from '../types';
 // تحميل كسول: نافذة استيراد الفاتورة + مكتبة @google/genai (~305kB) لا تُحمَّل إلا عند فتحها
 const InvoiceImportModal = lazy(() => import('./InvoiceImportModal'));
 
@@ -364,9 +365,10 @@ interface CartItemRowProps {
   onDec: (medId: string) => void;
   onRemove: (medId: string) => void;
   onAddShortage: (med: Medicine) => void; // نقر مزدوج على اسم العنصر = إضافته لقائمة نواقص الأدوية
+  onAddToCalculator?: (amount: number) => void; // موجودة فقط والحاسبة مفتوحة — زر إجمالي السطر أعلى يسار الصف
 }
 
-const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove, onAddShortage }: CartItemRowProps) => {
+const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove, onAddShortage, onAddToCalculator }: CartItemRowProps) => {
   // السعر المُحاسَب دائماً هو الجمهوري — «الرسمي» للعرض فقط ولا يدخل في المحاسبة.
   // وضع «السعر الرسمي» مفعّلاً: يُعرض الرسمي وحده (سعراً وإجمالياً) ويُخفى الجمهوري
   // و«الشراء» — شاشة تواجه الزبون، لا تكشف السعر الداخلي ولا الكلفة.
@@ -399,7 +401,15 @@ const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove
   const shownTotal = shownUnit * item.quantity;
 
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-2xl p-4 flex items-center justify-between gap-3">
+    <div className="relative bg-slate-800 border border-slate-700 rounded-2xl p-4 flex items-center justify-between gap-3">
+      {/* إضافة إجمالي هذا السطر للحاسبة — تظهر فقط والحاسبة مفتوحة */}
+      {onAddToCalculator && (
+        <button type="button" onClick={() => onAddToCalculator(shownTotal)}
+          title="أضف إجمالي هذه المادة للحاسبة"
+          className="absolute top-1.5 left-1.5 w-5 h-5 bg-slate-700 hover:bg-emerald-600 text-slate-300 hover:text-white rounded-md flex items-center justify-center text-xs font-black leading-none cursor-pointer transition z-10">
+          +
+        </button>
+      )}
       <div className="flex-1 min-w-0 space-y-1.5 select-none cursor-pointer"
         onDoubleClick={() => onAddShortage(item.medicine)}
         title="نقرة مزدوجة: إضافة إلى نواقص الأدوية">
@@ -438,6 +448,124 @@ const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove
     </div>
   );
 });
+
+// =========================================================
+// CALCULATOR — لوحة حساب سريعة بجانب سلة البيع، بنفس نمط عزل POSSearchBar
+// (forwardRef + memo): حالتها الداخلية (الشاشة، العامل المعلَّق) لا تُعيد تصيير
+// Dashboard مع كل ضغطة، وأزرار «أضف للحاسبة» في صفوف السلة تدفع قيماً إليها
+// عبر الـ ref مباشرة (pushValue) دون أي اتصال ذهاباً وإياباً عبر حالة الأب.
+// =========================================================
+export type CalculatorHandle = { pushValue: (n: number) => void };
+
+type CalcOp = '÷' | '×' | '−' | '+';
+
+function calcApply(a: number, b: number, op: CalcOp): number {
+  switch (op) {
+    case '÷': return b === 0 ? 0 : a / b;
+    case '×': return a * b;
+    case '−': return a - b;
+    case '+': return a + b;
+  }
+}
+
+// يعرض الرقم بفواصل الآلاف (متّسق مع toLocaleString المستخدَم في كل مبالغ التطبيق)
+// مع الحفاظ على نقطة عشرية قيد الكتابة كما هي بدل حذفها.
+function formatCalcDisplay(s: string): string {
+  if (s.endsWith('.')) return Number(s.slice(0, -1)).toLocaleString() + '.';
+  const n = Number(s);
+  return Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 6 }) : s;
+}
+
+interface CalculatorProps { onClose: () => void }
+
+const Calculator = React.memo(forwardRef<CalculatorHandle, CalculatorProps>(({ onClose }, ref) => {
+  const [display, setDisplay] = useState('0');
+  const [prevValue, setPrevValue] = useState<number | null>(null);
+  const [pendingOp, setPendingOp] = useState<CalcOp | null>(null);
+  const [overwrite, setOverwrite] = useState(true);
+
+  const inputDigit = (d: string) => {
+    setDisplay(prev => (overwrite || prev === '0') ? d : prev + d);
+    setOverwrite(false);
+  };
+  const inputDot = () => {
+    setDisplay(prev => overwrite ? '0.' : (prev.includes('.') ? prev : prev + '.'));
+    setOverwrite(false);
+  };
+  const clearAll = () => { setDisplay('0'); setPrevValue(null); setPendingOp(null); setOverwrite(true); };
+  const toggleSign = () => setDisplay(prev => (Number(prev) === 0 ? prev : String(-Number(prev))));
+  const percent = () => setDisplay(prev => String(Number(prev) / 100));
+
+  // زر عامل (÷ × − +) أو = (op=null): يُتمّ أي عملية معلَّقة أولاً، ثم يبدأ عاملاً جديداً أو ينهي بلا عامل
+  const applyOp = (op: CalcOp | null) => {
+    const current = Number(display);
+    if (pendingOp && !overwrite) {
+      const result = calcApply(prevValue ?? current, current, pendingOp);
+      setDisplay(String(result));
+      setPrevValue(op ? result : null);
+    } else {
+      setPrevValue(current);
+    }
+    setPendingOp(op);
+    setOverwrite(true);
+  };
+
+  useImperativeHandle(ref, () => ({
+    // القيمة الأولى تُعرض مباشرة؛ أي ضغطة لاحقة تُتمّ عاملاً معلَّقاً (يدوي أو من ضغطة سابقة) إن
+    // وُجد، وإلا تُجمَع تلقائياً مع الناتج الحالي — فتظهر النتيجة فوراً كما طلب المستخدم.
+    pushValue: (n: number) => {
+      if (pendingOp && overwrite) {
+        const result = calcApply(prevValue ?? Number(display), n, pendingOp);
+        setDisplay(String(result));
+        setPrevValue(null); setPendingOp(null); setOverwrite(true);
+      } else if (display === '0' && prevValue === null) {
+        setDisplay(String(n));
+        setOverwrite(true);
+      } else {
+        setDisplay(String(Number(display) + n));
+        setPrevValue(null); setPendingOp(null); setOverwrite(true);
+      }
+    },
+  }), [display, prevValue, pendingOp, overwrite]);
+
+  const digitCls = 'h-9 rounded-xl text-sm font-black flex items-center justify-center transition cursor-pointer select-none bg-slate-800 text-white hover:bg-slate-700';
+  const opCls = 'h-9 rounded-xl text-sm font-black flex items-center justify-center transition cursor-pointer select-none bg-emerald-600 text-white hover:bg-emerald-500';
+  const funcCls = 'h-9 rounded-xl text-sm font-black flex items-center justify-center transition cursor-pointer select-none bg-slate-700 text-white hover:bg-slate-600';
+
+  return (
+    <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-3 space-y-2">
+      <div className="flex items-center justify-between px-1">
+        <span className="text-[10px] font-black text-slate-400">حاسبة سريعة</span>
+        <button type="button" onClick={onClose} title="إغلاق الحاسبة"
+          className="text-slate-500 hover:text-rose-400 transition cursor-pointer">
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      <div className="text-left px-1 pb-1 overflow-hidden" dir="ltr">
+        <span className="font-mono font-black text-white text-xl truncate block">{formatCalcDisplay(display)}</span>
+      </div>
+      <div className="grid grid-cols-4 gap-1.5" dir="ltr">
+        <button type="button" onClick={clearAll} className={`${funcCls} bg-rose-900/60 hover:bg-rose-800/70 text-rose-200`}>AC</button>
+        <button type="button" onClick={toggleSign} className={funcCls}>+/−</button>
+        <button type="button" onClick={percent} className={funcCls}>%</button>
+        <button type="button" onClick={() => applyOp('÷')} className={opCls}>÷</button>
+
+        {['7', '8', '9'].map(d => <button key={d} type="button" onClick={() => inputDigit(d)} className={digitCls}>{d}</button>)}
+        <button type="button" onClick={() => applyOp('×')} className={opCls}>×</button>
+
+        {['4', '5', '6'].map(d => <button key={d} type="button" onClick={() => inputDigit(d)} className={digitCls}>{d}</button>)}
+        <button type="button" onClick={() => applyOp('−')} className={opCls}>−</button>
+
+        {['1', '2', '3'].map(d => <button key={d} type="button" onClick={() => inputDigit(d)} className={digitCls}>{d}</button>)}
+        <button type="button" onClick={() => applyOp('+')} className={opCls}>+</button>
+
+        <button type="button" onClick={() => inputDigit('0')} className={`${digitCls} col-span-2`}>0</button>
+        <button type="button" onClick={inputDot} className={digitCls}>.</button>
+        <button type="button" onClick={() => applyOp(null)} className="h-9 rounded-xl text-sm font-black flex items-center justify-center transition cursor-pointer select-none bg-emerald-500 text-white hover:bg-emerald-400">=</button>
+      </div>
+    </div>
+  );
+}));
 
 export default function Dashboard() {
   // --- FIREBASE AUTH & SYNCHRONIZER METRIC REGISTERS ---
@@ -596,12 +724,19 @@ export default function Dashboard() {
   const [posCustomerName, setPosCustomerName] = useState('زبون نقدي / خارجي');
   const [posDiscountPercent, setPosDiscountPercent] = useState<number>(0);
   const [posOnCredit, setPosOnCredit] = useState(false); // بيع بالآجل: تسجيل ذمّة على الزبون بدل القبض النقدي
+  // مزامنة سلة البيع المعلّقة (غير المحفوظة) مع السحابة — تبقى معروضة حتى لو أُغلق التطبيق،
+  // إلى أن تُصرَف الفاتورة أو تُمسَح السلة يدوياً. null = لم تصل بعد أول نسخة من الخادم
+  // (يمنع كتابة سلة فارغة فوق سلة محفوظة سابقاً في السحابة قبل قراءتها أولاً).
+  const posCartSyncRef = useRef<string | null>(null);
   // القيمة المُلتزَمة للفلترة — تُحدَّث من POSSearchBar بعد debounce فقط (لا تتغيّر مع كل ضغطة)
   const [searchPOSQuery, setSearchPOSQuery] = useState('');
   // useDeferredValue: يمنح React صلاحية تأجيل/مقاطعة إعادة بناء رف المخزون الكبير دون تجميد الواجهة
   const deferredPOSQuery = useDeferredValue(searchPOSQuery);
   // مرجع لـ POSSearchBar حتى يستطيع قارئ الباركود دفع القيمة الممسوحة إلى الحقل
   const posSearchRef = useRef<POSSearchHandle>(null);
+  // الحاسبة السريعة بجانب سلة البيع — مخفية افتراضياً؛ مرجعها يستقبل قيم أزرار «+» في صفوف السلة
+  const [showCalculator, setShowCalculator] = useState(false);
+  const calculatorRef = useRef<CalculatorHandle>(null);
   const [lastPrintedInvoice, setLastPrintedInvoice] = useState<SaleRecord | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [showVirtualPriceInPOS, setShowVirtualPriceInPOS] = useState(false);
@@ -666,6 +801,10 @@ export default function Dashboard() {
 
   // --- PURCHASE ORDERS (طلبيات الشراء) STATES ---
   const [showInvoiceImport, setShowInvoiceImport] = useState(false);
+  // مسودة «استيراد فاتورة من صورة» المعلَّقة من السحابة — تُستعاد تلقائياً حتى بعد إغلاق التطبيق
+  // وإعادة فتحه، ولا تُمسَح إلا بإغلاق النافذة صراحة (✕) أو إضافة أصنافها لمسودة الشراء.
+  const [invoiceImportDraft, setInvoiceImportDraft] = useState<InvoiceImportDraft | null>(null);
+  const invoiceDraftSyncRef = useRef<string | null>(null);
   // استيراد المخزون الكامل من ملف ES-PRO
   const [bulkImportStatus, setBulkImportStatus] = useState<'idle' | 'loading' | 'writing' | 'done' | 'error'>('idle');
   const [bulkImportProgress, setBulkImportProgress] = useState({ done: 0, total: 0 });
@@ -1276,6 +1415,9 @@ export default function Dashboard() {
   useEffect(() => {
     if (!currentUser) {
       setIsSyncing(false);
+      posCartSyncRef.current = null; // إعادة ضبط عند الخروج — حتى لا تُستخدم بيانات حساب سابق عند دخول لاحق
+      invoiceDraftSyncRef.current = null;
+      setInvoiceImportDraft(null); // امسح أي مسودة استيراد من حساب سابق عند الخروج
       return;
     }
 
@@ -1636,6 +1778,40 @@ export default function Dashboard() {
       console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/shortages`);
     });
 
+    // 17. Sync Pending POS Cart (سلة بيع لم تُصرَف فاتورتها بعد — مستند واحد مشترك بين كل الأجهزة)
+    // تبقى معلّقة وتظهر عند فتح التطبيق من جديد، حتى تُصرَف الفاتورة أو تُمسَح السلة يدوياً.
+    // posCartSyncRef يحمل آخر نسخة "معروفة متزامنة" (محلياً أو من الخادم) — يمنع حلقة كتابة⇄قراءة
+    // لا نهائية بين هذا المستمع وتأثير الكتابة الآتي أدناه.
+    const unsubPosCart = onSnapshot(doc(db, 'users', userId, 'meta', 'posCart'), (snap) => {
+      const data = snap.data() as { items?: POSItem[]; customerName?: string; discountPercent?: number; onCredit?: boolean } | undefined;
+      const items = Array.isArray(data?.items) ? data.items : [];
+      const customerName = typeof data?.customerName === 'string' && data.customerName ? data.customerName : 'زبون نقدي / خارجي';
+      const discountPercent = typeof data?.discountPercent === 'number' ? data.discountPercent : 0;
+      const onCredit = !!data?.onCredit;
+      const serialized = JSON.stringify({ items, customerName, discountPercent, onCredit });
+      if (serialized === posCartSyncRef.current) return; // صدى كتابتنا نحن — تجاهله
+      posCartSyncRef.current = serialized;
+      setCurrentCart(items);
+      setPosCustomerName(customerName);
+      setPosDiscountPercent(discountPercent);
+      setPosOnCredit(onCredit);
+    }, () => {
+      console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/meta/posCart`);
+    });
+
+    // 18. Sync Pending Invoice-Import Draft (مسودة مراجعة فاتورة مصوَّرة لم تُضَف لمسودة الشراء بعد)
+    // تُفتح نافذة الاستيراد تلقائياً عند وجود مسودة محفوظة — انظر تأثير الفتح التلقائي أدناه.
+    const unsubInvoiceDraft = onSnapshot(doc(db, 'users', userId, 'meta', 'invoiceImportDraft'), (snap) => {
+      const data = snap.exists() ? (snap.data() as InvoiceImportDraft) : null;
+      const hasItems = !!data && Array.isArray(data.items) && data.items.length > 0;
+      const serialized = hasItems ? JSON.stringify(data) : null;
+      if (serialized === invoiceDraftSyncRef.current) return; // صدى كتابتنا نحن — تجاهله
+      invoiceDraftSyncRef.current = serialized;
+      setInvoiceImportDraft(hasItems ? data : null);
+    }, () => {
+      console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/meta/invoiceImportDraft`);
+    });
+
     setIsSyncing(false);
 
     return () => {
@@ -1653,8 +1829,59 @@ export default function Dashboard() {
       unsubAliases();
       unsubStrips();
       unsubShortages();
+      unsubPosCart();
+      unsubInvoiceDraft();
     };
   }, [currentUser]);
+
+  // --- WRITE-BACK: سلة البيع المعلّقة إلى السحابة (users/{uid}/meta/posCart) ---
+  // أي تغيير محلي على السلة (إضافة/حذف/تعديل كمية/تغيير الزبون أو الخصم) يُكتَب بعد نصف ثانية
+  // من التوقف عن التغيير. عند صرف الفاتورة أو الضغط على «مسح» تصبح currentCart فارغة — فتُكتب
+  // سلة فارغة تلقائياً هنا، أي لا حاجة لأي كود خاص في نقاط الصرف أو المسح.
+  // posCartSyncRef === null يعني أن أول نسخة من الخادم لم تصل بعد؛ الكتابة تنتظرها حتى لا تُطبَق
+  // سلة محلية فارغة (البداية الافتراضية) فوق سلة محفوظة سابقاً في السحابة من جهاز آخر.
+  useEffect(() => {
+    if (!currentUser || posCartSyncRef.current === null) return;
+    const serialized = JSON.stringify({ items: currentCart, customerName: posCustomerName, discountPercent: posDiscountPercent, onCredit: posOnCredit });
+    if (serialized === posCartSyncRef.current) return;
+    const userId = currentUser.uid;
+    const t = setTimeout(() => {
+      posCartSyncRef.current = serialized;
+      setDoc(doc(db, 'users', userId, 'meta', 'posCart'), {
+        items: currentCart,
+        customerName: posCustomerName,
+        discountPercent: posDiscountPercent,
+        onCredit: posOnCredit,
+        userId,
+        updatedAt: new Date().toISOString(),
+      }).catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/meta/posCart`));
+    }, 500);
+    return () => clearTimeout(t);
+  }, [currentCart, posCustomerName, posDiscountPercent, posOnCredit, currentUser]);
+
+  // --- WRITE-BACK: مسودة استيراد الفاتورة إلى السحابة (users/{uid}/meta/invoiceImportDraft) ---
+  // تُستدعى من InvoiceImportModal نفسها (onDraftChange) بعد أي تعديل، فتكتب أو تمسح المستند —
+  // draft=null يعني امسح (غادر خطوة المراجعة، أو أُغلقت النافذة، أو اعتُمدت الأصناف للشراء).
+  const onInvoiceDraftChange = useCallback((draft: InvoiceImportDraft | null) => {
+    setInvoiceImportDraft(draft);
+    if (!currentUser) return;
+    const serialized = draft ? JSON.stringify(draft) : null;
+    if (serialized === invoiceDraftSyncRef.current) return;
+    invoiceDraftSyncRef.current = serialized;
+    const userId = currentUser.uid;
+    const ref = doc(db, 'users', userId, 'meta', 'invoiceImportDraft');
+    if (draft) {
+      setDoc(ref, { ...draft, userId, updatedAt: new Date().toISOString() })
+        .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/meta/invoiceImportDraft`));
+    } else {
+      deleteDoc(ref).catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/meta/invoiceImportDraft`));
+    }
+  }, [currentUser]);
+
+  // فتح تلقائي لنافذة استيراد الفاتورة إن وُجدت مسودة معلَّقة من جهاز/جلسة سابقة لم تُغلَق بعد
+  useEffect(() => {
+    if (invoiceImportDraft && !showInvoiceImport) setShowInvoiceImport(true);
+  }, [invoiceImportDraft, showInvoiceImport]);
 
   // --- AUDIT LOG HELPER (يُضيف إدخالاً جديداً لسجل التدقيق محلياً وفي Firestore) ---
   const addAuditEntry = (entry: Omit<AuditEntry, 'id' | 'timestamp' | 'actor'>) => {
@@ -2726,19 +2953,19 @@ export default function Dashboard() {
     );
   }, [inventory, deferredInvQuery]);
 
-  // مطابقة باركود/اسم في مرور واحد فقط (بدل 3 مرورات متتالية)
+  // مطابقة دقيقة فقط (باركود أو اسم مطابق تماماً) — تُستخدم عند Enter لإضافة المادة تلقائياً للسلة.
+  // كانت سابقاً تقبل أي تطابق جزئي (substring) كـ"مطابقة"، فباركود أو اسم خاطئ يتقاطع
+  // حرفياً مع مادة أخرى مختلفة كان يُضاف صمتاً للسلة والحقل يُفرَّغ فوراً — يبدو للمستخدم
+  // وكأن ما كتبه "اختفى بسرعة" بينما فعلياً أُضيفت مادة أخرى خاطئة. الآن: بلا تطابق تام
+  // لا تُضاف أي مادة، ويبقى النص في الحقل ليراه المستخدم ويصححه أو يختار من قائمة الرف.
   const findScanMatch = useCallback((query: string): Medicine | null => {
     const q = query.trim();
     if (!q) return null;
     const lower = q.toLowerCase();
-    let exact: Medicine | null = null;
-    const partial: Medicine | null = null;
-    for (const { m, nameAr, nameEn, sci, barcode } of inventoryIndex) {
+    for (const { m, nameAr, nameEn, barcode } of inventoryIndex) {
       if (barcode === lower || nameAr === lower || nameEn === lower) return m;
-      if (!exact && (nameAr.includes(lower) || nameEn.includes(lower) || sci.includes(lower) || barcode.includes(lower)))
-        exact = m;
     }
-    return exact || partial;
+    return null;
   }, [inventoryIndex]);
 
   // مُثبّت بـ useCallback + functional update — حتى تبقى هويته مستقرة (يعتمد عليه POSSearchBar)
@@ -2804,6 +3031,8 @@ export default function Dashboard() {
   // مغلّفان لتثبيت الإشارة المُمرَّرة إلى CartItemRow (onInc/onDec لا تقبل delta)
   const incCartQty = useCallback((medId: string) => updateCartQty(medId, 1), [updateCartQty]);
   const decCartQty = useCallback((medId: string) => updateCartQty(medId, -1), [updateCartQty]);
+  // يدفع قيمة لمرجع الحاسبة مباشرة — هوية ثابتة دائماً (لا تعتمد على حالة) فلا تُعيد تصيير صفوف السلة
+  const addToCalculator = useCallback((amount: number) => { calculatorRef.current?.pushValue(amount); }, []);
 
   // COMPLETE SALE DISPATCH
   const handleCheckoutPOS = (e: FormEvent) => {
@@ -4480,6 +4709,7 @@ export default function Dashboard() {
                               onDec={decCartQty}
                               onRemove={removeFromCart}
                               onAddShortage={addToShortages}
+                              onAddToCalculator={showCalculator ? addToCalculator : undefined}
                             />
                           ))}
                         </div>
@@ -6405,26 +6635,24 @@ export default function Dashboard() {
                                 </div>
 
                                 <div className="pt-1 space-y-2">
-                                  {/* المورّد الموحّد — يُطبَّق على كل أصناف المسودة (نُقل من عمود الجدول) */}
+                                  {/* المورّد الموحّد — حقل واحد يُملأ تلقائياً من الفاتورة المستوردة ويبقى قابلاً
+                                      للتعديل دائماً، مع اقتراحات من الموردين المسجَّلين أثناء الكتابة (datalist)
+                                      بدل قائمة منفصلة تبقى فارغة حين يكون اسم الفاتورة غير مسجَّل مسبقاً */}
                                   <div className="space-y-1">
                                     <label className="block text-slate-500 text-[10px] font-bold">المورّد (يُطبَّق على كل الأصناف)</label>
-                                    <select
-                                      value={suppliers.find(s => s.name === purchaseSupplier) ? purchaseSupplier : ''}
-                                      onChange={(e) => applyDraftSupplier(e.target.value)}
-                                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold text-slate-700 cursor-pointer"
-                                    >
-                                      <option value="">— اختر المورد —</option>
-                                      {suppliers.map(s => (
-                                        <option key={s.id} value={s.name}>{s.name}</option>
-                                      ))}
-                                    </select>
                                     <input
                                       type="text"
+                                      list="purchase-supplier-suggestions"
                                       value={purchaseSupplier}
                                       onChange={(e) => applyDraftSupplier(e.target.value)}
                                       className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold text-slate-700"
-                                      placeholder="أو اكتب اسم المورد يدوياً..."
+                                      placeholder="اسم المورد — يُملأ تلقائياً من الفاتورة أو اكتبه يدوياً"
                                     />
+                                    <datalist id="purchase-supplier-suggestions">
+                                      {suppliers.map(s => (
+                                        <option key={s.id} value={s.name} />
+                                      ))}
+                                    </datalist>
                                   </div>
 
                                   {/* شراء بالآجل: تسجيل الفاتورة كذمّة على المذخر بدل خصمها نقداً */}
@@ -8794,6 +9022,24 @@ export default function Dashboard() {
         )}
       </AnimatePresence>
 
+      {/* حاسبة سريعة — أيقونة عائمة ثابتة يمين الشاشة (بجانب سلة البيع)، مرفوعة هنا خارج أي عنصر
+          متحرّك (motion.div) لأن أي تحويل (transform) في سلف يُنشئ كتلة احتواء جديدة لـ fixed
+          فيُفسد التموضع الحقيقي بالنسبة للشاشة. تظهر في تبويب نقطة البيع فقط. */}
+      {activeTab === 'pos' && (
+        <div className="fixed top-24 right-3 sm:right-6 z-40">
+          {showCalculator ? (
+            <div className="w-60">
+              <Calculator ref={calculatorRef} onClose={() => setShowCalculator(false)} />
+            </div>
+          ) : (
+            <button type="button" onClick={() => setShowCalculator(true)} title="حاسبة سريعة"
+              className="w-11 h-11 bg-slate-900 border border-slate-700 rounded-2xl shadow-lg flex items-center justify-center text-slate-300 hover:text-emerald-400 hover:border-emerald-500 transition cursor-pointer">
+              <CalculatorIcon className="w-5 h-5" />
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Invoice Import Modal — محمّل كسولاً */}
       <AnimatePresence>
         {showInvoiceImport && (
@@ -8807,7 +9053,9 @@ export default function Dashboard() {
             onLearnAliases={learnInvoiceAliases}
             onForgetAliases={forgetInvoiceAliases}
             onLearnStrips={learnStripsMemory}
-            onClose={() => setShowInvoiceImport(false)}
+            initialDraft={invoiceImportDraft}
+            onDraftChange={onInvoiceDraftChange}
+            onClose={() => { setShowInvoiceImport(false); onInvoiceDraftChange(null); }}
             onConfirm={(draftItems, supplierName) => {
               // Merge imported items into purchaseDraft
               setPurchaseDraft(prev => {
@@ -8831,6 +9079,7 @@ export default function Dashboard() {
               });
               if (supplierName) setPurchaseSupplier(supplierName);
               setShowInvoiceImport(false);
+              onInvoiceDraftChange(null);
               setPurchaseSuccessBanner(`تم استيراد ${draftItems.length} صنف من الفاتورة إلى مسودة الشراء`);
               setTimeout(() => setPurchaseSuccessBanner(null), 5000);
             }}

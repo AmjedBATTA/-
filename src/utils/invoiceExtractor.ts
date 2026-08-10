@@ -61,8 +61,13 @@ export type StripsMemoryMap = Record<string, number>;
 // نجرّب اسمين (الترجمة العربية + الاسم الإنجليزي الخام) لأن أغلب المخزون
 // محفوظ بالعربية بينما الفاتورة إنجليزية — فنطابق العربي بالعربي والإنجليزي بالإنجليزي معاً.
 export function matchToInventory(name: string, inventory: Medicine[], altName?: string, aliases?: InvoiceAliasMap): { medicine: Medicine | null; score: number; byAlias?: boolean } {
-  const inputs = [normalizeName(name)];
-  if (altName) { const n = normalizeName(altName); if (n && n !== inputs[0]) inputs.push(n); }
+  const normalizedName = normalizeName(name);
+  const normalizedAlt = altName ? normalizeName(altName) : '';
+  // إن لم يكن هناك اسم عربي فعلي، الاسم الإنكليزي (altName) هو المدخل الأساسي للمطابقة —
+  // لا احتياطي ثانوي فقط — فلا تُهدَر المطابقة على اسم عربي فارغ لا يطابق شيئاً أصلاً.
+  const inputs = normalizedName
+    ? [normalizedName, ...(normalizedAlt && normalizedAlt !== normalizedName ? [normalizedAlt] : [])]
+    : (normalizedAlt ? [normalizedAlt] : []);
 
   // الذاكرة أولاً: إن سبق للمستخدم مطابقة هذا الاسم بعينه، نعيد نفس الدواء فوراً —
   // بشرط أن يكون الدواء ما يزال موجوداً في المخزون (وإلا نتجاهل الذاكرة ونكمل ضبابياً).
@@ -177,6 +182,22 @@ export function parseNumber(val: number | string | null | undefined): number {
   return Math.round(Number(s)) || 0;
 }
 
+// يستخرج رسالة مقروءة من أي خطأ — Error عادي، أو كائن خطأ REST من Google بالشكل
+// {error:{message}}، أو نص، أو أي شكل آخر — بدل ابتلاعه صامتاً وإظهار «خطأ غير متوقع»
+// بلا أي تفصيل يُبنى عليه تشخيص (مفتاح/حصة/شبكة/نموذج غير متاح).
+export function getErrorMessage(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === 'string') return e;
+  if (e && typeof e === 'object') {
+    const anyE = e as Record<string, unknown>;
+    const nested = anyE.error as Record<string, unknown> | undefined;
+    if (nested && typeof nested.message === 'string') return nested.message;
+    if (typeof anyE.message === 'string') return anyE.message;
+    try { return JSON.stringify(e); } catch { /* كائن دائري — نتجاهل ونكمل */ }
+  }
+  return String(e);
+}
+
 export async function extractInvoice(
   imageBase64: string,
   mimeType: string,
@@ -214,7 +235,7 @@ export async function extractInvoice(
   ];
 
   let text = '';
-  let lastError: unknown = null;
+  let lastError: Error | null = null;
   for (const model of MODEL_CANDIDATES) {
     try {
       const response = await ai.models.generateContent({ model, contents });
@@ -222,12 +243,12 @@ export async function extractInvoice(
       lastError = null;
       break;
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      lastError = e;
+      const msg = getErrorMessage(e);
+      lastError = new Error(msg);
       // 404 / NOT_FOUND يعني النموذج غير متاح على هذا الحساب → جرّب التالي.
       // أي خطأ آخر (مفتاح، حصة، شبكة) لا فائدة من تكراره فنوقفه فوراً.
       if (!/not found|404|not supported|unsupported/i.test(msg)) {
-        throw e;
+        throw lastError;
       }
     }
   }
@@ -243,9 +264,10 @@ export async function extractInvoice(
   const items: ExtractedInvoiceItem[] = rawItems.map((item, idx) => {
     const arabicName = (item.arabicName || item.rawName || '').trim();
     const rawName = (item.rawName || '').trim();
-    // نطابق بالعربي والإنجليزي معاً — أغلب المخزون عربي والفاتورة إنجليزية،
-    // مع أولوية «ذاكرة المطابقات» المُتعلَّمة من مطابقات المستخدم السابقة
-    const { medicine, score, byAlias } = matchToInventory(arabicName, inventory, rawName, aliases);
+    // نطابق بالعربي والإنجليزي معاً — أغلب المخزون عربي والفاتورة إنجليزية، مع أولوية «ذاكرة
+    // المطابقات» المُتعلَّمة سابقاً. نمرّر اسم Gemini العربي الخام (قبل الاستبدال باسم الفاتورة
+    // عند غيابه) حتى تعتمد matchToInventory على الإنكليزي وحده متى لم يكن هناك اسم عربي فعلي.
+    const { medicine, score, byAlias } = matchToInventory((item.arabicName || '').trim(), inventory, rawName, aliases);
     // الأمبول/الفيال: عدد القطع من الاسم (يتجاوز تقدير Gemini). الأقراص تبقى بمنطق الأشرطة.
     const avCount = ampouleVialCount(rawName || arabicName);
     // ذاكرة الأشرطة أولاً: إن سبق للمستخدم تصحيح/تأكيد «شريط/علبة» لهذا الدواء،

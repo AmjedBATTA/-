@@ -4,8 +4,8 @@ import {
   X, Upload, Loader2, CheckCircle2, AlertCircle, Search,
   ChevronDown, Trash2, FileImage, KeyRound, Eye, EyeOff, Barcode,
 } from 'lucide-react';
-import type { Medicine, ExtractedInvoiceItem, ExtractedInvoice } from '../types';
-import { extractInvoice, getStoredApiKey, saveApiKey, matchToInventory, normalizeName } from '../utils/invoiceExtractor';
+import type { Medicine, ExtractedInvoiceItem, ExtractedInvoice, InvoiceImportDraft } from '../types';
+import { extractInvoice, getStoredApiKey, saveApiKey, matchToInventory, normalizeName, getErrorMessage } from '../utils/invoiceExtractor';
 import type { InvoiceAliasMap, StripsMemoryMap } from '../utils/invoiceExtractor';
 
 interface DraftItem {
@@ -35,6 +35,8 @@ interface Props {
   onLearnAliases: (pairs: Array<{ key: string; medicineId: string; label?: string }>) => void;
   onForgetAliases: (keys: string[], medicineId: string) => void; // تُنسى فقط إن كانت تشير لهذا الدواء
   onLearnStrips: (pairs: Array<{ medicineId: string; stripsPerBox: number }>) => void;
+  initialDraft?: InvoiceImportDraft | null; // مسودة معلَّقة من جلسة/جهاز سابق — تُستعاد مباشرة في خطوة المراجعة
+  onDraftChange: (draft: InvoiceImportDraft | null) => void; // يُبلَّغ به الأب فيكتبه (أو يمسحه) في السحابة
   onClose: () => void;
   onConfirm: (items: DraftItem[], supplierName: string) => void;
 }
@@ -56,15 +58,24 @@ function matchBadge(score: number, isMatched: boolean, byAlias?: boolean) {
   return { label: 'تقريبي', cls: 'bg-blue-100 text-blue-700 border-blue-200' };
 }
 
-export default function InvoiceImportModal({ inventory, expiryDates, lastEnteredExpiry, aliases, stripsMemory, onLearnAliases, onForgetAliases, onLearnStrips, onClose, onConfirm }: Props) {
+export default function InvoiceImportModal({ inventory, expiryDates, lastEnteredExpiry, aliases, stripsMemory, onLearnAliases, onForgetAliases, onLearnStrips, initialDraft, onDraftChange, onClose, onConfirm }: Props) {
   const initialKey = getStoredApiKey();
-  const [step, setStep] = useState<Step>(initialKey ? 'upload' : 'key');
+  // مسودة سحابية معلَّقة (فاتورة رُوجعت ولم تُضَف لمسودة الشراء بعد) — تُستعاد مباشرة في خطوة المراجعة
+  const [step, setStep] = useState<Step>(initialDraft ? 'review' : (initialKey ? 'upload' : 'key'));
   const [apiKey, setApiKey] = useState(initialKey);
   const [showKey, setShowKey] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>('');
-  const [extractedInvoice, setExtractedInvoice] = useState<ExtractedInvoice | null>(null);
-  const [items, setItems] = useState<ExtractedInvoiceItem[]>([]);
+  const [extractedInvoice, setExtractedInvoice] = useState<ExtractedInvoice | null>(() =>
+    initialDraft ? { supplierName: initialDraft.supplierName, invoiceNo: initialDraft.invoiceNo, date: initialDraft.date, items: [], totalAmount: initialDraft.totalAmount } : null
+  );
+  // إعادة ربط كل صنف بالدواء الفعلي من المخزون الحي عبر matchedMedicineId — لا نُجمِّد بيانات قديمة
+  const [items, setItems] = useState<ExtractedInvoiceItem[]>(() =>
+    initialDraft ? initialDraft.items.map(({ matchedMedicineId, ...rest }) => ({
+      ...rest,
+      matchedMedicine: inventory.find(m => m.id === matchedMedicineId) || null,
+    })) : []
+  );
   const [error, setError] = useState<string>('');
   const [searchOpen, setSearchOpen] = useState<string | null>(null); // item id
   const [searchQuery, setSearchQuery] = useState('');
@@ -121,7 +132,7 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
       try {
         const found = await detector.detect(v);
         if (found && found.length > 0 && active) {
-          setItems(prev => prev.map(it => it.id === targetId ? { ...it, barcode: found[0].rawValue } : it));
+          applyBarcode(targetId, found[0].rawValue);
           active = false;
           stopScan();
           return;
@@ -131,10 +142,32 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
     };
     raf = requestAnimationFrame(check);
     return () => { active = false; if (raf) cancelAnimationFrame(raf); };
+    // applyBarcode يُعاد إنشاؤه في كل عرض؛ إضافته هنا تُعيد تشغيل التأثير (وتقطع بثّ الكاميرا)
+    // عند أي إعادة رسم لا علاقة لها بالمسح — الاعتماد على targetId المُلتقَط أعلاه كافٍ وآمن.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scanningItemId, scanStream, stopScan]);
 
   // إيقاف الكاميرا عند إغلاق النافذة
   useEffect(() => () => { scanStream?.getTracks().forEach(t => t.stop()); }, [scanStream]);
+
+  // --- WRITE-BACK: مسودة المراجعة الحالية إلى السحابة (عبر onDraftChange الذي يكتبها الأب) ---
+  // أي تعديل على الأصناف يُبلَّغ بعد نصف ثانية من التوقف عن التغيير. مغادرة خطوة المراجعة
+  // (زر «إعادة») أو تفريغ القائمة يُبلَّغ بـ null فتُمسَح المسودة السحابية تلقائياً —
+  // بلا أي كود خاص في كل نقطة خروج ممكنة.
+  useEffect(() => {
+    const snapshot: InvoiceImportDraft | null = (step === 'review' && items.length > 0) ? {
+      items: items.map(({ matchedMedicine, ...rest }) => ({
+        ...rest,
+        matchedMedicineId: matchedMedicine?.id ?? null,
+      })),
+      supplierName: extractedInvoice?.supplierName || '',
+      invoiceNo: extractedInvoice?.invoiceNo,
+      date: extractedInvoice?.date,
+      totalAmount: extractedInvoice?.totalAmount,
+    } : null;
+    const t = setTimeout(() => onDraftChange(snapshot), 500);
+    return () => clearTimeout(t);
+  }, [step, items, extractedInvoice, onDraftChange]);
 
   const handleFilePicked = useCallback((file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -165,7 +198,7 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
           const result = reader.result as string;
           resolve(result.split(',')[1]);
         };
-        reader.onerror = reject;
+        reader.onerror = () => reject(new Error('تعذّرت قراءة ملف الصورة.'));
         reader.readAsDataURL(imageFile);
       });
       const invoice = await extractInvoice(base64, imageFile.type, apiKey.trim(), inventory, aliases, stripsMemory);
@@ -186,7 +219,7 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
       setItems(prepared);
       setStep('review');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'حدث خطأ غير متوقع';
+      const msg = getErrorMessage(err);
       setError(msg.includes('API_KEY') || msg.includes('403') || msg.includes('401')
         ? 'مفتاح API غير صالح. تحقق من مفتاح Gemini.'
         : msg);
@@ -229,6 +262,8 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
       matchScore: 1,
       matchedByAlias: false,
       arabicName: med.nameAr,
+      // الشركة المصنّعة المسجَّلة في المخزون تحلّ محل تخمين OCR من الفاتورة عند الربط
+      ...(med.manufacturer ? { company: med.manufacturer } : {}),
       ...(memStrips && memStrips > 0 ? { stripsPerBox: memStrips } : {}),
       // باركود المخزون + تاريخ المادة (آخر مُدخَل/مخزَّن) عند غياب تاريخ الفاتورة
       ...(wasDefault && medMonth ? { expiry: medMonth } : {}),
@@ -280,10 +315,12 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
         return {
           id: `draft-inv-${it.id}`,
           medicineId: med?.id,
-          nameAr: med?.nameAr || it.arabicName || it.rawName,
-          // الاسم الإنكليزي: نحترم المسجَّل في المخزون إن وُجد (لا يُستبدل بعد حفظه الأول)،
-          // وإلا تصحيح المستخدم في بطاقة المراجعة، وإلا الاسم الخام من الفاتورة (بلا الشركة)
-          nameEn: med?.nameEn || (it.nameEnOverride ?? cleanEnglishName(it.rawName, it.company)).trim(),
+          // الاسم العربي: حقل المراجعة يعكس دائماً القيمة الحالية (يبدأ من اسم المخزون عند المطابقة
+          // ويبقى كذلك ما لم يُعدَّل) — فتعديله هنا هو ما يُعتمد، لا الاسم القديم صامتاً.
+          nameAr: it.arabicName || med?.nameAr || it.rawName,
+          // الاسم الإنكليزي: تعديل المستخدم في بطاقة المراجعة (إن وُجد) هو المعتمد دائماً حتى لو كان
+          // للمادة اسم محفوظ سابقاً؛ وإلا المحفوظ في المخزون، وإلا الاسم الخام من الفاتورة (بلا الشركة)
+          nameEn: (it.nameEnOverride ?? (med?.nameEn || cleanEnglishName(it.rawName, it.company))).trim(),
           // الشركة: المسجَّلة في المخزون إن وُجدت، وإلا المكتشفة من الفاتورة
           manufacturer: med?.manufacturer || it.company || '',
           // تصحيح المخزون: يُمرَّر فقط إن غيّره المستخدم فعلاً عن الرصيد الحالي للمادة المطابقة
@@ -309,13 +346,20 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
   const newCount = items.filter(it => !it.matchedMedicine).length;
   const validCount = items.filter(it => it.quantityBoxes > 0 && it.pricePerBox > 0).length;
 
-  // صاحب باركود موجود مسبقاً في المخزون (للمنع لا الدمج): مادة جديدة أُدخل لها باركود مكرّر
+  // صاحب باركود موجود مسبقاً في المخزون — الباركود مطابقة مؤكَّدة 100%، أوثق من تطابق الاسم الضبابي
   const barcodeOwner = (barcode: string): Medicine | null => {
     const b = (barcode || '').trim();
     if (!b) return null;
     return inventory.find(m => (m.barcode || '').trim() === b) || null;
   };
-  // منع المتابعة إن كان أي صنف جديد يحمل باركوداً موجوداً لمادة أخرى
+  // إدخال/مسح باركود لمادة «جديدة» يتبيّن أنه مسجَّل فعلاً لدواء في المخزون: نربطها به تلقائياً
+  // (نفس أثر اختياره يدوياً من مربّع البحث) بدل تركها «جديدة» خلف تحذير يُبقيها عالقة.
+  const applyBarcode = (itemId: string, barcode: string) => {
+    const owner = barcodeOwner(barcode);
+    if (owner) selectMedicine(itemId, owner);
+    else updateItem(itemId, { barcode });
+  };
+  // شبكة أمان: صنف بقي بلا مطابقة وباركوده مع ذلك مسجَّل لمادة أخرى (مثلاً بعد إلغاء ربطه يدوياً)
   const hasDuplicateBarcode = items.some(it => !it.matchedMedicine && !!barcodeOwner(it.barcode || ''));
 
   const filteredInventory = inventory.filter(m => {
@@ -324,13 +368,14 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
   }).slice(0, 8);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      {/* Backdrop */}
+    <div className="fixed inset-y-0 left-0 z-50 flex max-w-full">
+      {/* Backdrop — أخف من نافذة منبثقة عادية ومن دون تشويش، يُبقي صفحة الشراء ظاهرة خلفه
+          فتبدو اللوحة امتداداً لنفس الشاشة بدل نافذة منفصلة */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        className="fixed inset-0 bg-black/20"
         onClick={onClose}
       />
 
@@ -355,10 +400,11 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
       )}
 
       <motion.div
-        initial={{ opacity: 0, y: 40 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 40 }}
-        className="relative bg-white rounded-t-3xl sm:rounded-3xl w-full sm:max-w-4xl max-h-[96vh] flex flex-col shadow-2xl"
+        initial={{ x: '-100%' }}
+        animate={{ x: 0 }}
+        exit={{ x: '-100%' }}
+        transition={{ type: 'tween', duration: 0.25, ease: 'easeOut' }}
+        className="relative bg-white w-full sm:w-[600px] lg:w-[760px] h-full flex flex-col shadow-2xl rounded-r-3xl"
         dir="rtl"
       >
         {/* Header */}
@@ -559,21 +605,29 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
 
                     return (
                       <div key={item.id}
-                        className={`bg-slate-50 border rounded-2xl p-3.5 space-y-2.5 text-right transition
-                          ${item.matchedMedicine ? 'border-emerald-100' : 'border-amber-200'}`}>
+                        className="bg-slate-50 border-2 border-black rounded-2xl p-3.5 space-y-2.5 text-right transition">
 
-                        {/* الصف الأول: الشارة على حافة القراءة (تصطفّ عمودياً عبر البطاقات) ثم الاسم، والحذف في الطرف البعيد */}
-                        <div className="flex items-start gap-2.5">
-                          <span className={`shrink-0 mt-0.5 text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${badge.cls}`}>
+                        {/* الصف الأول: الشارة، ثم الاسم العربي وبجانبه الشركة، والحذف في الطرف البعيد */}
+                        <div className="flex items-start gap-2">
+                          <span className={`shrink-0 mt-0.5 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full border ${badge.cls}`}>
                             {badge.label}
                           </span>
                           <div className="flex-1 min-w-0">
-                            <input
-                              value={item.arabicName}
-                              onChange={e => updateItem(item.id, { arabicName: e.target.value })}
-                              className="w-full text-sm font-extrabold text-slate-900 bg-transparent border-b border-transparent focus:border-emerald-400 focus:outline-none pb-0.5"
-                              placeholder="الاسم العربي"
-                            />
+                            <div className="flex items-baseline gap-2">
+                              <input
+                                value={item.arabicName}
+                                onChange={e => updateItem(item.id, { arabicName: e.target.value })}
+                                className="flex-1 min-w-0 text-sm font-extrabold text-slate-900 bg-transparent border-b border-transparent focus:border-emerald-400 focus:outline-none pb-0.5"
+                                placeholder="الاسم العربي"
+                              />
+                              {/* الشركة المصنّعة — بجانب الاسم مباشرة (تُملأ في المخزون عند المطابقة إن كان الحقل فارغاً) */}
+                              <input
+                                value={item.company}
+                                onChange={e => updateItem(item.id, { company: e.target.value })}
+                                className="shrink-0 w-24 min-w-0 text-[11px] font-bold text-slate-500 bg-transparent border-b border-slate-100 focus:border-emerald-400 focus:outline-none pb-0.5"
+                                placeholder="الشركة"
+                              />
+                            </div>
                             {item.rawName !== item.arabicName && (
                               <p className="text-[10px] text-slate-400 font-mono truncate mt-0.5">{item.rawName}</p>
                             )}
@@ -584,50 +638,18 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
                           </button>
                         </div>
 
-                        {/* كتلة التعريف الهادئة: الشركة + الاسم الإنكليزي — عمودان على الشاشات الواسعة */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 pr-1">
-                          {/* الشركة المصنّعة (تُملأ في المخزون عند المطابقة إن كان الحقل فارغاً) */}
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-bold text-slate-400 shrink-0">الشركة</span>
-                            <input
-                              value={item.company}
-                              onChange={e => updateItem(item.id, { company: e.target.value })}
-                              className="flex-1 min-w-0 text-[11px] font-bold text-slate-700 bg-transparent border-b border-slate-100 focus:border-emerald-400 focus:outline-none pb-0.5"
-                              placeholder="اسم الشركة المصنّعة"
-                            />
-                          </div>
-
-                          {/* الاسم الإنكليزي — المحفوظ في المخزون يُعرض فقط (يُعدَّل من شاشة المخزون)؛
-                              وإن لم يكن للمادة اسم إنكليزي بعد، يُعرض اسم الفاتورة قابلاً للتصحيح
-                              قبل حفظه الأول (يُحفظ مرة واحدة ولا يتغيّر في الفواتير القادمة) */}
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-bold text-slate-400 shrink-0">الاسم الإنكليزي</span>
-                            {item.matchedMedicine?.nameEn?.trim() ? (
-                              <>
-                                <p dir="ltr" className="flex-1 min-w-0 truncate text-left text-[11px] font-mono font-bold text-slate-500">
-                                  {item.matchedMedicine.nameEn}
-                                </p>
-                                <span className="shrink-0 text-[10px] font-bold text-slate-400 bg-slate-100 border border-slate-200 rounded-full px-1.5 py-0.5"
-                                  title="محفوظ من مطابقة سابقة — يُعدَّل من شاشة المخزون فقط">
-                                  من المخزن
-                                </span>
-                              </>
-                            ) : (
-                              <>
-                                <input
-                                  dir="ltr"
-                                  value={item.nameEnOverride ?? cleanEnglishName(item.rawName, item.company)}
-                                  onChange={e => updateItem(item.id, { nameEnOverride: e.target.value })}
-                                  className="flex-1 min-w-0 text-left text-[11px] font-mono font-bold text-slate-700 bg-transparent border-b border-slate-100 focus:border-emerald-400 focus:outline-none pb-0.5"
-                                  placeholder="English name"
-                                />
-                                <span className="shrink-0 text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-full px-1.5 py-0.5"
-                                  title="سيُحفظ مع المادة في المخزن عند الاعتماد — لأول مرة فقط، ولن يتغيّر في الفواتير القادمة">
-                                  يُحفظ لأول مرة
-                                </span>
-                              </>
-                            )}
-                          </div>
+                        {/* الاسم الإنكليزي — قابل للتعديل دائماً حتى بعد المطابقة؛ يبدأ من المحفوظ في
+                            المخزون إن وُجد (فلا يضيع) أو من اسم الفاتورة، وأي تعديل هنا هو ما يُعتمد
+                            في المخزون عند الاعتماد (انظر handleConfirm) بدل القديم المحفوظ صامتاً. */}
+                        <div className="flex items-center gap-2 pr-1">
+                          <span className="text-[10px] font-bold text-slate-400 shrink-0">الاسم الإنكليزي</span>
+                          <input
+                            dir="ltr"
+                            value={item.nameEnOverride ?? (item.matchedMedicine?.nameEn?.trim() || cleanEnglishName(item.rawName, item.company))}
+                            onChange={e => updateItem(item.id, { nameEnOverride: e.target.value })}
+                            className="flex-1 min-w-0 text-left text-[11px] font-mono font-bold text-slate-700 bg-transparent border-b border-slate-100 focus:border-emerald-400 focus:outline-none pb-0.5"
+                            placeholder="English name"
+                          />
                         </div>
 
                         {/* Row 2: medicine match */}
@@ -774,13 +796,33 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
                           </div>
                           <div className="space-y-1">
                             <label className="text-[10px] font-bold text-slate-500 block text-center">تاريخ الانتهاء (ص)</label>
-                            <input
-                              type="month"
-                              value={item.expiry || ''}
-                              onChange={e => updateItem(item.id, { expiry: e.target.value })}
-                              className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-extrabold text-slate-900 text-center focus:outline-emerald-400"
-                              dir="ltr"
-                            />
+                            {/* شهر/سنة برقمين بدل input type=month — متصفحات أندرويد تعرض اسم الشهر
+                                (Oct) بدل رقمه في منتقي month الأصلي، وهذا غير مرغوب هنا */}
+                            <div className="flex items-center gap-1" dir="ltr">
+                              <input
+                                type="number" min={1} max={12} inputMode="numeric"
+                                placeholder="شهر"
+                                value={item.expiry ? Number(item.expiry.split('-')[1]) : ''}
+                                onChange={e => {
+                                  const mm = Math.min(12, Math.max(1, Number(e.target.value) || 1));
+                                  const yyyy = item.expiry ? item.expiry.split('-')[0] : String(new Date().getFullYear());
+                                  updateItem(item.id, { expiry: `${yyyy}-${String(mm).padStart(2, '0')}` });
+                                }}
+                                className="w-1/2 min-w-0 bg-white border border-slate-200 rounded-lg px-1 py-1.5 text-xs font-extrabold text-slate-900 text-center focus:outline-emerald-400"
+                              />
+                              <span className="text-slate-300 font-bold shrink-0">/</span>
+                              <input
+                                type="number" min={2000} max={2100} inputMode="numeric"
+                                placeholder="سنة"
+                                value={item.expiry ? Number(item.expiry.split('-')[0]) : ''}
+                                onChange={e => {
+                                  const yyyy = Math.max(2000, Number(e.target.value) || new Date().getFullYear());
+                                  const mm = item.expiry ? item.expiry.split('-')[1] : '12';
+                                  updateItem(item.id, { expiry: `${yyyy}-${mm}` });
+                                }}
+                                className="w-1/2 min-w-0 bg-white border border-slate-200 rounded-lg px-1 py-1.5 text-xs font-extrabold text-slate-900 text-center focus:outline-emerald-400"
+                              />
+                            </div>
                           </div>
                           <div className="space-y-1">
                             <label className="text-[10px] font-bold text-slate-500 block text-center">إجمالي الأشرطة</label>
@@ -842,7 +884,7 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
                                 type="text"
                                 inputMode="numeric"
                                 value={item.barcode || ''}
-                                onChange={e => updateItem(item.id, { barcode: e.target.value })}
+                                onChange={e => applyBarcode(item.id, e.target.value)}
                                 placeholder="امسح بالكاميرا أو اكتب الباركود — يُولَّد تلقائياً إن تُرك فارغاً"
                                 className={`flex-1 min-w-0 bg-white border rounded-lg px-3 py-1.5 text-[11px] font-mono font-bold text-slate-900 text-center focus:outline-emerald-400 ${dupMed ? 'border-rose-400 bg-rose-50' : 'border-slate-200'}`}
                                 dir="ltr"
