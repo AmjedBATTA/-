@@ -749,35 +749,14 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
                             <div className="w-full bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1.5 text-xs font-extrabold text-emerald-700 text-center">
                               {pricePerStrip.toLocaleString()}
                             </div>
+                            {/* التكلفة السابقة المسجَّلة في المخزن — رقم مجرَّد بالأحمر مباشرة تحت س/شريط، بلا تسمية ولا صندوق */}
+                            {item.matchedMedicine && (item.matchedMedicine.costPrice ?? item.matchedMedicine.lastCostPrice) && (
+                              <p className="text-[10px] font-extrabold text-rose-600 text-center">
+                                {(item.matchedMedicine.costPrice ?? item.matchedMedicine.lastCostPrice)!.toLocaleString()}
+                              </p>
+                            )}
                           </div>
                         </div>
-
-                        {/* الأسعار المرجعية من المخزن (للمطابق) — سطر هادئ بدل صندوق رمادي كامل */}
-                        {item.matchedMedicine && (
-                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1">
-                            <span className="text-[10px] font-bold text-slate-400">الأسعار الحالية في المخزن (للشريط):</span>
-                            <span className="text-[10px] font-bold text-slate-500">
-                              تكلفة سابقة{' '}
-                              <span className="text-[11px] font-extrabold text-slate-700 font-mono">
-                                {(item.matchedMedicine.costPrice ?? item.matchedMedicine.lastCostPrice)
-                                  ? (item.matchedMedicine.costPrice ?? item.matchedMedicine.lastCostPrice)!.toLocaleString()
-                                  : '—'}
-                              </span>
-                            </span>
-                            <span className="text-[10px] font-bold text-slate-500">
-                              جمهور{' '}
-                              <span className="text-[11px] font-extrabold text-slate-700 font-mono">
-                                {item.matchedMedicine.price ? item.matchedMedicine.price.toLocaleString() : '—'}
-                              </span>
-                            </span>
-                            <span className="text-[10px] font-bold text-slate-500">
-                              رسمي{' '}
-                              <span className="text-[11px] font-extrabold text-slate-700 font-mono">
-                                {item.matchedMedicine.secondaryPrice ? item.matchedMedicine.secondaryPrice.toLocaleString() : '—'}
-                              </span>
-                            </span>
-                          </div>
-                        )}
 
                         {/* أسعار البيع + تاريخ الانتهاء + إجمالي الأشرطة — صفّ واحد على الشاشات الواسعة.
                             لمسة لونية خفيفة تميّز سعر الجمهور (أزرق) عن الرسمي (بنفسجي) دون صراخ */}
@@ -796,31 +775,36 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
                           </div>
                           <div className="space-y-1">
                             <label className="text-[10px] font-bold text-slate-500 block text-center">تاريخ الانتهاء (ص)</label>
-                            {/* شهر/سنة برقمين بدل input type=month — متصفحات أندرويد تعرض اسم الشهر
-                                (Oct) بدل رقمه في منتقي month الأصلي، وهذا غير مرغوب هنا */}
-                            <div className="flex items-center gap-1" dir="ltr">
-                              <input
-                                type="number" min={1} max={12} inputMode="numeric"
-                                placeholder="شهر"
+                            {/* مستطيل واحد مدموج بصرياً: الشهر قائمة منسدلة برقم صريح 1-12 (بدل
+                                اسم مثل Sep/Oct الذي تفرضه متصفحات أندرويد على input type=month)،
+                                والسنة رقم — كلاهما بلا حدود خاصة به، والحدّ على الحاوية الخارجية فقط */}
+                            {/* بلا bg-white هنا عمداً: تنسيق الحقول العام (.pastel select/input) يفرض
+                                لون تعبئة !important موحّداً على القائمة والحقل معاً، فتلقائياً يتطابقان
+                                تماماً بلا خيط فاصل — الحاوية توفّر الحدّ الخارجي فقط */}
+                            <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden focus-within:outline focus-within:outline-2 focus-within:outline-emerald-400" dir="ltr">
+                              <select
                                 value={item.expiry ? Number(item.expiry.split('-')[1]) : ''}
                                 onChange={e => {
-                                  const mm = Math.min(12, Math.max(1, Number(e.target.value) || 1));
+                                  const mm = e.target.value.padStart(2, '0');
                                   const yyyy = item.expiry ? item.expiry.split('-')[0] : String(new Date().getFullYear());
-                                  updateItem(item.id, { expiry: `${yyyy}-${String(mm).padStart(2, '0')}` });
+                                  updateItem(item.id, { expiry: `${yyyy}-${mm}` });
                                 }}
-                                className="w-1/2 min-w-0 bg-white border border-slate-200 rounded-lg px-1 py-1.5 text-xs font-extrabold text-slate-900 text-center focus:outline-emerald-400"
-                              />
+                                className="flex-1 min-w-0 bg-transparent px-1 py-1.5 text-xs font-extrabold text-slate-900 text-center focus:outline-none cursor-pointer"
+                              >
+                                {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                                  <option key={m} value={m}>{m}</option>
+                                ))}
+                              </select>
                               <span className="text-slate-300 font-bold shrink-0">/</span>
                               <input
                                 type="number" min={2000} max={2100} inputMode="numeric"
-                                placeholder="سنة"
                                 value={item.expiry ? Number(item.expiry.split('-')[0]) : ''}
                                 onChange={e => {
                                   const yyyy = Math.max(2000, Number(e.target.value) || new Date().getFullYear());
                                   const mm = item.expiry ? item.expiry.split('-')[1] : '12';
                                   updateItem(item.id, { expiry: `${yyyy}-${mm}` });
                                 }}
-                                className="w-1/2 min-w-0 bg-white border border-slate-200 rounded-lg px-1 py-1.5 text-xs font-extrabold text-slate-900 text-center focus:outline-emerald-400"
+                                className="flex-1 min-w-0 bg-transparent px-1 py-1.5 text-xs font-extrabold text-slate-900 text-center focus:outline-none [appearance:textfield]"
                               />
                             </div>
                           </div>
