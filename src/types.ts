@@ -76,6 +76,7 @@ export interface ExtractedInvoiceItem {
   expiry?: string;    // قابل للتعديل في شاشة المراجعة، بصيغة YYYY-MM
   barcode?: string;   // للمواد الجديدة غير المطابقة — قابل للإدخال في شاشة المراجعة
   stockOverride?: number; // تصحيح المخزون الحالي يدوياً (للمطابق) — يُعتمد كرصيد فعلي عند الاستيراد
+  soldQty?: number;   // زر «مباع»: الرصيد الوهمي كله يُعدّ مبيعاً — يُصفَّر المخزون وتُسجَّل فاتورة بيع بهذه الكمية عند الاعتماد
   matchedMedicine: Medicine | null;
   matchScore: number;
   matchedByAlias?: boolean; // المطابقة جاءت من «ذاكرة المطابقات» المُتعلَّمة (مؤكَّدة سابقاً من المستخدم)

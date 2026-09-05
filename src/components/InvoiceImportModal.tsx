@@ -4,7 +4,8 @@ import {
   X, Upload, Loader2, CheckCircle2, AlertCircle, Search,
   ChevronDown, Trash2, FileImage, KeyRound, Eye, EyeOff, Barcode,
 } from 'lucide-react';
-import type { Medicine, ExtractedInvoiceItem, ExtractedInvoice, InvoiceImportDraft } from '../types';
+import type { Medicine, ExtractedInvoiceItem, ExtractedInvoice, InvoiceImportDraft, Supplier } from '../types';
+import SupplierPicker from './SupplierPicker';
 import { extractInvoice, getStoredApiKey, saveApiKey, matchToInventory, normalizeName, getErrorMessage } from '../utils/invoiceExtractor';
 import type { InvoiceAliasMap, StripsMemoryMap } from '../utils/invoiceExtractor';
 
@@ -15,6 +16,7 @@ interface DraftItem {
   nameEn: string;
   manufacturer: string; // الشركة المصنّعة من الفاتورة — تُملأ في المخزون عند المطابقة إن كان الحقل فارغاً
   stockCorrection?: number; // تصحيح المخزون الحالي يدوياً (للمطابق) — يُعتمد كرصيد فعلي عند الاعتماد
+  soldQty?: number; // «مباع»: كمية الرصيد الوهمي التي تُسجَّل فاتورة بيع عند الاعتماد (مع تصفير المخزون)
   scientificName: string;
   category: string;
   price: number;
@@ -28,6 +30,7 @@ interface DraftItem {
 
 interface Props {
   inventory: Medicine[];
+  suppliers: Supplier[]; // الموردون المحفوظون — مصدر القائمة المنسدلة لاختيار المورد
   expiryDates: Record<string, string>; // معرّف الدواء → تاريخ الانتهاء المخزَّن (الأبكر، للتنبيهات)
   lastEnteredExpiry: Record<string, string>; // معرّف الدواء → آخر تاريخ أدخله المستخدم (بديل عند خلو الفاتورة)
   aliases: InvoiceAliasMap; // ذاكرة المطابقات المُتعلَّمة: اسم الفاتورة المطبَّع → معرّف الدواء
@@ -58,7 +61,7 @@ function matchBadge(score: number, isMatched: boolean, byAlias?: boolean) {
   return { label: 'تقريبي', cls: 'bg-blue-100 text-blue-700 border-blue-200' };
 }
 
-export default function InvoiceImportModal({ inventory, expiryDates, lastEnteredExpiry, aliases, stripsMemory, onLearnAliases, onForgetAliases, onLearnStrips, initialDraft, onDraftChange, onClose, onConfirm }: Props) {
+export default function InvoiceImportModal({ inventory, suppliers, expiryDates, lastEnteredExpiry, aliases, stripsMemory, onLearnAliases, onForgetAliases, onLearnStrips, initialDraft, onDraftChange, onClose, onConfirm }: Props) {
   const initialKey = getStoredApiKey();
   // مسودة سحابية معلَّقة (فاتورة رُوجعت ولم تُضَف لمسودة الشراء بعد) — تُستعاد مباشرة في خطوة المراجعة
   const [step, setStep] = useState<Step>(initialDraft ? 'review' : (initialKey ? 'upload' : 'key'));
@@ -70,6 +73,9 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
     initialDraft ? { supplierName: initialDraft.supplierName, invoiceNo: initialDraft.invoiceNo, date: initialDraft.date, items: [], totalAmount: initialDraft.totalAmount } : null
   );
   // إعادة ربط كل صنف بالدواء الفعلي من المخزون الحي عبر matchedMedicineId — لا نُجمِّد بيانات قديمة
+  // المورد يختاره المستخدم من القائمة المنسدلة (أو يكتب اسماً جديداً) — لا يُلتقط من الصورة أبداً.
+  // يُستعاد من المسودة السحابية فقط إن كان المستخدم قد اختاره سابقاً.
+  const [supplierName, setSupplierName] = useState<string>(initialDraft?.supplierName || '');
   const [items, setItems] = useState<ExtractedInvoiceItem[]>(() =>
     initialDraft ? initialDraft.items.map(({ matchedMedicineId, ...rest }) => ({
       ...rest,
@@ -161,14 +167,14 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
         ...rest,
         matchedMedicineId: matchedMedicine?.id ?? null,
       })),
-      supplierName: extractedInvoice?.supplierName || '',
+      supplierName,
       invoiceNo: extractedInvoice?.invoiceNo,
       date: extractedInvoice?.date,
       totalAmount: extractedInvoice?.totalAmount,
     } : null;
     const t = setTimeout(() => onDraftChange(snapshot), 500);
     return () => clearTimeout(t);
-  }, [step, items, extractedInvoice, onDraftChange]);
+  }, [step, items, extractedInvoice, supplierName, onDraftChange]);
 
   const handleFilePicked = useCallback((file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -327,6 +333,7 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
           // تصحيح المخزون: يُمرَّر فقط إن غيّره المستخدم فعلاً عن الرصيد الحالي للمادة المطابقة
           stockCorrection: (med && it.stockOverride !== undefined && it.stockOverride !== med.availableQuantity)
             ? it.stockOverride : undefined,
+          soldQty: (med && it.soldQty && it.soldQty > 0) ? it.soldQty : undefined,
           scientificName: med?.scientificName || med?.activeIngredient || 'N/A',
           category: med?.category || 'مسكنات الألم',
           price: pricePerStrip,
@@ -337,10 +344,10 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
           expiryDate: it.expiry ? `${it.expiry}-01` : `${DEFAULT_EXPIRY_MONTH}-01`,
           // الباركود: باركود المخزون للمطابق، وإلا المُدخَل يدوياً للجديد، وإلا يُولَّد تلقائياً
           barcode: med?.barcode || (it.barcode || '').trim() || '62811' + Math.floor(Math.random() * 900000 + 100000),
-          warehouse: extractedInvoice?.supplierName || it.company || '',
+          warehouse: supplierName || it.company || '',
         };
       });
-    onConfirm(draftItems, extractedInvoice?.supplierName || '');
+    onConfirm(draftItems, supplierName.trim());
   };
 
   const matchedCount = items.filter(it => it.matchedMedicine).length;
@@ -558,27 +565,26 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
               <motion.div key="review" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                 className="flex flex-col">
 
-                {/* لافتة الملخّص — اسم المورد يتصدّر، ورقم الفاتورة والتاريخ بيانات ثانوية هادئة */}
-                {extractedInvoice?.supplierName && (
-                  <div className="mx-4 sm:mx-5 mt-4 mb-2 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-1.5 text-right">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[10px] text-slate-400 font-bold">المورد المكتشف</p>
-                      <p className="text-sm font-extrabold text-slate-900 truncate">{extractedInvoice.supplierName}</p>
-                    </div>
-                    {extractedInvoice.invoiceNo && (
-                      <div className="text-right">
-                        <p className="text-[10px] text-slate-400 font-bold">رقم الفاتورة</p>
-                        <p className="text-xs font-extrabold text-slate-700 font-mono">{extractedInvoice.invoiceNo}</p>
-                      </div>
-                    )}
-                    {extractedInvoice.date && (
-                      <div className="text-right">
-                        <p className="text-[10px] text-slate-400 font-bold">التاريخ</p>
-                        <p className="text-xs font-extrabold text-slate-700 font-mono">{extractedInvoice.date}</p>
-                      </div>
-                    )}
+                {/* لافتة الملخّص — المورد يُختار يدوياً من الموردين المحفوظين (لا يُلتقط من الصورة)،
+                    ورقم الفاتورة والتاريخ بيانات ثانوية هادئة */}
+                <div className="mx-4 sm:mx-5 mt-4 mb-2 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 flex flex-wrap items-start gap-x-6 gap-y-1.5 text-right">
+                  <div className="flex-1 min-w-[200px]">
+                    <p className="text-[10px] text-slate-400 font-bold mb-1">المورد / المذخر</p>
+                    <SupplierPicker suppliers={suppliers} value={supplierName} onChange={setSupplierName} />
                   </div>
-                )}
+                  {extractedInvoice?.invoiceNo && (
+                    <div className="text-right">
+                      <p className="text-[10px] text-slate-400 font-bold">رقم الفاتورة</p>
+                      <p className="text-xs font-extrabold text-slate-700 font-mono">{extractedInvoice.invoiceNo}</p>
+                    </div>
+                  )}
+                  {extractedInvoice?.date && (
+                    <div className="text-right">
+                      <p className="text-[10px] text-slate-400 font-bold">التاريخ</p>
+                      <p className="text-xs font-extrabold text-slate-700 font-mono">{extractedInvoice.date}</p>
+                    </div>
+                  )}
+                </div>
 
                 {/* صفّ الإحصاءات — أقراص مدمجة خفيفة بدل ثلاث بطاقات ضخمة */}
                 <div className="mx-4 sm:mx-5 mb-3 flex items-center gap-2">
@@ -860,7 +866,7 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
                                 defaultValue={currentStock}
                                 onBlur={e => {
                                   const v = Math.max(0, Math.round(Number(e.target.value)));
-                                  updateItem(item.id, { stockOverride: Number.isFinite(v) ? v : currentStock });
+                                  updateItem(item.id, { stockOverride: Number.isFinite(v) ? v : currentStock, soldQty: undefined });
                                   setEditingStockId(null);
                                 }}
                                 onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingStockId(null); }}
@@ -873,8 +879,23 @@ export default function InvoiceImportModal({ inventory, expiryDates, lastEntered
                               title="انقر مرتين لتصحيح المخزون الفعلي"
                               className={`rounded-xl px-3 py-1.5 flex items-center justify-between cursor-pointer transition border ${corrected ? 'bg-amber-50 border-amber-200' : 'bg-slate-100/70 border-slate-200 hover:border-slate-300'}`}
                             >
-                              <span className={`text-[10px] font-bold ${corrected ? 'text-amber-700' : 'text-slate-500'}`}>
-                                المخزون الحالي في المخزن {corrected ? '(مُصحَّح ✎)' : '— انقر مرتين للتعديل'}
+                              <span className={`text-[10px] font-bold flex items-center gap-1.5 flex-wrap ${corrected ? 'text-amber-700' : 'text-slate-500'}`}>
+                                <span>المخزون الحالي في المخزن {item.soldQty ? '(مُباع بالكامل ✓)' : corrected ? '(مُصحَّح ✎)' : '— انقر مرتين للتعديل'}</span>
+                                {/* «مباع»: الرصيد الوهمي كله بيع فعلي لم يُسجَّل بالباركود — يُصفَّر ويُسجَّل فاتورة بيع عند الاعتماد */}
+                                {(item.matchedMedicine.availableQuantity > 0 || item.soldQty) && (
+                                  <button type="button"
+                                    onClick={e => {
+                                      e.stopPropagation();
+                                      if (item.soldQty) updateItem(item.id, { soldQty: undefined, stockOverride: undefined });
+                                      else updateItem(item.id, { soldQty: item.matchedMedicine!.availableQuantity, stockOverride: 0 });
+                                    }}
+                                    title={item.soldQty ? 'إلغاء اعتبار الرصيد مبيعاً' : 'اعتبار الرصيد الحالي كله مبيعاً (يُصفَّر المخزون وتُسجَّل فاتورة بيع عند الاعتماد)'}
+                                    className={`px-2 py-0.5 rounded-md text-[9px] font-black border transition cursor-pointer ${item.soldQty
+                                      ? 'bg-rose-500 border-rose-500 text-white hover:bg-rose-600'
+                                      : 'bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100'}`}>
+                                    {item.soldQty ? `مباع ${item.soldQty.toLocaleString()} ✓` : 'مباع'}
+                                  </button>
+                                )}
                               </span>
                               <span className={`text-xs font-extrabold font-mono ${corrected ? 'text-amber-800' : 'text-slate-700'}`}>
                                 {corrected && (

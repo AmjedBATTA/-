@@ -1,4 +1,4 @@
-﻿import React, { useState, FormEvent, useEffect, useRef, useMemo, useCallback, useDeferredValue, forwardRef, useImperativeHandle, lazy, Suspense } from 'react';
+﻿import React, { useState, useReducer, FormEvent, useEffect, useRef, useMemo, useCallback, useDeferredValue, forwardRef, useImperativeHandle, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   ShoppingBag, Wallet, Info, CheckCircle2, AlertCircle, Clock, 
@@ -9,6 +9,7 @@ import {
   Calculator as CalculatorIcon
 } from 'lucide-react';
 import { Medicine, Order, Supplier, InvoiceImportDraft } from '../types';
+import SupplierPicker from './SupplierPicker';
 // تحميل كسول: نافذة استيراد الفاتورة + مكتبة @google/genai (~305kB) لا تُحمَّل إلا عند فتحها
 const InvoiceImportModal = lazy(() => import('./InvoiceImportModal'));
 
@@ -25,6 +26,18 @@ import {
 import { downloadCSV, datedFilename } from '../utils/csvExport';
 // مطبِّع أسماء الأدوية (ملف مستقل — لا يجرّ @google/genai إلى الحزمة الرئيسية)
 import { normalizeName } from '../utils/normalizeName';
+
+// تطبيع خفيف لنصوص البحث: أحرف صغيرة، توحيد الهمزات والتاء المربوطة والألف المقصورة،
+// أرقام عربية → لاتينية، وكل الرموز (/ - . ×) تصير فراغات حتى تنفصل «160/5» إلى كلمتين.
+function searchNorm(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي')
+    .replace(/[٠-٩]/g, d => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+    .replace(/[^\w؀-ۿ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 // قواعد قائمة نواقص الأدوية: الترتيب بالأحدث أولاً، وتقسيمها على حدّ الـ 5 أيام
 import { compareShortagesNewestFirst, splitShortagesByAge } from '../utils/shortages';
 
@@ -33,6 +46,7 @@ interface POSItem {
   medicine: Medicine;
   quantity: number;
   outOfStock?: boolean; // علامة تذكير لمادة نافذة (رصيد صفر): تظهر بالأحمر الباهت، لا تُحتسب في المجموع ولا تُخصم من المخزون
+  zeroStock?: boolean;  // بيع فعلي لمادة رصيدها صفر (المسح الثاني للنافذة): يُحتسب ويُسجَّل، والمخزون يبقى صفراً لا سالباً
 }
 
 // تعقيم نص قبل حقنه في قالب HTML يُبنى كسلسلة نصية (مثل صفحات الطباعة عبر document.write) —
@@ -366,29 +380,40 @@ interface CartItemRowProps {
   onRemove: (medId: string) => void;
   onAddShortage: (med: Medicine) => void; // نقر مزدوج على اسم العنصر = إضافته لقائمة نواقص الأدوية
   onAddToCalculator?: (amount: number) => void; // موجودة فقط والحاسبة مفتوحة — زر إجمالي السطر أعلى يسار الصف
+  soldToday: number; // ما بيع من هذه المادة اليوم في سجل المبيعات (يُعرض على صفوف النافذة/بلا رصيد)
 }
 
-const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove, onAddShortage, onAddToCalculator }: CartItemRowProps) => {
+const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove, onAddShortage, onAddToCalculator, soldToday }: CartItemRowProps) => {
   // السعر المُحاسَب دائماً هو الجمهوري — «الرسمي» للعرض فقط ولا يدخل في المحاسبة.
   // وضع «السعر الرسمي» مفعّلاً: يُعرض الرسمي وحده (سعراً وإجمالياً) ويُخفى الجمهوري
   // و«الشراء» — شاشة تواجه الزبون، لا تكشف السعر الداخلي ولا الكلفة.
   const unitPrice = item.medicine.price;
   const officialPrice = item.medicine.secondaryPrice || (item.medicine.price + 500);
   const shownUnit = showVirtualPrice ? officialPrice : unitPrice;
+  // سعر الشراء للعرض: التكلفة المتوسطة وإلا آخر سعر شراء (لا يُكشف في وضع «الرسمي»)
+  const costUnit = item.medicine.costPrice || item.medicine.lastCostPrice || 0;
 
   // مادة نافذة (رصيد صفر): سطر تذكير أحمر باهت — اسم + سعر بلا شطب، بلا أزرار كمية،
-  // غير محتسب في الإجمالي ولا يُخصم من المخزون. زر الحذف فقط.
+  // غير محتسب في الإجمالي ولا يُخصم من المخزون. زر الحذف فقط. المسح الثاني يحوّله لبيع فعلي.
   if (item.outOfStock) {
     return (
       <div className="bg-rose-950/40 border border-rose-900/50 rounded-2xl p-4 flex items-center justify-between gap-3">
         <div className="flex-1 min-w-0 space-y-1 select-none cursor-pointer"
           onDoubleClick={() => onAddShortage(item.medicine)}
-          title="نقرة مزدوجة: إضافة إلى نواقص الأدوية">
+          title="نقرة مزدوجة: إضافة إلى نواقص الأدوية — مسح الباركود مرة ثانية: بيع برصيد صفر">
           <div className="flex items-center gap-2">
             <span className="font-extrabold text-rose-200 text-sm truncate">{item.medicine.nameAr}</span>
             <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-rose-900/60 text-rose-300 shrink-0">نفذ</span>
+            {soldToday > 0 && (
+              <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-amber-900/50 text-amber-300 shrink-0">مبيع اليوم: {soldToday}</span>
+            )}
           </div>
-          <span className="text-sm text-rose-300/80 font-mono font-bold block">{shownUnit.toLocaleString()} د.ع</span>
+          <div className="flex items-baseline gap-3 flex-wrap">
+            <span className="text-sm text-rose-300/80 font-mono font-bold">{shownUnit.toLocaleString()} د.ع</span>
+            {!showVirtualPrice && costUnit > 0 && (
+              <span className="text-xs text-rose-300/60 font-mono">الشراء: {costUnit.toLocaleString()} د.ع</span>
+            )}
+          </div>
         </div>
         <button type="button" onClick={() => onRemove(item.medicine.id)}
           className="w-9 h-9 text-rose-700 hover:text-rose-300 flex items-center justify-center cursor-pointer transition shrink-0">
@@ -401,7 +426,7 @@ const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove
   const shownTotal = shownUnit * item.quantity;
 
   return (
-    <div className="relative bg-slate-800 border border-slate-700 rounded-2xl p-4 flex items-center justify-between gap-3">
+    <div className={`relative border rounded-2xl p-4 flex items-center justify-between gap-3 ${item.zeroStock ? 'bg-rose-950/50 border-rose-800/60' : 'bg-slate-800 border-slate-700'}`}>
       {/* إضافة إجمالي هذا السطر للحاسبة — تظهر فقط والحاسبة مفتوحة */}
       {onAddToCalculator && (
         <button type="button" onClick={() => onAddToCalculator(shownTotal)}
@@ -413,7 +438,16 @@ const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove
       <div className="flex-1 min-w-0 space-y-1.5 select-none cursor-pointer"
         onDoubleClick={() => onAddShortage(item.medicine)}
         title="نقرة مزدوجة: إضافة إلى نواقص الأدوية">
-        <span className="font-extrabold text-white text-base block truncate">{item.medicine.nameAr}</span>
+        <div className="flex items-center gap-2 min-w-0 flex-wrap">
+          <span className={`font-extrabold text-base truncate ${item.zeroStock ? 'text-rose-100' : 'text-white'}`}>{item.medicine.nameAr}</span>
+          {/* بيع برصيد صفر: شارة تنبيه + مجموع ما بيع منها اليوم (السجل + هذه السلة) */}
+          {item.zeroStock && (
+            <>
+              <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-rose-900/60 text-rose-300 shrink-0">بيع بلا رصيد</span>
+              <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-amber-900/50 text-amber-300 shrink-0">مبيع اليوم: {soldToday + item.quantity}</span>
+            </>
+          )}
+        </div>
         {/* وضع «الرسمي»: الإجمالي الرسمي وحده بلا أي تفاصيل (سعر وحدة/عدد/عبارات) — شاشة
             نظيفة تواجه الزبون. الوضع العادي: سعر الوحدة × العدد ثم الإجمالي الكبير */}
         <div className="flex items-baseline gap-2 flex-wrap">
@@ -459,12 +493,19 @@ export type CalculatorHandle = { pushValue: (n: number) => void };
 
 type CalcOp = '÷' | '×' | '−' | '+';
 
+// تقريب النتائج لست خانات عشرية فتختفي ذيول الفاصلة العائمة
+// (0.1 + 0.2 = 0.30000000000000004) دون المساس بمبالغ الدنانير الصحيحة.
+const roundCalc = (n: number) => Math.round(n * 1e6) / 1e6;
+const CALC_MAX_DIGITS = 15; // أقصى خانات يُقبل إدخالها — بعدها تُتجاهل الضغطات بدل قصّ الشاشة بصمت
+const CALC_ERROR = 'خطأ';
+
+// القسمة على صفر تُعيد NaN فيُعرض «خطأ» بدل صفر صامت مضلِّل
 function calcApply(a: number, b: number, op: CalcOp): number {
   switch (op) {
-    case '÷': return b === 0 ? 0 : a / b;
-    case '×': return a * b;
-    case '−': return a - b;
-    case '+': return a + b;
+    case '÷': return b === 0 ? NaN : roundCalc(a / b);
+    case '×': return roundCalc(a * b);
+    case '−': return roundCalc(a - b);
+    case '+': return roundCalc(a + b);
   }
 }
 
@@ -476,92 +517,209 @@ function formatCalcDisplay(s: string): string {
   return Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 6 }) : s;
 }
 
+// حالة الحاسبة كاملةً في مُخفِّض واحد: كل ضغطة (زر، مفتاح، أو قيمة مدفوعة من السلة) تُطبَّق
+// على أحدث حالة بالترتيب مهما تسارعت — لا اعتماد على إغلاقات (closures) قد تكون قديمة.
+interface CalcState {
+  display: string;
+  prevValue: number | null;
+  pendingOp: CalcOp | null;
+  overwrite: boolean;
+  // شريط التعبير الحي: كل الأرقام والعوامل المُدخَلة بالترتيب («1,000 + 2,000 ×») حتى «=» —
+  // فتكون الحاسبة شاشة تُظهر تفاصيل الجمع والضرب لا رقماً وحيداً ميتاً.
+  tokens: string[];
+}
+type CalcAction =
+  | { type: 'digit'; d: string }
+  | { type: 'dot' }
+  | { type: 'clear' }
+  | { type: 'backspace' }
+  | { type: 'sign' }
+  | { type: 'percent' }
+  | { type: 'op'; op: CalcOp | null }
+  | { type: 'round'; step: number }
+  | { type: 'push'; n: number };
+
+const CALC_INITIAL: CalcState = { display: '0', prevValue: null, pendingOp: null, overwrite: true, tokens: [] };
+
+// ينهي السلسلة بنتيجة: يُثبّت التعبير («… =») ويعرض الناتج أو «خطأ» إن كانت القسمة على صفر
+function calcFinish(nextTokens: string[], result: number): CalcState {
+  return {
+    tokens: [...nextTokens, '='],
+    display: Number.isFinite(result) ? String(result) : CALC_ERROR,
+    prevValue: null, pendingOp: null, overwrite: true,
+  };
+}
+
+function calcReducer(s: CalcState, a: CalcAction): CalcState {
+  const finished = s.tokens[s.tokens.length - 1] === '=';
+  const isError = s.display === CALC_ERROR;
+  // بعد «=» أو «خطأ» أي رقم جديد يبدأ عملية جديدة نظيفة
+  const fresh: CalcState = (finished || isError) ? { ...s, tokens: [], prevValue: null, pendingOp: null, overwrite: true } : s;
+
+  switch (a.type) {
+    case 'clear':
+      return CALC_INITIAL;
+    case 'digit': {
+      const startNew = fresh !== s || s.overwrite || s.display === '0';
+      if (!startNew && s.display.replace(/[^0-9]/g, '').length >= CALC_MAX_DIGITS) return s;
+      return { ...fresh, display: startNew ? a.d : s.display + a.d, overwrite: false };
+    }
+    case 'dot': {
+      const startNew = fresh !== s || s.overwrite;
+      return { ...fresh, display: startNew ? '0.' : (s.display.includes('.') ? s.display : s.display + '.'), overwrite: false };
+    }
+    case 'backspace': {
+      if (isError) return CALC_INITIAL;
+      if (s.overwrite) return s; // النتيجة أو الرقم المؤكَّد لا يُقصّ خانةً خانة — AC لمسحه
+      const d = s.display;
+      return { ...s, display: (d.length <= 1 || (d.length === 2 && d.startsWith('-'))) ? '0' : d.slice(0, -1) };
+    }
+    case 'sign':
+      if (isError || Number(s.display) === 0) return s;
+      return { ...s, display: String(-Number(s.display)) };
+    case 'percent':
+      if (isError) return s;
+      return { ...s, display: String(roundCalc(Number(s.display) / 100)) };
+    case 'op': {
+      // زر عامل (÷ × − +) أو = (op=null): يُتمّ أي عملية معلَّقة أولاً، ثم يبدأ عاملاً جديداً أو ينهي بلا عامل
+      if (isError) return CALC_INITIAL;
+      const current = Number(s.display);
+      const cur = formatCalcDisplay(s.display);
+      if (s.pendingOp && !s.overwrite) {
+        const result = calcApply(s.prevValue ?? current, current, s.pendingOp);
+        if (!a.op || !Number.isFinite(result)) return calcFinish([...s.tokens, cur], result);
+        return { tokens: [...s.tokens, cur, a.op], display: String(result), prevValue: result, pendingOp: a.op, overwrite: true };
+      }
+      if (s.pendingOp && s.overwrite) {
+        // تغيير العامل قبل إدخال الرقم الثاني: يُستبدل آخر عامل في الشريط
+        if (!a.op) return s;
+        return { ...s, tokens: [...s.tokens.slice(0, -1), a.op], pendingOp: a.op };
+      }
+      // لا عملية معلَّقة: الرقم الحالي (أو ناتج سابق) يبدأ سلسلة جديدة
+      if (!a.op) return calcFinish([cur], current);
+      return { tokens: [cur, a.op], display: s.display, prevValue: current, pendingOp: a.op, overwrite: true };
+    }
+    case 'round': {
+      // تقريب الناتج لأقرب مضاعف للعملة (250 / 500 د.ع) — يظهر في الشريط كخطوة موثَّقة
+      if (isError) return s;
+      const n = Number(s.display);
+      return calcFinish([formatCalcDisplay(s.display), `≈${a.step}`], Math.round(n / a.step) * a.step);
+    }
+    case 'push': {
+      // قيمة مدفوعة من صف السلة: الأولى تُعرض مباشرة؛ أي لاحقة تُتمّ عاملاً معلَّقاً إن وُجد،
+      // وإلا تُجمَع تلقائياً مع الناتج الحالي — فتظهر النتيجة فوراً كما طلب المستخدم.
+      const fmtN = formatCalcDisplay(String(a.n));
+      if (isError) return { ...CALC_INITIAL, display: String(a.n) };
+      if (s.pendingOp && s.overwrite) {
+        return calcFinish([...s.tokens, fmtN], calcApply(s.prevValue ?? Number(s.display), a.n, s.pendingOp));
+      }
+      if (s.display === '0' && s.prevValue === null) return { ...CALC_INITIAL, display: String(a.n) };
+      const cur = formatCalcDisplay(s.display);
+      const base = finished ? [cur] : [...(s.pendingOp ? s.tokens : []), cur];
+      return calcFinish([...base, '+', fmtN], roundCalc(Number(s.display) + a.n));
+    }
+  }
+}
+
 interface CalculatorProps { onClose: () => void }
 
 const Calculator = React.memo(forwardRef<CalculatorHandle, CalculatorProps>(({ onClose }, ref) => {
-  const [display, setDisplay] = useState('0');
-  const [prevValue, setPrevValue] = useState<number | null>(null);
-  const [pendingOp, setPendingOp] = useState<CalcOp | null>(null);
-  const [overwrite, setOverwrite] = useState(true);
+  const [st, dispatch] = useReducer(calcReducer, CALC_INITIAL);
+  const [copied, setCopied] = useState(false);
+  const isError = st.display === CALC_ERROR;
 
-  const inputDigit = (d: string) => {
-    setDisplay(prev => (overwrite || prev === '0') ? d : prev + d);
-    setOverwrite(false);
-  };
-  const inputDot = () => {
-    setDisplay(prev => overwrite ? '0.' : (prev.includes('.') ? prev : prev + '.'));
-    setOverwrite(false);
-  };
-  const clearAll = () => { setDisplay('0'); setPrevValue(null); setPendingOp(null); setOverwrite(true); };
-  const toggleSign = () => setDisplay(prev => (Number(prev) === 0 ? prev : String(-Number(prev))));
-  const percent = () => setDisplay(prev => String(Number(prev) / 100));
+  useImperativeHandle(ref, () => ({ pushValue: (n: number) => dispatch({ type: 'push', n }) }), []);
 
-  // زر عامل (÷ × − +) أو = (op=null): يُتمّ أي عملية معلَّقة أولاً، ثم يبدأ عاملاً جديداً أو ينهي بلا عامل
-  const applyOp = (op: CalcOp | null) => {
-    const current = Number(display);
-    if (pendingOp && !overwrite) {
-      const result = calcApply(prevValue ?? current, current, pendingOp);
-      setDisplay(String(result));
-      setPrevValue(op ? result : null);
-    } else {
-      setPrevValue(current);
-    }
-    setPendingOp(op);
-    setOverwrite(true);
+  const copyResult = () => {
+    if (isError) return;
+    navigator.clipboard?.writeText(String(Number(st.display))).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    }).catch(() => {});
   };
 
-  useImperativeHandle(ref, () => ({
-    // القيمة الأولى تُعرض مباشرة؛ أي ضغطة لاحقة تُتمّ عاملاً معلَّقاً (يدوي أو من ضغطة سابقة) إن
-    // وُجد، وإلا تُجمَع تلقائياً مع الناتج الحالي — فتظهر النتيجة فوراً كما طلب المستخدم.
-    pushValue: (n: number) => {
-      if (pendingOp && overwrite) {
-        const result = calcApply(prevValue ?? Number(display), n, pendingOp);
-        setDisplay(String(result));
-        setPrevValue(null); setPendingOp(null); setOverwrite(true);
-      } else if (display === '0' && prevValue === null) {
-        setDisplay(String(n));
-        setOverwrite(true);
-      } else {
-        setDisplay(String(Number(display) + n));
-        setPrevValue(null); setPendingOp(null); setOverwrite(true);
-      }
-    },
-  }), [display, prevValue, pendingOp, overwrite]);
+  // لوحة المفاتيح: أرقام وعوامل و Enter و Backspace و Escape — تُتجاهل حين يكون التركيز داخل أي
+  // حقل إدخال (بحث نقطة البيع، الباركود…) كي لا تسرق الحاسبة الكتابة.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const k = e.key;
+      if (/^[0-9]$/.test(k)) dispatch({ type: 'digit', d: k });
+      else if (k === '.' || k === ',') dispatch({ type: 'dot' });
+      else if (k === '+') dispatch({ type: 'op', op: '+' });
+      else if (k === '-') dispatch({ type: 'op', op: '−' });
+      else if (k === '*' || k === '×') dispatch({ type: 'op', op: '×' });
+      else if (k === '/' || k === '÷') dispatch({ type: 'op', op: '÷' });
+      else if (k === 'Enter' || k === '=') dispatch({ type: 'op', op: null });
+      else if (k === 'Backspace') dispatch({ type: 'backspace' });
+      else if (k === 'Escape' || k === 'Delete') dispatch({ type: 'clear' });
+      else if (k === '%') dispatch({ type: 'percent' });
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
-  const digitCls = 'h-9 rounded-xl text-sm font-black flex items-center justify-center transition cursor-pointer select-none bg-slate-800 text-white hover:bg-slate-700';
-  const opCls = 'h-9 rounded-xl text-sm font-black flex items-center justify-center transition cursor-pointer select-none bg-emerald-600 text-white hover:bg-emerald-500';
-  const funcCls = 'h-9 rounded-xl text-sm font-black flex items-center justify-center transition cursor-pointer select-none bg-slate-700 text-white hover:bg-slate-600';
+  const shown = formatCalcDisplay(st.display);
+  // الخط يصغر تلقائياً مع طول الرقم بدل قصّ الخانات بصمت
+  const displaySize = shown.length > 18 ? 'text-sm' : shown.length > 12 ? 'text-base' : 'text-xl';
+  const expr = st.tokens.join(' ');
+
+  const base = 'h-11 sm:h-9 rounded-xl text-sm font-black flex items-center justify-center transition cursor-pointer select-none';
+  const digitCls = `${base} bg-slate-800 text-white hover:bg-slate-700`;
+  const funcCls = `${base} bg-slate-700 text-white hover:bg-slate-600`;
+  const utilCls = `${base} h-8 sm:h-7 text-[11px] bg-slate-800/70 text-slate-300 hover:bg-slate-700 hover:text-white`;
+  // زر العامل المعلَّق يُضاء ليعرف المستخدم ما الذي ينتظره
+  const opCls = (op: CalcOp) => `${base} ${st.pendingOp === op && st.overwrite
+    ? 'bg-white text-emerald-700 ring-2 ring-emerald-400'
+    : 'bg-emerald-600 text-white hover:bg-emerald-500'}`;
+  const digit = (d: string) => () => dispatch({ type: 'digit', d });
+  const op = (o: CalcOp | null) => () => dispatch({ type: 'op', op: o });
 
   return (
-    <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-3 space-y-2">
+    <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-3 space-y-2" role="application" aria-label="حاسبة سريعة">
       <div className="flex items-center justify-between px-1">
         <span className="text-[10px] font-black text-slate-400">حاسبة سريعة</span>
-        <button type="button" onClick={onClose} title="إغلاق الحاسبة"
+        <button type="button" onClick={onClose} title="إغلاق الحاسبة" aria-label="إغلاق الحاسبة"
           className="text-slate-500 hover:text-rose-400 transition cursor-pointer">
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
+      {/* شاشة العرض: شريط التعبير الحي فوق الناتج */}
       <div className="text-left px-1 pb-1 overflow-hidden" dir="ltr">
-        <span className="font-mono font-black text-white text-xl truncate block">{formatCalcDisplay(display)}</span>
+        <div className="font-mono text-[11px] text-slate-400 min-h-[16px] truncate" title={expr} aria-live="polite">
+          {expr || ' '}
+        </div>
+        <span className={`font-mono font-black ${isError ? 'text-rose-400' : 'text-white'} ${displaySize} truncate block`} aria-live="polite">{shown}</span>
+      </div>
+      {/* صف الأدوات: مسح خانة، تقريب للعملة، نسخ */}
+      <div className="grid grid-cols-4 gap-1.5" dir="ltr">
+        <button type="button" onClick={() => dispatch({ type: 'backspace' })} className={utilCls} aria-label="مسح آخر خانة" title="مسح آخر خانة (Backspace)">⌫</button>
+        <button type="button" onClick={() => dispatch({ type: 'round', step: 250 })} className={utilCls} aria-label="تقريب لأقرب 250 دينار" title="تقريب لأقرب 250 د.ع">≈250</button>
+        <button type="button" onClick={() => dispatch({ type: 'round', step: 500 })} className={utilCls} aria-label="تقريب لأقرب 500 دينار" title="تقريب لأقرب 500 د.ع">≈500</button>
+        <button type="button" onClick={copyResult} className={`${utilCls} ${copied ? 'text-emerald-400' : ''}`} aria-label="نسخ الناتج" title="نسخ الناتج">{copied ? '✓' : 'نسخ'}</button>
       </div>
       <div className="grid grid-cols-4 gap-1.5" dir="ltr">
-        <button type="button" onClick={clearAll} className={`${funcCls} bg-rose-900/60 hover:bg-rose-800/70 text-rose-200`}>AC</button>
-        <button type="button" onClick={toggleSign} className={funcCls}>+/−</button>
-        <button type="button" onClick={percent} className={funcCls}>%</button>
-        <button type="button" onClick={() => applyOp('÷')} className={opCls}>÷</button>
+        <button type="button" onClick={() => dispatch({ type: 'clear' })} className={`${funcCls} bg-rose-900/60 hover:bg-rose-800/70 text-rose-200`} aria-label="مسح الكل" title="مسح الكل (Escape)">AC</button>
+        <button type="button" onClick={() => dispatch({ type: 'sign' })} className={funcCls} aria-label="عكس الإشارة">+/−</button>
+        <button type="button" onClick={() => dispatch({ type: 'percent' })} className={funcCls} aria-label="نسبة مئوية">%</button>
+        <button type="button" onClick={op('÷')} className={opCls('÷')} aria-label="قسمة">÷</button>
 
-        {['7', '8', '9'].map(d => <button key={d} type="button" onClick={() => inputDigit(d)} className={digitCls}>{d}</button>)}
-        <button type="button" onClick={() => applyOp('×')} className={opCls}>×</button>
+        {['7', '8', '9'].map(d => <button key={d} type="button" onClick={digit(d)} className={digitCls}>{d}</button>)}
+        <button type="button" onClick={op('×')} className={opCls('×')} aria-label="ضرب">×</button>
 
-        {['4', '5', '6'].map(d => <button key={d} type="button" onClick={() => inputDigit(d)} className={digitCls}>{d}</button>)}
-        <button type="button" onClick={() => applyOp('−')} className={opCls}>−</button>
+        {['4', '5', '6'].map(d => <button key={d} type="button" onClick={digit(d)} className={digitCls}>{d}</button>)}
+        <button type="button" onClick={op('−')} className={opCls('−')} aria-label="طرح">−</button>
 
-        {['1', '2', '3'].map(d => <button key={d} type="button" onClick={() => inputDigit(d)} className={digitCls}>{d}</button>)}
-        <button type="button" onClick={() => applyOp('+')} className={opCls}>+</button>
+        {['1', '2', '3'].map(d => <button key={d} type="button" onClick={digit(d)} className={digitCls}>{d}</button>)}
+        <button type="button" onClick={op('+')} className={opCls('+')} aria-label="جمع">+</button>
 
-        <button type="button" onClick={() => inputDigit('0')} className={`${digitCls} col-span-2`}>0</button>
-        <button type="button" onClick={inputDot} className={digitCls}>.</button>
-        <button type="button" onClick={() => applyOp(null)} className="h-9 rounded-xl text-sm font-black flex items-center justify-center transition cursor-pointer select-none bg-emerald-500 text-white hover:bg-emerald-400">=</button>
+        <button type="button" onClick={digit('0')} className={`${digitCls} col-span-2`}>0</button>
+        <button type="button" onClick={() => dispatch({ type: 'dot' })} className={digitCls} aria-label="فاصلة عشرية">.</button>
+        <button type="button" onClick={op(null)} className={`${base} bg-emerald-500 text-white hover:bg-emerald-400`} aria-label="يساوي" title="يساوي (Enter)">=</button>
       </div>
     </div>
   );
@@ -735,7 +893,9 @@ export default function Dashboard() {
   // مرجع لـ POSSearchBar حتى يستطيع قارئ الباركود دفع القيمة الممسوحة إلى الحقل
   const posSearchRef = useRef<POSSearchHandle>(null);
   // الحاسبة السريعة بجانب سلة البيع — مخفية افتراضياً؛ مرجعها يستقبل قيم أزرار «+» في صفوف السلة
-  const [showCalculator, setShowCalculator] = useState(false);
+  // حالة فتح الحاسبة تُحفظ محلياً فتعود مفتوحة بعد إعادة التحميل
+  const [showCalculator, setShowCalculator] = useState(() => { try { return localStorage.getItem('anwar_calc_open') === '1'; } catch { return false; } });
+  useEffect(() => { try { localStorage.setItem('anwar_calc_open', showCalculator ? '1' : '0'); } catch {} }, [showCalculator]);
   const calculatorRef = useRef<CalculatorHandle>(null);
   const [lastPrintedInvoice, setLastPrintedInvoice] = useState<SaleRecord | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
@@ -848,7 +1008,7 @@ export default function Dashboard() {
   const [scanSuccessFeedback, setScanSuccessFeedback] = useState<string | null>(null);
   const [scanStream, setScanStream] = useState<MediaStream | null>(null);
   const [isBeepEnabled, setIsBeepEnabled] = useState(true);
-  const [scanTarget, setScanTarget] = useState<'pos' | 'inventory' | 'add-drug' | 'purchase-order' | 'movement'>('pos');
+  const [scanTarget, setScanTarget] = useState<'pos' | 'inventory' | 'add-drug' | 'purchase-order' | 'movement' | 'purchase-new-product'>('pos');
   const [newDrugBarcode, setNewDrugBarcode] = useState('');
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -874,7 +1034,7 @@ export default function Dashboard() {
     }
   };
 
-  const startScanning = async (target: 'pos' | 'inventory' | 'add-drug' | 'purchase-order' | 'movement') => {
+  const startScanning = async (target: 'pos' | 'inventory' | 'add-drug' | 'purchase-order' | 'movement' | 'purchase-new-product') => {
     setScanTarget(target);
     setIsScanning(true);
     setScanError(null);
@@ -992,6 +1152,9 @@ export default function Dashboard() {
       invSearchRef.current?.setValue(code); setSearchInInventoryQuery(code);
     } else if (scanTarget === 'add-drug') {
       setNewDrugBarcode(code);
+    } else if (scanTarget === 'purchase-new-product') {
+      // تسجيل دواء جديد كلياً في تبويب الشراء: الباركود الممسوح يملأ حقله مباشرة
+      setPurchaseNewProdBarcode(code);
     } else if (scanTarget === 'movement') {
       // حركة المادة: اختيار الدواء مباشرةً من الباركود الممسوح
       const match = inventory.find(m => m.barcode === code);
@@ -2529,6 +2692,17 @@ export default function Dashboard() {
     }
   };
 
+  // --- ENSURE SUPPLIER (اسم مكتوب يدوياً في الشراء → إن لم يكن محفوظاً يُضاف كمورد جديد) ---
+  const ensureSupplier = (name: string): Supplier | undefined => {
+    const n = name.trim();
+    if (!n) return undefined;
+    const found = suppliers.find(s => s.name === n);
+    if (found) return found;
+    const sup: Supplier = { id: generateDocId('SUP'), name: n, createdAt: todayLocalISO() };
+    addSupplier(sup);
+    return sup;
+  };
+
   // --- UPDATE SUPPLIER (تعديل بيانات مورد — محلياً وفي Firestore) ---
   const updateSupplier = (sup: Supplier) => {
     setSuppliers(prev => prev.map(s => s.id === sup.id ? sup : s));
@@ -2930,15 +3104,18 @@ export default function Dashboard() {
     nameEn:  (m.nameEn || '').toLowerCase(),
     sci:     (m.scientificName || '').toLowerCase(),
     barcode: (m.barcode || '').toLowerCase(),
+    // نص بحث موحّد للبحث الذكي: الاسمان والعلمي والشركة والباركود بعد التطبيع
+    hay: searchNorm(`${m.nameAr} ${m.nameEn || ''} ${m.scientificName || ''} ${m.manufacturer || ''} ${m.barcode || ''}`),
   })), [inventory]);
 
+  // بحث ذكي بكلمات مستقلة: «160 ديوفان» تجد «ديوفان ديو 160/5 نوفارتس» — كل كلمة تُطابَق
+  // كبداية كلمة في أي موضع وبأي ترتيب، والرموز (/ - ×) لا تعيق المطابقة. المطابقة على بداية
+  // الكلمة لا وسطها حتى لا يجلب الرقم «5» كل باركود يحوي 5.
   const filteredPOSMeds = useMemo(() => {
-    const q = deferredPOSQuery.toLowerCase().trim();
-    if (!q) return inventory;
+    const tokens = searchNorm(deferredPOSQuery).split(' ').filter(Boolean);
+    if (tokens.length === 0) return inventory;
     return inventoryIndex
-      .filter(({ nameAr, nameEn, sci, barcode }) =>
-        nameAr.includes(q) || nameEn.includes(q) || sci.includes(q) || barcode.includes(q)
-      )
+      .filter(({ hay }) => tokens.every(t => hay.startsWith(t) || hay.includes(' ' + t)))
       .map(({ m }) => m);
   }, [deferredPOSQuery, inventory, inventoryIndex]);
 
@@ -2976,8 +3153,12 @@ export default function Dashboard() {
       // مادة نافذة (رصيد صفر): تُضاف مرّة واحدة كعلامة تذكير حمراء فقط —
       // بلا سعر محتسب ولا خصم من المخزون. لا تتكرّر ولا تزيد كميتها.
       if (med.availableQuantity <= 0) {
-        if (idx !== -1) return prev;
-        return [{ medicine: med, quantity: 1, outOfStock: true }, ...prev];
+        if (idx === -1) return [{ medicine: med, quantity: 1, outOfStock: true }, ...prev];
+        // المسح الثاني: التذكير يتحوّل إلى سطر بيع فعلي برصيد صفر (يُحتسب ويُسجَّل، والمخزون يبقى صفراً)؛
+        // وكل مسح لاحق يزيد الكمية بلا سقف مخزون — المادة موجودة فعلاً وإن قال النظام صفراً. يصعد لرأس السلة.
+        const existing = prev[idx];
+        const rest = prev.filter(item => item.medicine.id !== med.id);
+        return [existing.outOfStock ? { medicine: med, quantity: 1, zeroStock: true } : { ...existing, quantity: existing.quantity + 1 }, ...rest];
       }
       if (idx !== -1) {
         const existing = prev[idx];
@@ -3020,7 +3201,8 @@ export default function Dashboard() {
       // العلامات النافذة لا تتغيّر كميتها (لا أزرار +/− لها أصلاً) — حماية دفاعية
       if (item.medicine.id === medId && !item.outOfStock) {
         const nextQty = item.quantity + delta;
-        const maxQty = item.medicine.availableQuantity;
+        // بيع برصيد صفر: لا سقف من المخزون (المادة موجودة فعلاً)
+        const maxQty = item.zeroStock ? Infinity : item.medicine.availableQuantity;
         if (nextQty >= 1 && nextQty <= maxQty) {
           return { ...item, quantity: nextQty };
         }
@@ -3028,6 +3210,17 @@ export default function Dashboard() {
       return item;
     }));
   }, []);
+
+  // ما بيع من كل مادة اليوم (من سجل المبيعات) — للشارة على صفوف النافذة/بلا رصيد في السلة
+  const soldTodayByMed = useMemo(() => {
+    const today = todayLocalISO();
+    const m = new Map<string, number>();
+    salesLedger.forEach(rec => {
+      if (!rec.timestamp.startsWith(today)) return;
+      rec.items.forEach(it => { if (it.medicineId) m.set(it.medicineId, (m.get(it.medicineId) || 0) + (Number(it.quantity) || 0)); });
+    });
+    return m;
+  }, [salesLedger]);
 
   // مغلّفان لتثبيت الإشارة المُمرَّرة إلى CartItemRow (onInc/onDec لا تقبل delta)
   const incCartQty = useCallback((medId: string) => updateCartQty(medId, 1), [updateCartQty]);
@@ -3109,9 +3302,11 @@ export default function Dashboard() {
       sellableCart.forEach(item => {
         const med = inventory.find(m => m.id === item.medicine.id);
         if (med) {
-          const estimatedQty = Math.max(0, med.availableQuantity - item.quantity);
+          // لا يُخصم أكثر من الرصيد المتاح: بيع برصيد صفر يُسجَّل في الفاتورة والمخزون يبقى صفراً لا سالباً
+          const deduct = Math.min(item.quantity, Math.max(0, med.availableQuantity));
+          const estimatedQty = Math.max(0, med.availableQuantity - deduct);
           batch.set(doc(db, 'users', userId, 'inventory', med.id), {
-            availableQuantity: increment(-item.quantity),
+            availableQuantity: increment(-deduct),
             // الحالة تقديرية من القيمة المحلية — تُصحَّح ذاتياً عند القراءة التالية من الخادم
             status: deriveStockStatus(estimatedQty),
             updatedAt: new Date().toISOString(),
@@ -3494,6 +3689,8 @@ export default function Dashboard() {
 
   const commitPurchaseDraft = () => {
     if (purchaseDraft.length === 0) return;
+    // اسم مورد جديد كُتب يدوياً في مسودة الشراء → يُحفظ في قائمة الموردين (نقداً أو آجلاً)
+    ensureSupplier(purchaseSupplier);
 
     const orderId = generateDocId('PO');
     const totalCost = purchaseDraft.reduce((acc, curr) => acc + (curr.price * curr.qty), 0);
@@ -3543,6 +3740,8 @@ export default function Dashboard() {
     const keptEarlierExpiry: string[] = [];
     // تصحيحات المخزون اليدوية (اسم: من → إلى) — للتنويه وقيد التدقيق
     const stockCorrections: string[] = [];
+    // أصناف «مباع» من شاشة الاستيراد: رصيدها الوهمي بيع فعلي لم يُسجَّل بالباركود — تُجمَع في فاتورة بيع واحدة
+    const soldItems: SaleRecord['items'] = [];
 
     purchaseDraft.forEach(draftItem => {
       if (draftItem.medicineId) {
@@ -3560,6 +3759,19 @@ export default function Dashboard() {
             if (hasCorrection && existingQty !== med.availableQuantity) {
               absoluteMedIds.add(med.id);
               stockCorrections.push(`${med.nameAr}: ${med.availableQuantity} → ${existingQty}`);
+            }
+            const soldQty = Math.max(0, Math.round(Number(draftItem.soldQty) || 0));
+            if (soldQty > 0) {
+              // بسعر البيع الساري وقت البيع الفعلي (قبل تحديث السعر من الفاتورة) وتكلفة المخزون القديم
+              const unitCost = resolveUnitCost(med.costPrice, med.price, defaultCostPercent);
+              soldItems.push({
+                medicineId: med.id,
+                name: `${med.nameAr} (${med.nameEn})`,
+                quantity: soldQty,
+                price: med.price,
+                costPrice: unitCost,
+                lineProfit: (med.price - unitCost) * soldQty,
+              });
             }
             const existingCost = resolveUnitCost(med.costPrice, med.price, defaultCostPercent);
             const newQty = existingQty + purchaseQty;
@@ -3680,6 +3892,42 @@ export default function Dashboard() {
       relatedId: orderId,
     });
 
+    // فاتورة بيع لأصناف «مباع»: إيراد وربح نقدي بتاريخ اليوم — تدخل الصندوق والسجل كأي بيع
+    if (soldItems.length) {
+      const soldInvoiceId = generateDocId('INV');
+      const soldTotal = soldItems.reduce((sum, it) => sum + it.price * it.quantity, 0);
+      const soldCost = soldItems.reduce((sum, it) => sum + (it.costPrice || 0) * it.quantity, 0);
+      const { grossProfit, profitMargin } = computeProfit(soldTotal, soldCost);
+      const now = new Date();
+      const soldRecord: SaleRecord = {
+        invoiceId: soldInvoiceId,
+        timestamp: `${todayLocalISO(now)} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+        items: soldItems,
+        subtotal: soldTotal,
+        discount: 0,
+        total: soldTotal,
+        totalCost: soldCost,
+        grossProfit,
+        profitMargin,
+        customerName: 'مبيعات غير مسجَّلة (تصفير رصيد عند الاستيراد)',
+      };
+      if (currentUser) {
+        const userId = currentUser.uid;
+        setDoc(doc(db, 'users', userId, 'salesLedger', soldInvoiceId), { ...soldRecord, userId })
+          .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/salesLedger/${soldInvoiceId}`));
+      } else {
+        setSalesLedger(prev => [soldRecord, ...prev]);
+        setDailySalesRevenue(prev => prev + soldTotal);
+      }
+      adjustWallet(soldTotal);
+      addAuditEntry({
+        action: 'sale',
+        amount: soldTotal,
+        description: `مبيعات غير مسجَّلة اعتُمدت عند الاستيراد (${soldItems.length} مادة): ${soldItems.slice(0, 5).map(it => `${it.name.split(' (')[0]} ×${it.quantity}`).join('، ')}${soldItems.length > 5 ? '…' : ''}`,
+        relatedId: soldInvoiceId,
+      });
+    }
+
     // قيد تدقيق منفصل لتصحيحات المخزون اليدوية من شاشة الاستيراد (شفافية الجرد)
     if (stockCorrections.length) {
       addAuditEntry({
@@ -3692,7 +3940,7 @@ export default function Dashboard() {
 
     if (purchaseOnCredit) {
       // شراء بالآجل: تُسجَّل الفاتورة كذمّة على المذخر بدلاً من خصمها نقداً
-      const matchedSupplier = suppliers.find(s => s.name === creditSupplierName.trim());
+      const matchedSupplier = ensureSupplier(creditSupplierName);
       const creditPayable: Payable = {
         id: generateDocId('PAY'),
         supplierName: creditSupplierName.trim() || 'مذخر التوريد',
@@ -4705,6 +4953,7 @@ export default function Dashboard() {
                             <CartItemRow
                               key={item.medicine.id}
                               item={item}
+                              soldToday={soldTodayByMed.get(item.medicine.id) || 0}
                               showVirtualPrice={showVirtualPriceInPOS}
                               onInc={incCartQty}
                               onDec={decCartQty}
@@ -4987,7 +5236,7 @@ export default function Dashboard() {
                                   }
                                 }}
                               >
-                                <div className="flex items-center gap-2 min-w-0">
+                                <div className="flex items-center gap-2 min-w-0 flex-wrap">
                                   <span className={`text-[9px] transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
                                   <strong className="text-slate-900 font-bold font-mono text-[10px]">{s.invoiceId}</strong>
                                   <span className="text-slate-400">•</span>
@@ -6300,13 +6549,23 @@ export default function Dashboard() {
 
                               <div className="space-y-1.5 text-xs text-slate-600 font-bold">
                                 <label className="block text-[10px]">الباركود الرقمي للمنتج:</label>
-                                <input
-                                  type="text"
-                                  value={purchaseNewProdBarcode}
-                                  onChange={(e) => setPurchaseNewProdBarcode(e.target.value)}
-                                  className="w-full bg-slate-50 p-2 border border-slate-200 rounded-lg text-slate-900 font-mono focus:outline-emerald-500"
-                                  placeholder="سيتولد تلقائياً إن ترك فارغاً"
-                                />
+                                <div className="flex gap-1.5">
+                                  <input
+                                    type="text"
+                                    value={purchaseNewProdBarcode}
+                                    onChange={(e) => setPurchaseNewProdBarcode(e.target.value)}
+                                    className="flex-1 min-w-0 bg-slate-50 p-2 border border-slate-200 rounded-lg text-slate-900 font-mono focus:outline-emerald-500"
+                                    placeholder="سيتولد تلقائياً إن ترك فارغاً"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => startScanning('purchase-new-product')}
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-2.5 flex items-center justify-center transition cursor-pointer shrink-0"
+                                    title="قراءة الباركود بالكاميرا"
+                                  >
+                                    <Barcode className="w-4 h-4" />
+                                  </button>
+                                </div>
                               </div>
 
                               <button
@@ -6387,239 +6646,223 @@ export default function Dashboard() {
                         ) : (
                           <div className="space-y-4">
                             
-                            {/* Embedded Interactive Table Sheet */}
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-right text-xs">
-                                <thead>
-                                  <tr className="bg-slate-50 text-slate-500 border-b border-slate-100 font-bold">
-                                    <th className="py-2.5 px-3 rounded-r-xl">الدواء / المستحضر</th>
-                                    <th className="py-2.5 px-3 text-center">الكمية المطلوبة (علبة)</th>
-                                    <th className="py-2.5 px-3 text-center">سعر جملة (د.ع)</th>
-                                    <th className="py-2.5 px-3 text-center text-blue-700">سعر البيع للجمهور (د.ع)</th>
-                                    <th className="py-2.5 px-3 text-center text-violet-700">سعر البيع الرسمي (د.ع)</th>
-                                    <th className="py-2.5 px-3 text-center">انتهاء الصلاحية</th>
-                                    <th className="py-2.5 px-3 text-center">الإجمالي الفرعي</th>
-                                    <th className="py-2.5 px-3 text-center rounded-l-xl">تنظيف</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {purchaseDraft.map((item, index) => {
-                                    const subTotal = (item.qty || 0) * (item.price || 0);
-                                    // الرصيد الحقيقي الحالي للصنف في المخزن (مصدره inventory لا كمية المسودة)
-                                    const liveMed = inventory.find(m => m.id === item.medicineId);
-                                    const liveQty = liveMed?.availableQuantity ?? 0;
-                                    return (
-                                      <tr key={item.id} className="border-b border-slate-100/70 hover:bg-slate-50/40 transition">
-                                        
-                                        {/* Name & details */}
-                                        <td className="py-3.5 px-3 max-w-xs">
-                                          <div className="space-y-0.5">
-                                            {/* الاسم العربي (ثلاث نقرات للتعديل) + الرصيد الحقيقي بالمخزن بجانبه */}
-                                            <div className="flex items-center gap-2 flex-wrap">
-                                              {editingDraftField !== null && editingDraftField.id === item.id && editingDraftField.field === 'nameAr' ? (
-                                                <input
-                                                  autoFocus
-                                                  type="text"
-                                                  value={editingDraftValue}
-                                                  onChange={e => setEditingDraftValue(e.target.value)}
-                                                  onKeyDown={e => {
-                                                    if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); }
-                                                    else if (e.key === 'Escape') { draftEditCancelRef.current = true; (e.target as HTMLInputElement).blur(); }
-                                                  }}
-                                                  onBlur={saveDraftField}
-                                                  className="text-slate-900 font-bold text-xs flex-1 min-w-0 bg-indigo-50 border border-indigo-300 rounded px-1 focus:outline-indigo-500 text-right"
-                                                  title="اضغط Enter للحفظ أو Escape للإلغاء"
-                                                />
-                                              ) : (
-                                                <strong
-                                                  className="text-slate-900 font-bold text-xs cursor-text select-none"
-                                                  title="انقر ثلاث مرات لتعديل الاسم العربي"
-                                                  onClick={e => { if (e.detail === 3) startEditDraftField(item, 'nameAr'); }}
-                                                >{item.nameAr}</strong>
-                                              )}
-                                              {item.medicineId && liveMed ? (
-                                                editingDraftStockId === item.id ? (
-                                                  <input
-                                                    type="number"
-                                                    min={0}
-                                                    autoFocus
-                                                    defaultValue={item.stockCorrection ?? liveQty}
-                                                    onBlur={e => saveDraftStock(item.id, liveQty, e.target.value)}
-                                                    onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingDraftStockId(null); }}
-                                                    className="w-16 bg-white border border-blue-400 rounded-full px-2 py-0.5 text-[9px] font-black text-blue-900 text-center focus:outline-blue-500"
-                                                  />
-                                                ) : (() => {
-                                                  const effQty = item.stockCorrection ?? liveQty;
-                                                  const corrected = item.stockCorrection !== undefined && item.stockCorrection !== liveQty;
-                                                  return (
-                                                    <span
-                                                      onDoubleClick={() => setEditingDraftStockId(item.id)}
-                                                      className={`text-[8px] font-black px-1.5 py-0.5 rounded-full shrink-0 cursor-pointer ${corrected ? 'bg-amber-100 text-amber-800 border border-amber-300' : effQty <= 0 ? 'bg-rose-100 text-rose-700' : effQty < (liveMed.minStock ?? 15) ? 'bg-amber-100 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}
-                                                      title="الرصيد الحالي في المخزن — انقر مرتين لتصحيحه"
-                                                    >بالمخزن: {effQty}{corrected ? ' ✎' : ''}</span>
-                                                  );
-                                                })()
-                                              ) : (
-                                                <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full shrink-0 bg-blue-50 text-blue-700" title="صنف جديد غير موجود بالمخزن بعد">جديد</span>
-                                              )}
-                                            </div>
-                                            <span className="text-[9px] text-slate-500 font-mono block">
-                                              {item.nameEn} • {item.scientificName}
-                                            </span>
-                                            {/* الباركود — ثلاث نقرات للتعديل مع انتشار للمخزون */}
-                                            <div className="flex flex-wrap items-center gap-1">
-                                              {editingDraftField !== null && editingDraftField.id === item.id && editingDraftField.field === 'barcode' ? (
-                                                <input
-                                                  autoFocus
-                                                  type="text"
-                                                  value={editingDraftValue}
-                                                  onChange={e => setEditingDraftValue(e.target.value)}
-                                                  onKeyDown={e => {
-                                                    if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); }
-                                                    else if (e.key === 'Escape') { draftEditCancelRef.current = true; (e.target as HTMLInputElement).blur(); }
-                                                  }}
-                                                  onBlur={saveDraftField}
-                                                  className="text-[8px] text-slate-500 font-mono bg-indigo-50 border border-indigo-300 rounded px-1 w-24 text-right focus:outline-indigo-500"
-                                                  title="اضغط Enter للحفظ أو Escape للإلغاء"
-                                                />
-                                              ) : (
+                            {/* بطاقات الأصناف — بديل الجدول العريض: كل صنف بطاقة تلتفّ حقولها على عرض الشاشة
+                                فتظهر كاملة في شاشة واحدة بلا تمرير أفقي. كل المعالجات كما كانت في الجدول. */}
+                            <div className="space-y-2.5">
+                              {purchaseDraft.map((item) => {
+                                const subTotal = (item.qty || 0) * (item.price || 0);
+                                // الرصيد الحقيقي الحالي للصنف في المخزن (مصدره inventory لا كمية المسودة)
+                                const liveMed = inventory.find(m => m.id === item.medicineId);
+                                const liveQty = liveMed?.availableQuantity ?? 0;
+                                const fieldCls = 'w-full rounded-lg border p-1.5 font-mono text-center text-xs focus:outline-emerald-500';
+                                const labelCls = 'block text-[9px] font-bold text-slate-500 mb-0.5 text-center';
+                                return (
+                                  <div key={item.id} className="bg-white border border-slate-200 rounded-2xl p-3 space-y-2.5 hover:border-slate-300 transition">
+
+                                    {/* الصف الأول: الاسم والرصيد والباركود — والإجمالي وزر الحذف */}
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="min-w-0 flex-1 space-y-0.5">
+                                        {/* الاسم العربي (ثلاث نقرات للتعديل) + الرصيد الحقيقي بالمخزن بجانبه */}
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          {editingDraftField !== null && editingDraftField.id === item.id && editingDraftField.field === 'nameAr' ? (
+                                            <input
+                                              autoFocus
+                                              type="text"
+                                              value={editingDraftValue}
+                                              onChange={e => setEditingDraftValue(e.target.value)}
+                                              onKeyDown={e => {
+                                                if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); }
+                                                else if (e.key === 'Escape') { draftEditCancelRef.current = true; (e.target as HTMLInputElement).blur(); }
+                                              }}
+                                              onBlur={saveDraftField}
+                                              className="text-slate-900 font-bold text-xs flex-1 min-w-0 bg-indigo-50 border border-indigo-300 rounded px-1 focus:outline-indigo-500 text-right"
+                                              title="اضغط Enter للحفظ أو Escape للإلغاء"
+                                            />
+                                          ) : (
+                                            <strong
+                                              className="text-slate-900 font-bold text-sm cursor-text select-none"
+                                              title="انقر ثلاث مرات لتعديل الاسم العربي"
+                                              onClick={e => { if (e.detail === 3) startEditDraftField(item, 'nameAr'); }}
+                                            >{item.nameAr}</strong>
+                                          )}
+                                          {item.medicineId && liveMed ? (
+                                            editingDraftStockId === item.id ? (
+                                              <input
+                                                type="number"
+                                                min={0}
+                                                autoFocus
+                                                defaultValue={item.stockCorrection ?? liveQty}
+                                                onBlur={e => saveDraftStock(item.id, liveQty, e.target.value)}
+                                                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingDraftStockId(null); }}
+                                                className="w-16 bg-white border border-blue-400 rounded-full px-2 py-0.5 text-[9px] font-black text-blue-900 text-center focus:outline-blue-500"
+                                              />
+                                            ) : (() => {
+                                              const effQty = item.stockCorrection ?? liveQty;
+                                              const corrected = item.stockCorrection !== undefined && item.stockCorrection !== liveQty;
+                                              return (
                                                 <span
-                                                  className="text-[8px] text-slate-500 font-mono cursor-text select-none border-b border-dashed border-slate-200"
-                                                  title="انقر ثلاث مرات لتعديل الباركود"
-                                                  onClick={e => { if (e.detail === 3) startEditDraftField(item, 'barcode'); }}
-                                                >{item.barcode || '—'}</span>
-                                              )}
-                                            </div>
-                                          </div>
-                                        </td>
-
-                                        {/* Qty Adjustment with increments */}
-                                        <td className="py-3.5 px-3">
-                                          <div className="flex items-center justify-center gap-1.5">
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, qty: Math.max(1, Number(d.qty) - 5) } : d));
-                                              }}
-                                              className="w-6 h-6 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded flex items-center justify-center transition focus:outline-none border-none cursor-pointer"
-                                            >
-                                              -
-                                            </button>
+                                                  onDoubleClick={() => setEditingDraftStockId(item.id)}
+                                                  className={`text-[8px] font-black px-1.5 py-0.5 rounded-full shrink-0 cursor-pointer ${corrected ? 'bg-amber-100 text-amber-800 border border-amber-300' : effQty <= 0 ? 'bg-rose-100 text-rose-700' : effQty < (liveMed.minStock ?? 15) ? 'bg-amber-100 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}
+                                                  title="الرصيد الحالي في المخزن — انقر مرتين لتصحيحه"
+                                                >بالمخزن: {effQty}{corrected ? ' ✎' : ''}</span>
+                                              );
+                                            })()
+                                          ) : (
+                                            <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full shrink-0 bg-blue-50 text-blue-700" title="صنف جديد غير موجود بالمخزن بعد">جديد</span>
+                                          )}
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                          <span className="text-[9px] text-slate-500 font-mono">
+                                            {item.nameEn} • {item.scientificName}
+                                          </span>
+                                          {/* الباركود — ثلاث نقرات للتعديل مع انتشار للمخزون */}
+                                          {editingDraftField !== null && editingDraftField.id === item.id && editingDraftField.field === 'barcode' ? (
                                             <input
-                                              type="number"
-                                              min="1"
-                                              value={item.qty}
-                                              onChange={(e) => {
-                                                const val = Number(e.target.value);
-                                                setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, qty: isNaN(val) ? 1 : val } : d));
+                                              autoFocus
+                                              type="text"
+                                              value={editingDraftValue}
+                                              onChange={e => setEditingDraftValue(e.target.value)}
+                                              onKeyDown={e => {
+                                                if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); }
+                                                else if (e.key === 'Escape') { draftEditCancelRef.current = true; (e.target as HTMLInputElement).blur(); }
                                               }}
-                                              className="w-14 bg-slate-50 rounded border border-slate-200 p-1 font-mono text-center text-slate-900 focus:outline-emerald-500"
+                                              onBlur={saveDraftField}
+                                              className="text-[8px] text-slate-500 font-mono bg-indigo-50 border border-indigo-300 rounded px-1 w-24 text-right focus:outline-indigo-500"
+                                              title="اضغط Enter للحفظ أو Escape للإلغاء"
                                             />
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, qty: Number(d.qty) + 10 } : d));
-                                              }}
-                                              className="w-6 h-6 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded flex items-center justify-center transition focus:outline-none border-none cursor-pointer"
-                                            >
-                                              +
-                                            </button>
-                                          </div>
-                                        </td>
+                                          ) : (
+                                            <span
+                                              className="text-[8px] text-slate-500 font-mono cursor-text select-none border-b border-dashed border-slate-200"
+                                              title="انقر ثلاث مرات لتعديل الباركود"
+                                              onClick={e => { if (e.detail === 3) startEditDraftField(item, 'barcode'); }}
+                                            >{item.barcode || '—'}</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        <div className="text-left">
+                                          <span className="block text-[8px] font-bold text-slate-400">الإجمالي</span>
+                                          <span className="font-mono font-extrabold text-slate-800 text-sm">{subTotal.toLocaleString()} <span className="text-[9px]">د.ع</span></span>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setPurchaseDraft(prev => prev.filter(d => d.id !== item.id));
+                                          }}
+                                          className="text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition cursor-pointer border-none"
+                                          title="حذف هذا الدواء"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      </div>
+                                    </div>
 
-                                        {/* Purchase price wholesale */}
-                                        <td className="py-3.5 px-3">
-                                          <div className="flex items-center justify-center gap-1 font-mono">
-                                            <input
-                                              type="number"
-                                              step="250"
-                                              value={item.price}
-                                              onChange={(e) => {
-                                                const val = Number(e.target.value);
-                                                setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, price: isNaN(val) ? 0 : val } : d));
-                                              }}
-                                              className="w-16 bg-slate-50 rounded border border-slate-200 p-1 text-center text-slate-900 font-mono text-xs focus:outline-none"
-                                            />
-                                            <span className="text-[10px] text-slate-400">عراقي</span>
-                                          </div>
-                                        </td>
-
-                                        {/* سعر البيع للجمهور — يُحدّث inventory.price مباشرة */}
-                                        <td className="py-3.5 px-3">
-                                          <div className="flex items-center justify-center gap-1 font-mono">
-                                            <input
-                                              type="number"
-                                              step="250"
-                                              value={item.retailPrice ?? ''}
-                                              onChange={(e) => {
-                                                const val = Number(e.target.value);
-                                                if (isNaN(val)) return;
-                                                setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, retailPrice: val } : d));
-                                                setInventory(prev => prev.map(m => m.id === item.medicineId ? { ...m, price: val } : m));
-                                              }}
-                                              className="w-16 bg-blue-50 rounded border border-blue-200 p-1 text-center text-blue-900 font-mono text-xs focus:outline-blue-400 focus:outline-none"
-                                            />
-                                            <span className="text-[10px] text-slate-400">عراقي</span>
-                                          </div>
-                                        </td>
-
-                                        {/* سعر البيع الرسمي — يُحدّث inventory.secondaryPrice مباشرة */}
-                                        <td className="py-3.5 px-3">
-                                          <div className="flex items-center justify-center gap-1 font-mono">
-                                            <input
-                                              type="number"
-                                              step="250"
-                                              value={item.officialPrice ?? ''}
-                                              onChange={(e) => {
-                                                const val = Number(e.target.value);
-                                                if (isNaN(val)) return;
-                                                setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, officialPrice: val } : d));
-                                                setInventory(prev => prev.map(m => m.id === item.medicineId ? { ...m, secondaryPrice: val } : m));
-                                              }}
-                                              className="w-16 bg-violet-50 rounded border border-violet-200 p-1 text-center text-violet-900 font-mono text-xs focus:outline-none"
-                                            />
-                                            <span className="text-[10px] text-slate-400">عراقي</span>
-                                          </div>
-                                        </td>
-
-                                        {/* Expiry Date — يعرض آخر تاريخ محفوظ ويحدّثه عند التعديل */}
-                                        <td className="py-3.5 px-3">
-                                          <input
-                                            type="date"
-                                            value={expiryDates[item.medicineId] || item.expiryDate || ''}
-                                            onChange={(e) => {
-                                              const val = e.target.value;
-                                              setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, expiryDate: val } : d));
-                                              if (item.medicineId) setExpiryDates(prev => ({ ...prev, [item.medicineId]: val }));
-                                            }}
-                                            className="w-28 bg-slate-50 rounded border border-slate-200 p-1 font-mono text-center text-[10px] focus:outline-none"
-                                          />
-                                        </td>
-
-                                        {/* Row Subtotal */}
-                                        <td className="py-3.5 px-3 text-center font-mono font-bold text-slate-700">
-                                          <span>{subTotal.toLocaleString()} د.ع</span>
-                                        </td>
-
-                                        {/* Row Trash Delete */}
-                                        <td className="py-3.5 px-3 text-center">
+                                    {/* الصف الثاني: الحقول القابلة للتعديل — تلتفّ على عرض الشاشة */}
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                                      {/* الكمية */}
+                                      <div>
+                                        <label className={labelCls}>الكمية (علبة)</label>
+                                        <div className="flex items-center gap-1">
                                           <button
                                             type="button"
                                             onClick={() => {
-                                              setPurchaseDraft(prev => prev.filter(d => d.id !== item.id));
+                                              setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, qty: Math.max(1, Number(d.qty) - 5) } : d));
                                             }}
-                                            className="text-slate-400 hover:text-rose-600 p-1 rounded hover:bg-rose-50 transition cursor-pointer border-none"
-                                            title="حذف هذا الدواء"
+                                            className="w-7 h-7 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-lg flex items-center justify-center transition focus:outline-none border-none cursor-pointer shrink-0"
+                                            title="−5"
                                           >
-                                            <Trash2 className="w-4 h-4" />
+                                            -
                                           </button>
-                                        </td>
+                                          <input
+                                            type="number"
+                                            min="1"
+                                            value={item.qty}
+                                            onChange={(e) => {
+                                              const val = Number(e.target.value);
+                                              setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, qty: isNaN(val) ? 1 : val } : d));
+                                            }}
+                                            className={`${fieldCls} bg-slate-50 border-slate-200 text-slate-900 min-w-0`}
+                                          />
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, qty: Number(d.qty) + 10 } : d));
+                                            }}
+                                            className="w-7 h-7 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-lg flex items-center justify-center transition focus:outline-none border-none cursor-pointer shrink-0"
+                                            title="+10"
+                                          >
+                                            +
+                                          </button>
+                                        </div>
+                                      </div>
 
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
+                                      {/* سعر الجملة */}
+                                      <div>
+                                        <label className={labelCls}>سعر الجملة (د.ع)</label>
+                                        <input
+                                          type="number"
+                                          step="250"
+                                          value={item.price}
+                                          onChange={(e) => {
+                                            const val = Number(e.target.value);
+                                            setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, price: isNaN(val) ? 0 : val } : d));
+                                          }}
+                                          className={`${fieldCls} bg-slate-50 border-slate-200 text-slate-900`}
+                                        />
+                                      </div>
+
+                                      {/* سعر البيع للجمهور — يُحدّث inventory.price مباشرة */}
+                                      <div>
+                                        <label className={`${labelCls} text-blue-700`}>البيع للجمهور (د.ع)</label>
+                                        <input
+                                          type="number"
+                                          step="250"
+                                          value={item.retailPrice ?? ''}
+                                          onChange={(e) => {
+                                            const val = Number(e.target.value);
+                                            if (isNaN(val)) return;
+                                            setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, retailPrice: val } : d));
+                                            setInventory(prev => prev.map(m => m.id === item.medicineId ? { ...m, price: val } : m));
+                                          }}
+                                          className={`${fieldCls} bg-blue-50 border-blue-200 text-blue-900 focus:outline-blue-400`}
+                                        />
+                                      </div>
+
+                                      {/* سعر البيع الرسمي — يُحدّث inventory.secondaryPrice مباشرة */}
+                                      <div>
+                                        <label className={`${labelCls} text-violet-700`}>البيع الرسمي (د.ع)</label>
+                                        <input
+                                          type="number"
+                                          step="250"
+                                          value={item.officialPrice ?? ''}
+                                          onChange={(e) => {
+                                            const val = Number(e.target.value);
+                                            if (isNaN(val)) return;
+                                            setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, officialPrice: val } : d));
+                                            setInventory(prev => prev.map(m => m.id === item.medicineId ? { ...m, secondaryPrice: val } : m));
+                                          }}
+                                          className={`${fieldCls} bg-violet-50 border-violet-200 text-violet-900 focus:outline-violet-400`}
+                                        />
+                                      </div>
+
+                                      {/* الانتهاء — يعرض آخر تاريخ محفوظ ويحدّثه عند التعديل */}
+                                      <div className="col-span-2 sm:col-span-1">
+                                        <label className={labelCls}>انتهاء الصلاحية</label>
+                                        <input
+                                          type="date"
+                                          value={expiryDates[item.medicineId] || item.expiryDate || ''}
+                                          onChange={(e) => {
+                                            const val = e.target.value;
+                                            setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, expiryDate: val } : d));
+                                            if (item.medicineId) setExpiryDates(prev => ({ ...prev, [item.medicineId]: val }));
+                                          }}
+                                          className={`${fieldCls} bg-slate-50 border-slate-200 text-slate-900 text-[10px]`}
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
                             </div>
 
                             {/* Summary panel & Dynamic updating math displays */}
@@ -6636,24 +6879,11 @@ export default function Dashboard() {
                                 </div>
 
                                 <div className="pt-1 space-y-2">
-                                  {/* المورّد الموحّد — حقل واحد يُملأ تلقائياً من الفاتورة المستوردة ويبقى قابلاً
-                                      للتعديل دائماً، مع اقتراحات من الموردين المسجَّلين أثناء الكتابة (datalist)
-                                      بدل قائمة منفصلة تبقى فارغة حين يكون اسم الفاتورة غير مسجَّل مسبقاً */}
+                                  {/* المورّد الموحّد — يُختار من الموردين المحفوظين عبر قائمة منسدلة،
+                                      أو يُكتب اسم جديد فيُحفظ كمورد عند اعتماد الشراء */}
                                   <div className="space-y-1">
                                     <label className="block text-slate-500 text-[10px] font-bold">المورّد (يُطبَّق على كل الأصناف)</label>
-                                    <input
-                                      type="text"
-                                      list="purchase-supplier-suggestions"
-                                      value={purchaseSupplier}
-                                      onChange={(e) => applyDraftSupplier(e.target.value)}
-                                      className="w-full bg-white border border-slate-200 rounded-lg p-2 text-xs font-bold text-slate-700"
-                                      placeholder="اسم المورد — يُملأ تلقائياً من الفاتورة أو اكتبه يدوياً"
-                                    />
-                                    <datalist id="purchase-supplier-suggestions">
-                                      {suppliers.map(s => (
-                                        <option key={s.id} value={s.name} />
-                                      ))}
-                                    </datalist>
+                                    <SupplierPicker suppliers={suppliers} value={purchaseSupplier} onChange={applyDraftSupplier} />
                                   </div>
 
                                   {/* شراء بالآجل: تسجيل الفاتورة كذمّة على المذخر بدل خصمها نقداً */}
@@ -7111,7 +7341,7 @@ export default function Dashboard() {
                           <div className="space-y-1.5">
                             {topProfitable.map((p, i) => (
                               <div key={p.name} className="flex items-center justify-between text-[10px] font-bold bg-slate-50 rounded-lg px-3 py-2">
-                                <div className="flex items-center gap-2 min-w-0">
+                                <div className="flex items-center gap-2 min-w-0 flex-wrap">
                                   <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-black shrink-0">{i + 1}</span>
                                   <span className="text-slate-700 truncate">{p.name}</span>
                                 </div>
@@ -7133,7 +7363,7 @@ export default function Dashboard() {
                           <div className="space-y-1.5">
                             {topSelling.map((p, i) => (
                               <div key={p.name} className="flex items-center justify-between text-[10px] font-bold bg-slate-50 rounded-lg px-3 py-2">
-                                <div className="flex items-center gap-2 min-w-0">
+                                <div className="flex items-center gap-2 min-w-0 flex-wrap">
                                   <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-black shrink-0">{i + 1}</span>
                                   <span className="text-slate-700 truncate">{p.name}</span>
                                 </div>
@@ -8407,7 +8637,7 @@ export default function Dashboard() {
                         const meta = actionMeta[entry.action];
                         return (
                           <div key={entry.id} className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-[10px] font-bold gap-3">
-                            <div className="flex items-center gap-2 min-w-0">
+                            <div className="flex items-center gap-2 min-w-0 flex-wrap">
                               <span className={`shrink-0 px-1.5 py-0.5 rounded-md font-black text-[9px] ${meta.bg} ${meta.color}`}>{meta.label}</span>
                               <span className="text-slate-600 truncate">{entry.description}</span>
                             </div>
@@ -9025,8 +9255,8 @@ export default function Dashboard() {
 
       {/* حاسبة سريعة — أيقونة عائمة ثابتة يمين الشاشة (بجانب سلة البيع)، مرفوعة هنا خارج أي عنصر
           متحرّك (motion.div) لأن أي تحويل (transform) في سلف يُنشئ كتلة احتواء جديدة لـ fixed
-          فيُفسد التموضع الحقيقي بالنسبة للشاشة. تظهر في تبويب نقطة البيع فقط. */}
-      {activeTab === 'pos' && (
+          فيُفسد التموضع الحقيقي بالنسبة للشاشة. تظهر في تبويبَي نقطة البيع وطلبيات المذاخر. */}
+      {(activeTab === 'pos' || activeTab === 'b2b') && (
         <div className="fixed top-24 right-3 sm:right-6 z-40">
           {showCalculator ? (
             <div className="w-60">
@@ -9051,6 +9281,7 @@ export default function Dashboard() {
           <Suspense fallback={null}>
           <InvoiceImportModal
             inventory={inventory}
+            suppliers={suppliers}
             expiryDates={expiryDates}
             lastEnteredExpiry={lastEnteredExpiry}
             aliases={invoiceAliases}
@@ -9075,6 +9306,8 @@ export default function Dashboard() {
                       qty: updated[exists].qty + newItem.qty,
                       price: newItem.price,
                       expiryDate: newItem.expiryDate,
+                      stockCorrection: newItem.stockCorrection ?? updated[exists].stockCorrection,
+                      soldQty: newItem.soldQty ?? updated[exists].soldQty,
                     };
                   } else {
                     updated.push(newItem);
@@ -9082,7 +9315,7 @@ export default function Dashboard() {
                 });
                 return updated;
               });
-              if (supplierName) setPurchaseSupplier(supplierName);
+              if (supplierName) { ensureSupplier(supplierName); applyDraftSupplier(supplierName); }
               setShowInvoiceImport(false);
               onInvoiceDraftChange(null);
               setPurchaseSuccessBanner(`تم استيراد ${draftItems.length} صنف من الفاتورة إلى مسودة الشراء`);
