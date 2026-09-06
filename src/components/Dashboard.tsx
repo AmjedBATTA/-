@@ -6,9 +6,11 @@ import {
   MapPin, UserCheck, ShieldCheck, Users, Sparkles, Plus, Check,
   TrendingUp, FileText, Ban, DollarSign, Calendar, RefreshCw, BarChart3, Pill, ClipboardList, ShieldAlert, Heart,
   Barcode, X, Volume2, VolumeX, Camera, Download, Upload, Bell, Pencil, ScanLine, ChevronDown, CalendarClock,
-  Calculator as CalculatorIcon
+  Calculator as CalculatorIcon,
+  Snail, Factory, FlaskConical, Trophy, Eye, EyeOff, Phone, User as UserIcon, CreditCard, AlertTriangle
 } from 'lucide-react';
 import { Medicine, Order, Supplier, InvoiceImportDraft, SupplierMemory } from '../types';
+import { fmtNum, fmtDate, fmtDateTime } from '../utils/format';
 import SupplierPicker from './SupplierPicker';
 // تحميل كسول: نافذة استيراد الفاتورة + مكتبة @google/genai (~305kB) لا تُحمَّل إلا عند فتحها
 const InvoiceImportModal = lazy(() => import('./InvoiceImportModal'));
@@ -309,7 +311,7 @@ const MedicineCard = React.memo(({ med, showVirtualPrice, daysUntilExpiry, onAdd
     >
       {/* Status badge */}
       <div className="flex justify-between items-start gap-1">
-        <span className={`text-[8px] font-black px-2 py-0.5 rounded-full ${
+        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
           isOut ? 'bg-rose-100 text-rose-700'
             : isLow ? 'bg-amber-100 text-amber-700'
             : 'bg-emerald-50 text-emerald-700'
@@ -317,40 +319,40 @@ const MedicineCard = React.memo(({ med, showVirtualPrice, daysUntilExpiry, onAdd
           {isOut ? 'نفذ' : isLow ? 'حرج' : '✓'}
         </span>
         {isExpiringSoon && (
-          <span className="text-[7px] bg-rose-600 text-white px-1.5 py-0.5 rounded-full font-bold">منتهٍ قريباً</span>
+          <span className="text-xs bg-rose-600 text-white px-1.5 py-0.5 rounded-full font-bold">منتهٍ قريباً</span>
         )}
-        <span className="text-[9px] font-mono font-bold text-slate-400 mr-auto">{med.availableQuantity}</span>
+        <span className="text-xs font-mono font-bold text-slate-400 mr-auto">{med.availableQuantity}</span>
       </div>
 
       {/* Name */}
       <div>
-        <h4 className="font-extrabold text-slate-900 text-xs leading-snug line-clamp-2">{med.nameAr}</h4>
-        <p className="text-[9px] text-slate-400 font-mono truncate mt-0.5">{med.nameEn}</p>
+        <h4 className="font-semibold text-slate-900 text-xs leading-snug line-clamp-2">{med.nameAr}</h4>
+        <p className="text-xs text-slate-400 font-mono truncate mt-0.5">{med.nameEn}</p>
       </div>
 
       {/* Prices — وضع «الرسمي»: الرسمي وحده بخط واضح، وتُخفى «بيع» و«شراء» ونسبة الربح
           (شاشة تواجه الزبون — لا تكشف السعر الداخلي ولا الكلفة، كما في السلة) */}
       <div className="border-t border-slate-100 pt-2 flex justify-between items-end">
         {showVirtualPrice ? (
-          <span className="text-base font-black font-mono block text-purple-700">
-            {officialPrice.toLocaleString()}
-            <span className="text-[9px] font-bold text-purple-400 mr-0.5">د.ع</span>
+          <span className="text-base font-bold font-mono block text-purple-700">
+            {fmtNum(officialPrice)}
+            <span className="text-xs font-bold text-purple-400 mr-0.5">د.ع</span>
           </span>
         ) : (
           <>
             <div className="space-y-0.5">
-              <span className="text-sm font-black font-mono block text-emerald-700">
-                {med.price.toLocaleString()}
-                <span className="text-[9px] font-bold text-slate-400 mr-0.5">د.ع</span>
+              <span className="text-sm font-bold font-mono block text-emerald-700">
+                {fmtNum(med.price)}
+                <span className="text-xs font-bold text-slate-400 mr-0.5">د.ع</span>
               </span>
               {med.costPrice && med.costPrice > 0 && (
-                <span className="text-[9px] text-slate-400 font-mono block">
-                  شراء: <span className="text-slate-500 font-bold">{med.costPrice.toLocaleString()}</span>
+                <span className="text-xs text-slate-400 font-mono block">
+                  شراء: <span className="text-slate-500 font-bold">{fmtNum(med.costPrice)}</span>
                 </span>
               )}
             </div>
             {margin !== null && (
-              <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
+              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
                 margin >= 20 ? 'bg-emerald-50 text-emerald-700'
                   : margin >= 10 ? 'bg-amber-50 text-amber-700'
                   : 'bg-rose-50 text-rose-700'
@@ -404,21 +406,21 @@ const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove
           onDoubleClick={() => onAddShortage(item.medicine)}
           title="نقرة مزدوجة: إضافة إلى نواقص الأدوية — مسح الباركود مرة ثانية: بيع برصيد صفر">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="font-extrabold text-rose-200 text-xs truncate">{item.medicine.nameAr}</span>
-            <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-rose-900/60 text-rose-300 shrink-0">نفذ</span>
+            <span className="font-semibold text-rose-200 text-xs leading-snug line-clamp-2">{item.medicine.nameAr}</span>
+            <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-rose-900/60 text-rose-300 shrink-0">نفذ</span>
             {soldToday > 0 && (
-              <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-amber-900/50 text-amber-300 shrink-0">مبيع اليوم: {soldToday}</span>
+              <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-amber-900/50 text-amber-300 shrink-0">مبيع اليوم: {soldToday}</span>
             )}
           </div>
           <div className="flex items-baseline gap-2 flex-wrap">
-            <span className="text-[11px] text-rose-300/80 font-mono font-bold">{shownUnit.toLocaleString()} د.ع</span>
+            <span className="text-sm text-rose-300/80 font-mono font-bold">{fmtNum(shownUnit)} د.ع</span>
             {!showVirtualPrice && costUnit > 0 && (
-              <span className="text-[10px] text-rose-300/60 font-mono">شراء: {costUnit.toLocaleString()}</span>
+              <span className="text-sm text-rose-300/60 font-mono">شراء: {fmtNum(costUnit)}</span>
             )}
           </div>
         </div>
         <button type="button" onClick={() => onRemove(item.medicine.id)}
-          className="w-7 h-7 text-rose-700 hover:text-rose-300 flex items-center justify-center cursor-pointer transition shrink-0">
+          className="w-9 h-10 text-rose-700 hover:text-rose-300 flex items-center justify-center cursor-pointer transition shrink-0">
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -433,7 +435,7 @@ const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove
       {onAddToCalculator && (
         <button type="button" onClick={() => onAddToCalculator(shownTotal)}
           title="أضف إجمالي هذه المادة للحاسبة"
-          className="absolute top-1 left-1 w-4 h-4 bg-slate-700 hover:bg-emerald-600 text-slate-300 hover:text-white rounded flex items-center justify-center text-[10px] font-black leading-none cursor-pointer transition z-10">
+          className="absolute top-1 left-1 w-4 h-4 bg-slate-700 hover:bg-emerald-600 text-slate-300 hover:text-white rounded flex items-center justify-center text-sm font-bold leading-none cursor-pointer transition z-10">
           +
         </button>
       )}
@@ -441,40 +443,40 @@ const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove
         onDoubleClick={() => onAddShortage(item.medicine)}
         title="نقرة مزدوجة: إضافة إلى نواقص الأدوية">
         <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-          <span className={`font-extrabold text-xs truncate ${item.zeroStock ? 'text-rose-100' : 'text-white'}`}>{item.medicine.nameAr}</span>
+          <span className={`font-semibold text-xs leading-snug line-clamp-2 ${item.zeroStock ? 'text-rose-100' : 'text-white'}`}>{item.medicine.nameAr}</span>
           {/* بيع برصيد صفر: شارة تنبيه + مجموع ما بيع منها اليوم (السجل + هذه السلة) */}
           {item.zeroStock && (
             <>
-              <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-rose-900/60 text-rose-300 shrink-0">بيع بلا رصيد</span>
-              <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-amber-900/50 text-amber-300 shrink-0">مبيع اليوم: {soldToday + item.quantity}</span>
+              <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-rose-900/60 text-rose-300 shrink-0">بيع بلا رصيد</span>
+              <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-amber-900/50 text-amber-300 shrink-0">مبيع اليوم: {soldToday + item.quantity}</span>
             </>
           )}
         </div>
         {/* وضع «الرسمي»: الإجمالي الرسمي وحده بلا أي تفاصيل (سعر وحدة/عدد/شراء) — شاشة
             نظيفة تواجه الزبون. الوضع العادي: سعر الوحدة × العدد + الشراء على سطر واحد، والإجمالي بجانبها. */}
         <div className="flex items-baseline justify-between gap-2 flex-wrap">
-          <span className="text-[10px] text-slate-400 font-mono">
+          <span className="text-sm text-slate-400 font-mono">
             {!showVirtualPrice && (
               <>
-                <span className="text-emerald-400 font-bold">{shownUnit.toLocaleString()}</span>
+                <span className="text-emerald-400 font-bold">{fmtNum(shownUnit)}</span>
                 <span> × {item.quantity}</span>
-                {item.medicine.costPrice ? <span> · شراء {(item.medicine.costPrice * item.quantity).toLocaleString()}</span> : null}
+                {item.medicine.costPrice ? <span> · شراء {fmtNum((item.medicine.costPrice * item.quantity))}</span> : null}
               </>
             )}
           </span>
-          <span className={`text-base font-mono font-black leading-none ${showVirtualPrice ? 'text-purple-400' : 'text-amber-400'}`}>
-            {shownTotal.toLocaleString()}<span className={`text-[10px] font-bold mr-1 ${showVirtualPrice ? 'text-purple-400' : 'text-amber-500/80'}`}>د.ع</span>
+          <span className={`text-base font-mono font-bold leading-none ${showVirtualPrice ? 'text-purple-400' : 'text-amber-400'}`}>
+            {fmtNum(shownTotal)}<span className={`text-sm font-bold mr-1 ${showVirtualPrice ? 'text-purple-400' : 'text-amber-500/80'}`}>د.ع</span>
           </span>
         </div>
       </div>
       <div className="flex items-center gap-1 shrink-0">
         <button type="button" onClick={() => onDec(item.medicine.id)}
-          className="w-7 h-7 bg-slate-700 hover:bg-slate-600 text-white rounded-lg flex items-center justify-center font-bold text-sm cursor-pointer transition">−</button>
-        <span className="font-black text-white font-mono w-6 text-center text-sm">{item.quantity}</span>
+          className="w-9 h-10 bg-slate-700 hover:bg-slate-600 text-white rounded-lg flex items-center justify-center font-bold text-base cursor-pointer transition" aria-label="إنقاص الكمية">−</button>
+        <span className="font-bold text-white font-mono w-8 text-center text-base">{item.quantity}</span>
         <button type="button" onClick={() => onInc(item.medicine.id)}
-          className="w-7 h-7 bg-slate-700 hover:bg-emerald-700 text-white rounded-lg flex items-center justify-center font-bold text-sm cursor-pointer transition">+</button>
+          className="w-9 h-10 bg-slate-700 hover:bg-emerald-700 text-white rounded-lg flex items-center justify-center font-bold text-base cursor-pointer transition" aria-label="زيادة الكمية">+</button>
         <button type="button" onClick={() => onRemove(item.medicine.id)}
-          className="w-7 h-7 text-slate-600 hover:text-rose-400 flex items-center justify-center cursor-pointer transition">
+          className="w-9 h-10 text-slate-600 hover:text-rose-400 flex items-center justify-center cursor-pointer transition" aria-label="حذف من السلة">
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -508,12 +510,12 @@ function calcApply(a: number, b: number, op: CalcOp): number {
   }
 }
 
-// يعرض الرقم بفواصل الآلاف (متّسق مع toLocaleString المستخدَم في كل مبالغ التطبيق)
+// يعرض الرقم بفواصل الآلاف وأرقام لاتينية (fmtNum الموحّد في كل مبالغ التطبيق)
 // مع الحفاظ على نقطة عشرية قيد الكتابة كما هي بدل حذفها.
 function formatCalcDisplay(s: string): string {
-  if (s.endsWith('.')) return Number(s.slice(0, -1)).toLocaleString() + '.';
+  if (s.endsWith('.')) return fmtNum(Number(s.slice(0, -1))) + '.';
   const n = Number(s);
-  return Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 6 }) : s;
+  return Number.isFinite(n) ? fmtNum(n, 6) : s;
 }
 
 // حالة الحاسبة كاملةً في مُخفِّض واحد: كل ضغطة (زر، مفتاح، أو قيمة مدفوعة من السلة) تُطبَّق
@@ -671,10 +673,10 @@ const Calculator = React.memo(forwardRef<CalculatorHandle, CalculatorProps>(({ o
   const displaySize = shown.length > 18 ? 'text-sm' : shown.length > 12 ? 'text-base' : 'text-xl';
   const expr = st.tokens.join(' ');
 
-  const base = 'h-11 sm:h-9 rounded-xl text-sm font-black flex items-center justify-center transition cursor-pointer select-none';
+  const base = 'h-11 sm:h-9 rounded-xl text-sm font-bold flex items-center justify-center transition cursor-pointer select-none';
   const digitCls = `${base} bg-slate-800 text-white hover:bg-slate-700`;
   const funcCls = `${base} bg-slate-700 text-white hover:bg-slate-600`;
-  const utilCls = `${base} h-8 sm:h-7 text-[11px] bg-slate-800/70 text-slate-300 hover:bg-slate-700 hover:text-white`;
+  const utilCls = `${base} h-8 sm:h-7 text-sm bg-slate-800/70 text-slate-300 hover:bg-slate-700 hover:text-white`;
   // زر العامل المعلَّق يُضاء ليعرف المستخدم ما الذي ينتظره
   const opCls = (op: CalcOp) => `${base} ${st.pendingOp === op && st.overwrite
     ? 'bg-white text-emerald-700 ring-2 ring-emerald-400'
@@ -688,7 +690,7 @@ const Calculator = React.memo(forwardRef<CalculatorHandle, CalculatorProps>(({ o
       <div className="flex items-center justify-between px-1 -m-1 p-1 rounded-lg touch-none"
         style={{ cursor: dragHandleProps ? 'grab' : undefined }}
         {...(dragHandleProps || {})}>
-        <span className="text-[10px] font-black text-slate-400 select-none">⠿ حاسبة سريعة</span>
+        <span className="text-sm font-bold text-slate-400 select-none">⠿ حاسبة سريعة</span>
         <button type="button" onClick={onClose} title="إغلاق الحاسبة" aria-label="إغلاق الحاسبة"
           className="text-slate-500 hover:text-rose-400 transition cursor-pointer">
           <X className="w-3.5 h-3.5" />
@@ -696,10 +698,10 @@ const Calculator = React.memo(forwardRef<CalculatorHandle, CalculatorProps>(({ o
       </div>
       {/* شاشة العرض: شريط التعبير الحي فوق الناتج */}
       <div className="text-left px-1 pb-1 overflow-hidden" dir="ltr">
-        <div className="font-mono text-[11px] text-slate-400 min-h-[16px] truncate" title={expr} aria-live="polite">
+        <div className="font-mono text-sm text-slate-400 min-h-[16px] truncate" title={expr} aria-live="polite">
           {expr || ' '}
         </div>
-        <span className={`font-mono font-black ${isError ? 'text-rose-400' : 'text-white'} ${displaySize} truncate block`} aria-live="polite">{shown}</span>
+        <span className={`font-mono font-bold ${isError ? 'text-rose-400' : 'text-white'} ${displaySize} truncate block`} aria-live="polite">{shown}</span>
       </div>
       {/* صف الأدوات: مسح خانة، تقريب للعملة، نسخ */}
       <div className="grid grid-cols-4 gap-1.5" dir="ltr">
@@ -725,7 +727,7 @@ const Calculator = React.memo(forwardRef<CalculatorHandle, CalculatorProps>(({ o
 
         <button type="button" onClick={digit('0')} className={`${digitCls} col-span-2`}>0</button>
         <button type="button" onClick={() => dispatch({ type: 'dot' })} className={digitCls} aria-label="فاصلة عشرية">.</button>
-        <button type="button" onClick={op(null)} className={`${base} bg-emerald-500 text-white hover:bg-emerald-400`} aria-label="يساوي" title="يساوي (Enter)">=</button>
+        <button type="button" onClick={op(null)} className={`${base} bg-emerald-700 text-white hover:bg-emerald-600`} aria-label="يساوي" title="يساوي (Enter)">=</button>
       </div>
     </div>
   );
@@ -1502,7 +1504,7 @@ export default function Dashboard() {
         setDoc(doc(db, 'users', uid, 'expiryDates', medId), { expiry: qaExpiry, lastEntered: qaExpiry, userId: uid }, { merge: true })
           .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${uid}/expiryDates/${medId}`));
     }
-    addAuditEntry({ action: 'inventory_import', amount: 0, description: `جرد سريع: ${qaNameAr.trim()} — كمية: ${qty}، سعر: ${price.toLocaleString()} د.ع` });
+    addAuditEntry({ action: 'inventory_import', amount: 0, description: `جرد سريع: ${qaNameAr.trim()} — كمية: ${qty}، سعر: ${fmtNum(price)} د.ع` });
     setQuickAuditId(null);
   };
 
@@ -1535,7 +1537,7 @@ export default function Dashboard() {
     addAuditEntry({
       action: 'inventory_edit',
       amount: 0,
-      description: `تعديل سعر ${updatedMed.nameAr} → ${Number(updatedMed.price).toLocaleString()} د.ع`,
+      description: `تعديل سعر ${updatedMed.nameAr} → ${fmtNum(Number(updatedMed.price))} د.ع`,
       relatedId: medId,
     });
     setEditingPriceId(null);
@@ -2433,7 +2435,7 @@ export default function Dashboard() {
     if (!raw) { window.alert('لا توجد نسخة احتياطية محلية محفوظة بعد.'); return; }
     try {
       const snap = JSON.parse(raw);
-      const when = snap.exportedAt ? new Date(snap.exportedAt).toLocaleString('ar') : 'غير معروف';
+      const when = snap.exportedAt ? fmtDateTime(new Date(snap.exportedAt)) : 'غير معروف';
       if (!window.confirm(`استعادة النسخة المحفوظة (${when})؟\nستُستبدل البيانات الحالية على هذا الجهاز.`)) return;
       if (applyRestoredSnapshot(snap)) window.alert('تمت الاستعادة من نسخة المتصفح بنجاح ✅');
     } catch (e) { window.alert('تعذّرت الاستعادة: ' + (e as Error).message); }
@@ -2478,7 +2480,7 @@ export default function Dashboard() {
 
     // فحص مسبق: الاسترداد النقدي لا يتجاوز السيولة المتاحة بالصندوق
     if (returnRefundMethod === 'cash' && returnTotal > walletBalance) {
-      alert(`لا يمكن الاسترداد نقداً: مبلغ المرتجع (${returnTotal.toLocaleString()} د.ع) أكبر من السيولة المتاحة بالصندوق (${walletBalance.toLocaleString()} د.ع). اختر "بدون صرف نقدي" أو قلّل الكمية.`);
+      alert(`لا يمكن الاسترداد نقداً: مبلغ المرتجع (${fmtNum(returnTotal)} د.ع) أكبر من السيولة المتاحة بالصندوق (${fmtNum(walletBalance)} د.ع). اختر "بدون صرف نقدي" أو قلّل الكمية.`);
       return;
     }
 
@@ -2562,7 +2564,7 @@ export default function Dashboard() {
           .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/receivables/${rec.id}`));
       }
       if (rec.paidAmount > newAmount) {
-        alert(`تنبيه: الزبون «${rec.customerName}» سدّد ${rec.paidAmount.toLocaleString()} د.ع بينما أصبح إجمالي الفاتورة ${newAmount.toLocaleString()} د.ع.\nالفائض ${(rec.paidAmount - newAmount).toLocaleString()} د.ع يحتاج معالجة يدوية (استرداد للزبون).`);
+        alert(`تنبيه: الزبون «${rec.customerName}» سدّد ${fmtNum(rec.paidAmount)} د.ع بينما أصبح إجمالي الفاتورة ${fmtNum(newAmount)} د.ع.\nالفائض ${fmtNum((rec.paidAmount - newAmount))} د.ع يحتاج معالجة يدوية (استرداد للزبون).`);
       }
     } else {
       adjustWallet(diff);
@@ -2621,7 +2623,7 @@ export default function Dashboard() {
     const ok = window.confirm(
       `حذف «${item.name}» من الفاتورة ${invoiceId}؟\n` +
       (med ? `سيُعاد ${restoreQty} إلى المخزون` : `⚠ تعذّرت مطابقة المادة بالمخزون — لن يُعاد العدد`) +
-      `، ويَنقص الإجمالي ${lineAmount.toLocaleString()} د.ع ` +
+      `، ويَنقص الإجمالي ${fmtNum(lineAmount)} د.ع ` +
       (isCredit ? 'وتُصحَّح ذمّة الزبون (فاتورة آجلة — لا يُمسّ الصندوق).' : 'ويُصحَّح الصندوق.')
     );
     if (!ok) return;
@@ -2693,7 +2695,7 @@ export default function Dashboard() {
     if (!newExpAmount || newExpAmount <= 0) return;
     // فحص مسبق: لا يُسمح بمصروف أكبر من السيولة المتاحة — بدل قصّ الرصيد عند الصفر بصمت
     if (Math.round(newExpAmount) > walletBalance) {
-      alert(`لا يمكن تسجيل المصروف: المبلغ (${Math.round(newExpAmount).toLocaleString()} د.ع) أكبر من السيولة المتاحة بالصندوق (${walletBalance.toLocaleString()} د.ع).`);
+      alert(`لا يمكن تسجيل المصروف: المبلغ (${fmtNum(Math.round(newExpAmount))} د.ع) أكبر من السيولة المتاحة بالصندوق (${fmtNum(walletBalance)} د.ع).`);
       return;
     }
     const expId = generateDocId('EXP');
@@ -2781,7 +2783,7 @@ export default function Dashboard() {
     if (pay <= 0) return;
     // فحص مسبق: التسديد لا يتجاوز السيولة المتاحة
     if (pay > walletBalance) {
-      alert(`لا يمكن التسديد: المبلغ (${pay.toLocaleString()} د.ع) أكبر من السيولة المتاحة بالصندوق (${walletBalance.toLocaleString()} د.ع).`);
+      alert(`لا يمكن التسديد: المبلغ (${fmtNum(pay)} د.ع) أكبر من السيولة المتاحة بالصندوق (${fmtNum(walletBalance)} د.ع).`);
       return;
     }
     const newPaid = p.paidAmount + pay;
@@ -2797,7 +2799,7 @@ export default function Dashboard() {
     addAuditEntry({
       action: 'payable_settle',
       amount: pay,
-      description: `تسديد ذمّة ${p.supplierName} — المتبقي: ${(p.amount - newPaid).toLocaleString()} د.ع`,
+      description: `تسديد ذمّة ${p.supplierName} — المتبقي: ${fmtNum((p.amount - newPaid))} د.ع`,
       relatedId: p.id,
     });
   };
@@ -2866,7 +2868,7 @@ export default function Dashboard() {
     if (payTotal <= 0) return;
     // فحص مسبق: التسديد لا يتجاوز السيولة المتاحة
     if (payTotal > walletBalance) {
-      alert(`لا يمكن التسديد: المبلغ (${payTotal.toLocaleString()} د.ع) أكبر من السيولة المتاحة بالصندوق (${walletBalance.toLocaleString()} د.ع).`);
+      alert(`لا يمكن التسديد: المبلغ (${fmtNum(payTotal)} د.ع) أكبر من السيولة المتاحة بالصندوق (${fmtNum(walletBalance)} د.ع).`);
       return;
     }
 
@@ -2964,7 +2966,7 @@ export default function Dashboard() {
     addAuditEntry({
       action: 'receivable_collect',
       amount: collect,
-      description: `تحصيل من ${r.customerName} — المتبقي: ${(r.amount - newPaid).toLocaleString()} د.ع`,
+      description: `تحصيل من ${r.customerName} — المتبقي: ${fmtNum((r.amount - newPaid))} د.ع`,
       relatedId: r.id,
     });
   };
@@ -3686,7 +3688,7 @@ export default function Dashboard() {
       if (!currentUser) {
         // وضع تجريبي بدون تسجيل دخول — يُحفظ محلياً فقط
         setBulkImportStatus('done');
-        setBulkImportMsg(`تم تحميل ${meds.length.toLocaleString()} صنف محلياً. سجّل الدخول لمزامنتها سحابياً.`);
+        setBulkImportMsg(`تم تحميل ${fmtNum(meds.length)} صنف محلياً. سجّل الدخول لمزامنتها سحابياً.`);
         setTimeout(() => setBulkImportStatus('idle'), 8000);
         return;
       }
@@ -3697,7 +3699,7 @@ export default function Dashboard() {
 
       // 1) حذف المواد القديمة/التجريبية من Firestore (دفعات)
       if (oldIds.length) {
-        setBulkImportMsg(`جارٍ تنظيف ${oldIds.length.toLocaleString()} مادة قديمة...`);
+        setBulkImportMsg(`جارٍ تنظيف ${fmtNum(oldIds.length)} مادة قديمة...`);
         for (let i = 0; i < oldIds.length; i += CHUNK) {
           const batch = writeBatch(db);
           oldIds.slice(i, i + CHUNK).forEach(id => {
@@ -3721,7 +3723,7 @@ export default function Dashboard() {
       }
 
       setBulkImportStatus('done');
-      setBulkImportMsg(`تم استبدال المخزون بنجاح — ${meds.length.toLocaleString()} صنف في حسابك السحابي!`);
+      setBulkImportMsg(`تم استبدال المخزون بنجاح — ${fmtNum(meds.length)} صنف في حسابك السحابي!`);
       addAuditEntry({
         action: 'inventory_import',
         amount: 0,
@@ -3833,7 +3835,7 @@ export default function Dashboard() {
     // المتابعة تجعل الصندوق بالسالب (إشارة صادقة إلى الدفع من مصدر خارج الصندوق).
     if (!purchaseOnCredit && totalCost > walletBalance) {
       const proceed = window.confirm(
-        `رصيد الصندوق (${walletBalance.toLocaleString()} د.ع) أقل من قيمة الشراء النقدي (${totalCost.toLocaleString()} د.ع).\n\n` +
+        `رصيد الصندوق (${fmtNum(walletBalance)} د.ع) أقل من قيمة الشراء النقدي (${fmtNum(totalCost)} د.ع).\n\n` +
         `• «موافق» = المتابعة نقداً (سيصبح رصيد الصندوق بالسالب — أي دفعتَ من مصدر خارج الصندوق).\n` +
         `• «إلغاء» = التوقف؛ يمكنك تفعيل «شراء بالآجل» لتسجيلها كذمّة على المذخر.`
       );
@@ -4141,8 +4143,8 @@ export default function Dashboard() {
       : '';
     setPurchaseSuccessBanner(
       (purchaseOnCredit
-        ? `تم اعتماد فاتورة الشراء بقيمة ${totalCost.toLocaleString()} د.ع كذمّة آجلة على ${creditSupplierName.trim() || 'المذخر'} وتحديث المخزون لـ ${purchaseDraft.length} أدوية!`
-        : `تم بنجاح اعتماد فاتورة الشراء اليومي بقيمة ${totalCost.toLocaleString()} د.ع وتحديث مستويات المخزون والصلاحيات لـ ${purchaseDraft.length} أدوية!`
+        ? `تم اعتماد فاتورة الشراء بقيمة ${fmtNum(totalCost)} د.ع كذمّة آجلة على ${creditSupplierName.trim() || 'المذخر'} وتحديث المخزون لـ ${purchaseDraft.length} أدوية!`
+        : `تم بنجاح اعتماد فاتورة الشراء اليومي بقيمة ${fmtNum(totalCost)} د.ع وتحديث مستويات المخزون والصلاحيات لـ ${purchaseDraft.length} أدوية!`
       ) + expiryNote + correctionNote
     );
     
@@ -4375,7 +4377,7 @@ export default function Dashboard() {
   // تصدير جرد المخزون الكامل إلى CSV (يفتح في Excel بالعربية)
   const exportInventoryToCSV = () => {
     const rows: (string | number)[][] = [
-      [`جرد المخزون — صيدلية انوار الحسن`, new Date().toLocaleString('ar-IQ', { hour12: true })],
+      [`جرد المخزون — صيدلية انوار الحسن`, fmtDateTime(new Date())],
       [],
       ['الاسم العربي', 'الاسم الإنجليزي', 'المادة الفعالة', 'الباركود', 'الكمية المتاحة', 'الحالة', 'سعر البيع (د.ع)', 'سعر الكلفة (د.ع)', 'قيمة المخزون بالكلفة (د.ع)', 'تاريخ انتهاء الصلاحية'],
       ...inventory.map(m => {
@@ -4398,7 +4400,7 @@ export default function Dashboard() {
   // Export financial reports to CSV
   const exportFinancialsToCSV = () => {
     const totalInventoryValue = inventory.reduce((sum, item) => sum + (item.price * item.availableQuantity), 0);
-    const nowStr = new Date().toLocaleString('ar-IQ', { hour12: true });
+    const nowStr = fmtDateTime(new Date());
 
     let csvContent = '\uFEFF'; // Excel UTF-8 BOM
 
@@ -4470,8 +4472,8 @@ export default function Dashboard() {
     return (
       <div className="bg-gradient-to-br from-emerald-50 via-slate-50 to-teal-50 min-h-screen flex items-center justify-center p-4" dir="rtl">
         <div className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-slate-100 p-8 text-center">
-          <div className="w-16 h-16 mx-auto mb-5 rounded-2xl bg-emerald-600 flex items-center justify-center text-white text-2xl font-black">أ</div>
-          <h1 className="text-xl font-black text-slate-800 mb-1">صيدلية انوار الحسن</h1>
+          <div className="w-16 h-16 mx-auto mb-5 rounded-2xl bg-emerald-600 flex items-center justify-center text-white text-2xl font-bold">أ</div>
+          <h1 className="text-xl font-bold text-slate-800 mb-1">صيدلية انوار الحسن</h1>
           <p className="text-sm text-slate-500 mb-6">نظام إدارة الصيدلية — تسجيل الدخول مطلوب</p>
 
           {authInitFailed && (
@@ -4488,7 +4490,7 @@ export default function Dashboard() {
 
           <button
             onClick={handleGoogleSignIn}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-black transition shadow-sm cursor-pointer"
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition shadow-sm cursor-pointer"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24"><path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="currentColor" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/><path fill="currentColor" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
             <span>تسجيل الدخول عبر Google</span>
@@ -4522,7 +4524,7 @@ export default function Dashboard() {
               }}
               className="mt-3 bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2 text-right"
             >
-              <p className="text-[11px] font-bold text-slate-600">
+              <p className="text-sm font-bold text-slate-600">
                 التجاوز محمي بكلمة مرور الحسابات — أدخلها للمتابعة بوضع محلي بلا مزامنة:
               </p>
               <input
@@ -4536,17 +4538,17 @@ export default function Dashboard() {
                 className={`w-full text-center text-lg font-mono tracking-[0.4em] bg-white border rounded-lg py-2 px-3 focus:outline-none focus:ring-2 transition ${bypassPinError ? 'border-rose-400 focus:ring-rose-200 bg-rose-50' : 'border-slate-200 focus:ring-emerald-200 focus:border-emerald-400'}`}
               />
               {bypassPinError && (
-                <p className="text-[11px] text-rose-600 font-bold text-center">كلمة المرور غير صحيحة</p>
+                <p className="text-sm text-rose-600 font-bold text-center">كلمة المرور غير صحيحة</p>
               )}
               {financialPin === '0000' && (
-                <p className="text-[10px] text-amber-600 font-semibold text-center">
+                <p className="text-sm text-amber-600 font-semibold text-center">
                   تنبيه: كلمة المرور ما زالت الافتراضية (0000) — غيّرها من تبويب الحسابات بعد الدخول.
                 </p>
               )}
               <div className="flex gap-2">
                 <button
                   type="submit"
-                  className="flex-1 bg-slate-700 hover:bg-slate-800 text-white rounded-lg py-2 text-xs font-black transition cursor-pointer border-none"
+                  className="flex-1 bg-slate-700 hover:bg-slate-800 text-white rounded-lg py-2 text-xs font-bold transition cursor-pointer border-none"
                 >
                   تأكيد التجاوز
                 </button>
@@ -4561,7 +4563,7 @@ export default function Dashboard() {
             </form>
           )}
 
-          <div className="mt-5 text-[11px] leading-relaxed text-slate-500 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5">
+          <div className="mt-5 text-sm leading-relaxed text-slate-500 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5">
             <span className="font-bold text-emerald-700">مهم لتوحيد البيانات بين الأجهزة:</span><br/>
             سجّل الدخول بـ <span className="font-bold">نفس حساب Google</span> على كل أجهزة الكاشير. كل الأجهزة التي تستخدم نفس الحساب ترى نفس المخزون والمبيعات لحظياً.
           </div>
@@ -4655,15 +4657,15 @@ export default function Dashboard() {
                   />
                 )}
                 <div className="text-right hidden sm:block">
-                  <span className="text-xs font-black text-slate-800 block leading-tight">
+                  <span className="text-xs font-bold text-slate-800 block leading-tight">
                     {currentUser.displayName || 'صيدلية شريكة'}
                   </span>
                   {/* بريد الحساب المسجّل — للتأكد بصرياً أن كل الأجهزة تستخدم نفس الحساب */}
-                  <span className="text-[9px] text-slate-400 font-mono block leading-tight" dir="ltr">
+                  <span className="text-xs text-slate-400 font-mono block leading-tight" dir="ltr">
                     {currentUser.email}
                   </span>
                   {/* مؤشر المزامنة الحقيقي — مشتقّ من حالة الاتصال الفعلية بخادم Firestore */}
-                  <span className="text-[9px] font-bold block flex items-center space-x-reverse space-x-1">
+                  <span className="text-xs font-bold block flex items-center space-x-reverse space-x-1">
                     {syncState === 'synced' ? (
                       <><span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" /><span className="text-emerald-600">متزامن مع السحابة ✓</span></>
                     ) : syncState === 'pending' ? (
@@ -4675,14 +4677,14 @@ export default function Dashboard() {
                 </div>
                 <button
                   onClick={handleCloudCheck}
-                  className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded-lg transition cursor-pointer border border-emerald-200"
+                  className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-sm font-bold rounded-lg transition cursor-pointer border border-emerald-200"
                   title="قراءة العدد الفعلي من خادم Firestore ومقارنته بهذا الجهاز"
                 >
-                  🔍 فحص السحابة
+                  <span className="inline-flex items-center gap-1"><Search className="w-3 h-3" />فحص السحابة</span>
                 </button>
                 <button
                   onClick={handleSignOut}
-                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[10px] font-bold rounded-lg transition cursor-pointer"
+                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm font-bold rounded-lg transition cursor-pointer"
                 >
                   تسجيل خروج
                 </button>
@@ -4690,7 +4692,7 @@ export default function Dashboard() {
             ) : (
               <button 
                 onClick={handleGoogleSignIn}
-                className="flex items-center space-x-reverse space-x-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition shadow-sm cursor-pointer"
+                className="flex items-center space-x-reverse space-x-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24">
                   <path 
@@ -4738,7 +4740,7 @@ export default function Dashboard() {
                   setCurrentRole(next);
                   try { localStorage.setItem('anwar_device_role', next); } catch { /* localStorage غير متاح */ }
                 }}
-                className="text-[9px] font-bold bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 cursor-pointer"
+                className="text-xs font-bold bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 cursor-pointer"
               >
                 <option value="admin">مدير</option>
                 <option value="pharmacist">صيدلاني</option>
@@ -4753,21 +4755,12 @@ export default function Dashboard() {
                     if (p === 'granted') alert('تم تفعيل الإشعارات بنجاح!');
                   });
                 }}
-                className="text-[9px] font-bold bg-amber-50 border border-amber-200 text-amber-700 rounded-lg px-2 py-1 cursor-pointer hover:bg-amber-100 transition hidden sm:flex items-center gap-1"
+                className="text-xs font-bold bg-amber-50 border border-amber-200 text-amber-700 rounded-lg px-2 py-1 cursor-pointer hover:bg-amber-100 transition hidden sm:flex items-center gap-1"
               >
                 <Bell className="w-3 h-3" />
                 تفعيل الإشعارات
               </button>
             )}
-            {/* Luxury theme badge */}
-            <div
-              title="النسخة الذهبية الفاخرة"
-              className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-black cursor-default select-none"
-              style={{background:'linear-gradient(135deg,#F5DAAC,#DFB060)',color:'#6B3A08',boxShadow:'0 2px 8px rgba(184,134,42,0.25)'}}
-            >
-              ✦ LUXURY
-            </div>
-
             {/* Notification Bell */}
             <div className="relative">
               <button
@@ -4785,7 +4778,7 @@ export default function Dashboard() {
               {showNotifDropdown && (
                 <div className="absolute left-0 top-10 w-72 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-4 space-y-3 text-right" dir="rtl">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                    <span className="text-xs font-black text-slate-800">مركز الإشعارات</span>
+                    <span className="text-xs font-bold text-slate-800">مركز الإشعارات</span>
                     <button onClick={() => setShowNotifDropdown(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X className="w-4 h-4" /></button>
                   </div>
                   {/* سقف العرض لكل فئة: مع ~7000 صنف قد تتطابق آلاف المواد فتجمّد فتح القائمة */}
@@ -4795,28 +4788,28 @@ export default function Dashboard() {
                     return (
                       <>
                         {expired.slice(0, NOTIF_LIST_LIMIT).map(m => (
-                          <div key={m.id} className="text-[10px] text-rose-700 bg-rose-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
+                          <div key={m.id} className="text-sm text-rose-700 bg-rose-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
                             <AlertCircle className="w-3 h-3 shrink-0" />
                             <span>{m.nameAr} — منتهية الصلاحية</span>
                           </div>
                         ))}
                         {expired.length > NOTIF_LIST_LIMIT && (
-                          <p className="text-[9px] text-rose-400 font-bold text-center">+{(expired.length - NOTIF_LIST_LIMIT).toLocaleString()} مادة منتهية أخرى — راجع تبويب المخزون</p>
+                          <p className="text-xs text-rose-400 font-bold text-center">+{fmtNum((expired.length - NOTIF_LIST_LIMIT))} مادة منتهية أخرى — راجع تبويب المخزون</p>
                         )}
                         {lowStock.slice(0, NOTIF_LIST_LIMIT).map(m => (
-                          <div key={m.id} className="text-[10px] text-amber-700 bg-amber-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
+                          <div key={m.id} className="text-sm text-amber-700 bg-amber-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
                             <AlertCircle className="w-3 h-3 shrink-0" />
                             <span>{m.nameAr} — مخزون منخفض ({m.availableQuantity})</span>
                           </div>
                         ))}
                         {lowStock.length > NOTIF_LIST_LIMIT && (
-                          <p className="text-[9px] text-amber-500 font-bold text-center">+{(lowStock.length - NOTIF_LIST_LIMIT).toLocaleString()} مادة منخفضة أخرى — راجع تبويب المخزون</p>
+                          <p className="text-xs text-amber-500 font-bold text-center">+{fmtNum((lowStock.length - NOTIF_LIST_LIMIT))} مادة منخفضة أخرى — راجع تبويب المخزون</p>
                         )}
                       </>
                     );
                   })()}
                   {payables.filter(p => p.dueDate && new Date(p.dueDate) < new Date() && p.status !== 'paid').map(p => (
-                    <div key={p.id} className="text-[10px] text-slate-700 bg-slate-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
+                    <div key={p.id} className="text-sm text-slate-700 bg-slate-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
                       <Clock className="w-3 h-3 shrink-0" />
                       <span>{p.supplierName} — دين متأخر</span>
                     </div>
@@ -4824,50 +4817,26 @@ export default function Dashboard() {
                   {!inventory.some(m => expiryDates[m.id] && new Date(expiryDates[m.id]) < new Date()) &&
                    !inventory.some(m => m.availableQuantity <= (m.minStock ?? 15)) &&
                    !payables.some(p => p.dueDate && new Date(p.dueDate) < new Date() && p.status !== 'paid') && (
-                    <p className="text-[10px] text-slate-400 text-center">لا توجد تنبيهات جديدة</p>
+                    <p className="text-sm text-slate-400 text-center">لا توجد تنبيهات جديدة</p>
                   )}
                 </div>
               )}
             </div>
           </div>
 
-          {/* MIDDLE: Quick Refrigerator temp readout */}
-          <div className="hidden sm:flex items-center space-x-reverse space-x-4 bg-slate-50 border border-slate-100 px-4 py-1.5 rounded-full text-xs font-semibold">
-            <span className="text-slate-500">المستشعر الذكي:</span>
-            <div className="flex items-center space-x-reverse space-x-1.5">
-              <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-ping" />
-              <strong className="text-slate-900 font-mono">4.7°C</strong>
-              <span className="text-slate-400 text-[10px]">(المطابقة الدوائية ✓)</span>
-            </div>
-          </div>
-
           {/* RIGHT: Logo tile widget following the screenshot image of 'نظام إدارة صيدليات المتكامل' */}
           <div className="flex items-center space-x-reverse space-x-3.5">
             <div className="text-right hidden sm:block">
-              <h1 className="text-slate-900 font-extrabold text-lg tracking-tight leading-none mb-0.5">
-                انوار الحسن <span className="text-emerald-500 font-black">+</span>
+              <h1 className="text-slate-900 font-semibold text-lg tracking-tight leading-none mb-0.5">
+                انوار الحسن <span className="text-emerald-500 font-bold">+</span>
               </h1>
-              <p className="text-[10px] text-slate-500 font-bold tracking-tight">
+              <p className="text-sm text-slate-500 font-bold tracking-tight">
                 نظام إدارة صيدليات المتكامل
               </p>
             </div>
-            {/* The white tile squircle with an emerald-green hardware chip circuit icon */}
-            <div className="w-11 h-11 bg-white rounded-2xl border border-slate-100 shadow-sm flex items-center justify-center text-emerald-600 font-black">
-              <span className="relative">
-                <svg className="w-6 h-6" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                  {/* جسم البطة */}
-                  <ellipse cx="13" cy="15" rx="7" ry="5" />
-                  {/* الرأس */}
-                  <circle cx="19" cy="9" r="3.2" />
-                  {/* المنقار */}
-                  <ellipse cx="22.5" cy="9.5" rx="1.8" ry="1" />
-                  {/* الذيل */}
-                  <ellipse cx="6.5" cy="14" rx="2" ry="1.2" transform="rotate(-20 6.5 14)" />
-                  {/* العين */}
-                  <circle cx="20" cy="8.2" r="0.55" fill="white" />
-                </svg>
-                <div className="absolute -top-1 -left-1 w-2.5 h-2.5 bg-emerald-500 rounded-full border border-white" />
-              </span>
+            <div className="w-11 h-11 bg-white rounded-2xl border border-slate-100 shadow-sm flex items-center justify-center text-emerald-600 font-bold">
+              {/* شعار التطبيق نفسه (أيقونة PWA) بدل رسم البطة السابق — شعار واحد في كل مكان */}
+              <img src="/icon.svg" alt="" className="w-7 h-7 rounded-lg" />
             </div>
           </div>
 
@@ -4904,15 +4873,15 @@ export default function Dashboard() {
                     <ShoppingBag className="w-6 h-6" />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="font-black text-slate-800 text-sm">نقطة البيع السريعة</h3>
-                    <p className="text-[10px] text-slate-500 font-semibold mt-0.5">إصدار الفواتير وتسجيل المبيعات</p>
+                    <h3 className="font-bold text-slate-800 text-sm">نقطة البيع السريعة</h3>
+                    <p className="text-sm text-slate-500 font-semibold mt-0.5">إصدار الفواتير وتسجيل المبيعات</p>
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full font-black">
+                  <span className="text-sm bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full font-bold">
                     {salesLedger.filter(s => s.timestamp.startsWith(finTodayStr)).length} فاتورة اليوم
                   </span>
-                  <span className="text-[10px] text-slate-400 font-bold group-hover:text-emerald-600 transition">دخول ←</span>
+                  <span className="text-sm text-slate-400 font-bold group-hover:text-emerald-600 transition">دخول ←</span>
                 </div>
               </button>
 
@@ -4926,15 +4895,15 @@ export default function Dashboard() {
                     <Pill className="w-6 h-6" />
                   </div>
                   <div className="min-w-0">
-                    <h3 className="font-black text-slate-800 text-sm">المخزن وتنبيهات الصلاحية</h3>
-                    <p className="text-[10px] text-slate-500 font-semibold mt-0.5">إدارة المخزون ومتابعة الصلاحية</p>
+                    <h3 className="font-bold text-slate-800 text-sm">المخزن وتنبيهات الصلاحية</h3>
+                    <p className="text-sm text-slate-500 font-semibold mt-0.5">إدارة المخزون ومتابعة الصلاحية</p>
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] bg-amber-50 text-amber-700 px-2.5 py-1 rounded-full font-black">
+                  <span className="text-sm bg-amber-50 text-amber-700 px-2.5 py-1 rounded-full font-bold">
                     {inventory.filter(m => (getDaysUntilExpiry(m.id) <= 30) || m.availableQuantity < 15).length} تنبيه نشط
                   </span>
-                  <span className="text-[10px] text-slate-400 font-bold group-hover:text-amber-600 transition">دخول ←</span>
+                  <span className="text-sm text-slate-400 font-bold group-hover:text-amber-600 transition">دخول ←</span>
                 </div>
               </button>
 
@@ -4949,15 +4918,15 @@ export default function Dashboard() {
                       <Truck className="w-6 h-6" />
                     </div>
                     <div className="min-w-0">
-                      <h3 className="font-black text-slate-800 text-sm">طلبيات المذاخر</h3>
-                      <p className="text-[10px] text-slate-500 font-semibold mt-0.5">فواتير الشراء وعروض انوار الحسن B2B</p>
+                      <h3 className="font-bold text-slate-800 text-sm">طلبيات المذاخر</h3>
+                      <p className="text-sm text-slate-500 font-semibold mt-0.5">فواتير الشراء وعروض انوار الحسن B2B</p>
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full font-black">
+                    <span className="text-sm bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full font-bold">
                       {b2bOrders.filter(o => o.status === 'pending' || o.status === 'preparing').length} طلبية نشطة
                     </span>
-                    <span className="text-[10px] text-slate-400 font-bold group-hover:text-blue-600 transition">دخول ←</span>
+                    <span className="text-sm text-slate-400 font-bold group-hover:text-blue-600 transition">دخول ←</span>
                   </div>
                 </button>
               )}
@@ -4973,15 +4942,15 @@ export default function Dashboard() {
                       <BarChart3 className="w-6 h-6" />
                     </div>
                     <div className="min-w-0">
-                      <h3 className="font-black text-slate-800 text-sm">الحسابات المالية</h3>
-                      <p className="text-[10px] text-slate-500 font-semibold mt-0.5">الأرباح والذمم وقائمة الدخل وسجل التدقيق</p>
+                      <h3 className="font-bold text-slate-800 text-sm">الحسابات المالية</h3>
+                      <p className="text-sm text-slate-500 font-semibold mt-0.5">الأرباح والذمم وقائمة الدخل وسجل التدقيق</p>
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className={`text-[10px] px-2.5 py-1 rounded-full font-black ${netProfitMonth >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
-                      صافي الشهر: {netProfitMonth.toLocaleString()} د.ع
+                    <span className={`text-sm px-2.5 py-1 rounded-full font-bold ${netProfitMonth >= 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'}`}>
+                      صافي الشهر: {fmtNum(netProfitMonth)} د.ع
                     </span>
-                    <span className="text-[10px] text-slate-400 font-bold group-hover:text-violet-600 transition">دخول ←</span>
+                    <span className="text-sm text-slate-400 font-bold group-hover:text-violet-600 transition">دخول ←</span>
                   </div>
                 </button>
               )}
@@ -4992,13 +4961,13 @@ export default function Dashboard() {
             {/* Compliance card — كان في الـ sidebar، يظهر في الصفحة الرئيسية فقط */}
             <div className="lux-dark-panel-wide bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-1">
-                <div className="flex items-center gap-2 text-emerald-400 font-extrabold text-[11px]">
+                <div className="flex items-center gap-2 text-emerald-400 font-semibold text-sm">
                   <ShieldCheck className="w-4 h-4" />
                   <span>تفتيش نقابة صيادلة العراق</span>
                 </div>
-                <p className="text-[10px] text-slate-300 font-semibold">الصيدلية ممتثلة لكافة شروط نقابة صيادلة العراق ووزارة الصحة الاتحادية.</p>
+                <p className="text-sm text-slate-300 font-semibold">الصيدلية ممتثلة لكافة شروط نقابة صيادلة العراق ووزارة الصحة الاتحادية.</p>
               </div>
-              <div className="flex gap-4 text-[10px] font-mono text-slate-400 shrink-0">
+              <div className="flex gap-4 text-sm font-mono text-slate-400 shrink-0">
                 <span>ترخيص: مجاز رسمي</span>
                 <span>آخر مطابقة: اليوم</span>
               </div>
@@ -5013,13 +4982,13 @@ export default function Dashboard() {
             <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-2xl px-5 py-3 shadow-sm">
               <button
                 onClick={() => setActiveTab('home')}
-                className="flex items-center gap-1.5 text-emerald-600 hover:text-emerald-700 font-black text-xs transition cursor-pointer"
+                className="flex items-center gap-1.5 text-emerald-600 hover:text-emerald-700 font-bold text-xs transition cursor-pointer"
               >
                 <ArrowLeft className="w-4 h-4" />
                 <span>الرئيسية</span>
               </button>
               <span className="text-slate-300 font-mono text-sm">/</span>
-              <span className="text-slate-700 font-black text-xs">
+              <span className="text-slate-700 font-bold text-xs">
                 {activeTab === 'pos' ? 'نقطة البيع السريعة (POS)'
                   : activeTab === 'inventory' ? 'المخزن وتنبيهات الصلاحية'
                   : activeTab === 'b2b' ? 'طلبيات المذاخر (انوار الحسن B2B)'
@@ -5060,16 +5029,16 @@ export default function Dashboard() {
                     <div className="flex justify-between items-center border-b border-slate-700 pb-2">
                       <div className="flex items-center gap-2">
                         <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
-                        <h3 className="font-extrabold text-white text-sm">سلة البيع</h3>
+                        <h3 className="font-semibold text-white text-sm">سلة البيع</h3>
                         {currentCart.length > 0 && (
-                          <span className="bg-emerald-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">
+                          <span className="bg-emerald-500 text-white text-sm font-bold px-2 py-0.5 rounded-full">
                             {currentCart.length}
                           </span>
                         )}
                       </div>
                       <button
                         onClick={() => setCurrentCart([])}
-                        className="text-slate-500 hover:text-rose-400 transition text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                        className="text-slate-500 hover:text-rose-400 transition text-sm font-bold flex items-center gap-1 cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                         <span>مسح</span>
@@ -5124,10 +5093,10 @@ export default function Dashboard() {
                           <label className="flex items-center gap-2 cursor-pointer select-none">
                             <input type="checkbox" checked={posOnCredit} onChange={(e) => setPosOnCredit(e.target.checked)}
                               className="w-4 h-4 accent-amber-500 cursor-pointer" />
-                            <span className="text-[11px] font-black text-amber-400">بيع بالآجل — تسجيل ذمّة</span>
+                            <span className="text-sm font-bold text-amber-400">بيع بالآجل — تسجيل ذمّة</span>
                           </label>
                           {posOnCredit && (
-                            <p className="text-[10px] text-amber-500 font-bold">سيُسجَّل على «{posCustomerName}» ولن يُضاف للكاش حتى التحصيل.</p>
+                            <p className="text-sm text-amber-500 font-bold">سيُسجَّل على «{posCustomerName}» ولن يُضاف للكاش حتى التحصيل.</p>
                           )}
                         </div>
 
@@ -5135,17 +5104,17 @@ export default function Dashboard() {
                         <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5 space-y-3 text-sm font-semibold">
                           <div className="flex justify-between text-slate-400">
                             <span>المجموع الفرعي</span>
-                            <span className="font-mono text-slate-200 text-base">{posSubtotal.toLocaleString()} د.ع</span>
+                            <span className="font-mono text-slate-200 text-base">{fmtNum(posSubtotal)} د.ع</span>
                           </div>
                           {posDiscountAmount > 0 && (
                             <div className="flex justify-between text-rose-400">
                               <span>الخصم</span>
-                              <span className="font-mono text-base">−{posDiscountAmount.toLocaleString()} د.ع</span>
+                              <span className="font-mono text-base">−{fmtNum(posDiscountAmount)} د.ع</span>
                             </div>
                           )}
-                          <div className="flex justify-between border-t border-slate-600 pt-3 text-xl font-black">
+                          <div className="flex justify-between border-t border-slate-600 pt-3 text-xl font-bold">
                             <span className="text-white">الصافي</span>
-                            <span className="text-emerald-400 font-mono">{posTotal.toLocaleString()} د.ع</span>
+                            <span className="text-emerald-400 font-mono">{fmtNum(posTotal)} د.ع</span>
                           </div>
                           <div className="flex justify-between text-xs text-slate-500 pt-1 border-t border-slate-700">
                             <span>بالدولار الموازي</span>
@@ -5154,7 +5123,7 @@ export default function Dashboard() {
                         </div>
 
                         <button type="submit"
-                          className="w-full bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-white py-3.5 rounded-2xl text-sm font-black shadow-lg shadow-emerald-900/40 transition cursor-pointer flex items-center justify-center gap-2">
+                          className="w-full bg-emerald-700 hover:bg-emerald-600 active:bg-emerald-800 text-white py-3.5 rounded-2xl text-sm font-bold shadow-lg shadow-emerald-900/40 transition cursor-pointer flex items-center justify-center gap-2">
                           <Check className="w-4 h-4" />
                           <span>{posOnCredit ? 'تسجيل البيع كذمّة آجلة' : 'إتمام البيع وصرف الفاتورة'}</span>
                         </button>
@@ -5166,29 +5135,33 @@ export default function Dashboard() {
                   {/* Right Column: Searchable fast-add medicines shelf */}
                   <div className="lg:col-span-5 bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
                     <div>
-                      <h3 className="font-extrabold text-slate-900 text-sm">أدوية ومخازن الصيدلة الحاضرة</h3>
-                      <p className="text-[10px] text-slate-400 font-semibold mt-0.5">انقر على الدواء المتوفر لإضافته إلى فاتورة العميل مباشرة</p>
+                      <h3 className="font-semibold text-slate-900 text-sm">أدوية ومخازن الصيدلة الحاضرة</h3>
+                      <p className="text-sm text-slate-400 font-semibold mt-0.5">انقر على الدواء المتوفر لإضافته إلى فاتورة العميل مباشرة</p>
                     </div>
 
-                    {/* Price Mode Toggle — زر دائري + زر «نواقص الأدوية» أقصى اليسار */}
+                    {/* Price Mode Toggle — مفتاح مسمّى «السعر الرسمي» + زر «نواقص الأدوية» أقصى اليسار */}
                     <div className="flex justify-end items-center gap-2">
                       <button
                         type="button"
+                        aria-pressed={showVirtualPriceInPOS}
                         title={showVirtualPriceInPOS ? 'السلة تعرض السعر الرسمي وحده (المحاسبة تبقى بالجمهوري)' : 'عرض أسعار السلة بالسعر الرسمي'}
                         onClick={() => setShowVirtualPriceInPOS(!showVirtualPriceInPOS)}
-                        className={`w-7 h-7 rounded-full border-2 transition-all cursor-pointer shadow-sm shrink-0 ${
+                        className={`flex items-center gap-1.5 text-sm font-bold px-2.5 py-1.5 min-h-10 rounded-xl border transition cursor-pointer shadow-sm shrink-0 ${
                           showVirtualPriceInPOS
-                            ? 'bg-purple-500 border-purple-400 shadow-purple-200'
-                            : 'bg-slate-200 border-slate-300 hover:bg-purple-200 hover:border-purple-300'
+                            ? 'bg-purple-600 border-purple-500 text-white'
+                            : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-purple-50 hover:border-purple-200'
                         }`}
-                      />
+                      >
+                        {showVirtualPriceInPOS ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                        <span>السعر الرسمي</span>
+                      </button>
                       {/* نواقص الأدوية — قائمة منسدلة بأسماء فقط، تُملأ بالنقر المزدوج على عناصر السلة */}
                       <div className="relative">
                         <button
                           type="button"
                           onClick={() => setShowShortages(p => !p)}
                           title="قائمة نواقص الأدوية — أضف إليها بنقرة مزدوجة على أي علاج في سلة البيع"
-                          className={`flex items-center gap-1.5 text-[10px] font-black px-2.5 py-1.5 rounded-xl border transition cursor-pointer shadow-sm ${
+                          className={`flex items-center gap-1.5 text-sm font-bold px-2.5 py-1.5 rounded-xl border transition cursor-pointer shadow-sm ${
                             showShortages
                               ? 'bg-amber-500 border-amber-400 text-white'
                               : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
@@ -5197,7 +5170,7 @@ export default function Dashboard() {
                           <ClipboardList className="w-3.5 h-3.5" />
                           <span>نواقص الأدوية</span>
                           {shortages.length > 0 && (
-                            <span className={`text-[9px] font-black px-1.5 py-px rounded-full ${showShortages ? 'bg-white/25 text-white' : 'bg-amber-200 text-amber-800'}`}>
+                            <span className={`text-xs font-bold px-1.5 py-px rounded-full ${showShortages ? 'bg-white/25 text-white' : 'bg-amber-200 text-amber-800'}`}>
                               {shortages.length}
                             </span>
                           )}
@@ -5205,11 +5178,11 @@ export default function Dashboard() {
                         </button>
                         {showShortages && (
                           <div className="absolute left-0 top-full mt-2 w-[333px] bg-white border border-slate-200 rounded-2xl shadow-xl z-20 overflow-hidden">
-                            <div className="px-3 py-2 border-b border-slate-100 bg-amber-50/60 text-[10px] font-black text-amber-800">
+                            <div className="px-3 py-2 border-b border-slate-100 bg-amber-50/60 text-sm font-bold text-amber-800">
                               نواقص الأدوية ({shortages.length})
                             </div>
                             {shortages.length === 0 ? (
-                              <p className="text-[10px] text-slate-400 font-bold text-center px-3 py-5 leading-relaxed">
+                              <p className="text-sm text-slate-400 font-bold text-center px-3 py-5 leading-relaxed">
                                 القائمة فارغة — نقرة مزدوجة على أي علاج في سلة البيع تضيفه هنا
                               </p>
                             ) : (
@@ -5218,7 +5191,7 @@ export default function Dashboard() {
                                 <div className="divide-y divide-slate-50">
                                   {freshShortages.map(s => (
                                     <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-slate-50 group">
-                                      <span className="text-[11px] font-extrabold text-slate-700 truncate">{s.name}</span>
+                                      <span className="text-sm font-semibold text-slate-700 truncate">{s.name}</span>
                                       <button
                                         type="button"
                                         onClick={() => removeFromShortages(s.id)}
@@ -5235,14 +5208,14 @@ export default function Dashboard() {
                                   <>
                                     <div className="flex items-center gap-2 px-3 py-1.5 border-y-2 border-rose-300 bg-rose-50">
                                       <Clock className="w-3 h-3 text-rose-600 shrink-0" />
-                                      <span className="text-[10px] font-black text-rose-700">
+                                      <span className="text-sm font-bold text-rose-700">
                                         مضى عليها أكثر من 5 أيام ({staleShortages.length})
                                       </span>
                                     </div>
                                     <div className="divide-y divide-slate-50 bg-rose-50/30">
                                       {staleShortages.map(s => (
                                         <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-rose-50 group">
-                                          <span className="text-[11px] font-extrabold text-rose-900/70 truncate">{s.name}</span>
+                                          <span className="text-sm font-semibold text-rose-900/70 truncate">{s.name}</span>
                                           <button
                                             type="button"
                                             onClick={() => removeFromShortages(s.id)}
@@ -5277,8 +5250,8 @@ export default function Dashboard() {
                       ))}
                     </div>
                     {filteredPOSMeds.length > POS_SHELF_LIMIT && (
-                      <div className="text-[10px] text-slate-400 font-bold text-center">
-                        يُعرض {POS_SHELF_LIMIT} من أصل {filteredPOSMeds.length.toLocaleString()} صنف — اكتب في البحث لعرض المزيد
+                      <div className="text-sm text-slate-400 font-bold text-center">
+                        يُعرض {POS_SHELF_LIMIT} من أصل {fmtNum(filteredPOSMeds.length)} صنف — اكتب في البحث لعرض المزيد
                       </div>
                     )}
 
@@ -5286,11 +5259,11 @@ export default function Dashboard() {
                     <div className="pt-4 border-t border-slate-100">
                       <button
                         onClick={() => setShowTodaySales(p => !p)}
-                        className="w-full font-extrabold text-slate-800 text-xs flex items-center gap-2 cursor-pointer hover:text-blue-600 transition text-right"
+                        className="w-full font-semibold text-slate-800 text-xs flex items-center gap-2 cursor-pointer hover:text-blue-600 transition text-right"
                       >
                         <TrendingUp className="w-4 h-4 text-blue-500 shrink-0" />
                         <span className="flex-1">حركة مبيع اليوم</span>
-                        <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                        <span className="text-xs font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
                           {salesLedger.filter(s => {
                             const d = new Date(String(s.timestamp).replace(' ','T'));
                             return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` === finTodayStr;
@@ -5315,17 +5288,17 @@ export default function Dashboard() {
                             }))
                           );
                         if (todayItems.length === 0) return (
-                          <p className="text-[10px] text-slate-400 font-bold text-center py-4 mt-3">لا توجد مبيعات مسجّلة اليوم بعد</p>
+                          <p className="text-sm text-slate-400 font-bold text-center py-4 mt-3">لا توجد مبيعات مسجّلة اليوم بعد</p>
                         );
                         return (
                           <div className="overflow-x-auto rounded-xl border border-slate-100 mt-3">
-                            <table className="w-full text-[10px] font-bold border-collapse">
+                            <table className="w-full text-sm font-bold border-collapse">
                               <thead>
-                                <tr className="bg-slate-50 text-slate-500 text-[9px] border-b border-slate-100">
-                                  <th className="text-right font-black py-2 px-3">الدواء / المادة</th>
-                                  <th className="text-center font-black py-2 px-3">الكمية</th>
-                                  <th className="text-center font-black py-2 px-3">الوقت</th>
-                                  <th className="text-center font-black py-2 px-3">الفاتورة</th>
+                                <tr className="bg-slate-50 text-slate-500 text-xs border-b border-slate-100">
+                                  <th className="text-right font-bold py-2 px-3">الدواء / المادة</th>
+                                  <th className="text-center font-bold py-2 px-3">الكمية</th>
+                                  <th className="text-center font-bold py-2 px-3">الوقت</th>
+                                  <th className="text-center font-bold py-2 px-3">الفاتورة</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -5336,7 +5309,7 @@ export default function Dashboard() {
                                       <span className="bg-blue-50 text-blue-700 font-mono px-2 py-0.5 rounded-lg">{row.qty}</span>
                                     </td>
                                     <td className="text-center py-2 px-3 font-mono text-slate-500">{row.time}</td>
-                                    <td className="text-center py-2 px-3 font-mono text-slate-400 text-[9px]">{row.invoiceId}</td>
+                                    <td className="text-center py-2 px-3 font-mono text-slate-400 text-xs">{row.invoiceId}</td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -5348,20 +5321,20 @@ export default function Dashboard() {
 
                     {/* Historical sales log list below the shelf to see how money accumulated */}
                     <div className="pt-4 border-t border-slate-100">
-                      <h4 className="font-extrabold text-slate-800 text-xs mb-3 flex items-center space-x-reverse space-x-2">
+                      <h4 className="font-semibold text-slate-800 text-xs mb-3 flex items-center space-x-reverse space-x-2">
                         <ClipboardList className="w-4 h-4 text-emerald-500" />
                         <span>أحدث فواتير المبيعات الصادرة اليوم</span>
                       </h4>
                       <div className="space-y-2">
                         {returnSuccess && (
-                          <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 text-[10px] font-bold text-emerald-700 mb-2">
+                          <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 text-sm font-bold text-emerald-700 mb-2">
                             <CheckCircle2 className="w-3.5 h-3.5" /> تمّ تسجيل المرتجع وتحديث المخزون بنجاح
                           </div>
                         )}
                         {salesLedger.map((s) => {
                           const isExpanded = expandedInvoiceId === s.invoiceId;
                           return (
-                            <div key={s.invoiceId} className={`rounded-xl border text-[11px] transition-all ${isExpanded ? 'border-blue-200 bg-blue-50/30' : 'border-slate-100 bg-slate-50/50'}`}>
+                            <div key={s.invoiceId} className={`rounded-xl border text-sm transition-all ${isExpanded ? 'border-blue-200 bg-blue-50/30' : 'border-slate-100 bg-slate-50/50'}`}>
                               {/* رأس الفاتورة — قابل للضغط للتوسيع */}
                               <div
                                 className="p-3 flex items-center justify-between cursor-pointer select-none"
@@ -5375,16 +5348,16 @@ export default function Dashboard() {
                                 }}
                               >
                                 <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                                  <span className={`text-[9px] transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
-                                  <strong className="text-slate-900 font-bold font-mono text-[10px]">{s.invoiceId}</strong>
+                                  <span className={`text-xs transition-transform ${isExpanded ? 'rotate-90' : ''}`}>▶</span>
+                                  <strong className="text-slate-900 font-bold font-mono text-sm">{s.invoiceId}</strong>
                                   <span className="text-slate-400">•</span>
                                   <span className="text-slate-600 font-medium truncate">العميل: {s.customerName}</span>
                                   {salesReturns.some(r => r.originalInvoiceId === s.invoiceId) && (
-                                    <span className="text-[8px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded shrink-0">مُرتجَع</span>
+                                    <span className="text-xs bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded shrink-0">مُرتجَع</span>
                                   )}
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
-                                  <span className="font-mono font-bold text-slate-700">{s.total.toLocaleString()} د.ع</span>
+                                  <span className="font-mono font-bold text-slate-700">{fmtNum(s.total)} د.ع</span>
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -5394,7 +5367,7 @@ export default function Dashboard() {
                                       setReturnRefundMethod('cash');
                                       setShowReturnModal(true);
                                     }}
-                                    className="text-[9px] font-black px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg transition cursor-pointer"
+                                    className="text-xs font-bold px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg transition cursor-pointer"
                                   >
                                     إرجاع
                                   </button>
@@ -5404,33 +5377,33 @@ export default function Dashboard() {
                               {/* تفاصيل الأصناف — قابلة للتعديل */}
                               {isExpanded && (
                                 <div className="px-3 pb-3 space-y-2 border-t border-blue-100">
-                                  <p className="text-[9px] text-blue-600 font-black pt-2">المواد المباعة — يمكنك تعديل الكمية أو السعر ثم حفظ التغييرات</p>
+                                  <p className="text-xs text-blue-600 font-bold pt-2">المواد المباعة — يمكنك تعديل الكمية أو السعر ثم حفظ التغييرات</p>
                                   <div className="space-y-1.5">
                                     {editingItems.map((it, idx) => (
                                       <div key={idx} className="flex items-center gap-2 bg-white border border-slate-100 rounded-lg px-3 py-2">
-                                        <span className="flex-1 text-slate-700 font-bold text-[10px] truncate">{it.name}</span>
+                                        <span className="flex-1 text-slate-700 font-bold text-sm truncate">{it.name}</span>
                                         <div className="flex items-center gap-1 shrink-0">
-                                          <span className="text-[9px] text-slate-400">كمية</span>
+                                          <span className="text-xs text-slate-400">كمية</span>
                                           <input
                                             type="number"
                                             min={1}
                                             value={it.quantity}
                                             onChange={e => setEditingItems(prev => prev.map((x, i) => i === idx ? { ...x, quantity: Math.max(1, Number(e.target.value)) } : x))}
-                                            className="w-14 text-center border border-slate-200 rounded-lg px-1 py-0.5 font-mono text-[10px] font-bold bg-white"
+                                            className="w-14 text-center border border-slate-200 rounded-lg px-1 py-0.5 font-mono text-sm font-bold bg-white"
                                           />
                                         </div>
                                         <div className="flex items-center gap-1 shrink-0">
-                                          <span className="text-[9px] text-slate-400">سعر</span>
+                                          <span className="text-xs text-slate-400">سعر</span>
                                           <input
                                             type="number"
                                             min={0}
                                             value={it.price}
                                             onChange={e => setEditingItems(prev => prev.map((x, i) => i === idx ? { ...x, price: Math.max(0, Number(e.target.value)) } : x))}
-                                            className="w-24 text-center border border-slate-200 rounded-lg px-1 py-0.5 font-mono text-[10px] font-bold bg-white"
+                                            className="w-24 text-center border border-slate-200 rounded-lg px-1 py-0.5 font-mono text-sm font-bold bg-white"
                                           />
                                         </div>
-                                        <span className="text-[9px] font-mono text-emerald-700 shrink-0">
-                                          = {(it.quantity * it.price).toLocaleString()}
+                                        <span className="text-xs font-mono text-emerald-700 shrink-0">
+                                          = {fmtNum((it.quantity * it.price))}
                                         </span>
                                         <button
                                           type="button"
@@ -5444,19 +5417,19 @@ export default function Dashboard() {
                                     ))}
                                   </div>
                                   <div className="flex items-center justify-between pt-1">
-                                    <span className="text-[10px] font-black text-slate-700">
-                                      الإجمالي الجديد: <span className="font-mono text-emerald-700">{editingItems.reduce((s, it) => s + it.quantity * it.price, 0).toLocaleString()} د.ع</span>
+                                    <span className="text-sm font-bold text-slate-700">
+                                      الإجمالي الجديد: <span className="font-mono text-emerald-700">{fmtNum(editingItems.reduce((s, it) => s + it.quantity * it.price, 0))} د.ع</span>
                                     </span>
                                     <div className="flex gap-2">
                                       <button
                                         onClick={() => setExpandedInvoiceId(null)}
-                                        className="text-[9px] font-black px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition cursor-pointer border-none"
+                                        className="text-xs font-bold px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition cursor-pointer border-none"
                                       >
                                         إلغاء
                                       </button>
                                       <button
                                         onClick={() => handleSaveInvoiceEdit(s.invoiceId)}
-                                        className="text-[9px] font-black px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition cursor-pointer border-none"
+                                        className="text-xs font-bold px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition cursor-pointer border-none"
                                       >
                                         حفظ التعديلات
                                       </button>
@@ -5491,13 +5464,13 @@ export default function Dashboard() {
                   <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div>
-                        <h3 className="font-extrabold text-slate-900 text-sm">مستودع الأدوية والمخزون الداخلي</h3>
-                        <p className="text-[10px] text-slate-400 font-bold mt-0.5">تحرير الأسعار ونسب المخزون وإدارة فترات انتهاء صلاحية الأدوية العضوية والمبردة</p>
+                        <h3 className="font-semibold text-slate-900 text-sm">مستودع الأدوية والمخزون الداخلي</h3>
+                        <p className="text-sm text-slate-400 font-bold mt-0.5">تحرير الأسعار ونسب المخزون وإدارة فترات انتهاء صلاحية الأدوية العضوية والمبردة</p>
                       </div>
                       <button
                         type="button"
                         onClick={exportInventoryToCSV}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-[11px]"
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-sm"
                         title="تنزيل جرد المخزون الكامل كملف Excel/CSV"
                       >
                         <FileText className="w-4 h-4" />
@@ -5518,12 +5491,12 @@ export default function Dashboard() {
                         {bulkImportStatus === 'done' && <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />}
                         {bulkImportStatus === 'error' && <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />}
                         <div className="flex-1">
-                          <p className={`text-xs font-extrabold ${
+                          <p className={`text-xs font-semibold ${
                             bulkImportStatus === 'error' ? 'text-red-800' :
                             bulkImportStatus === 'done' ? 'text-emerald-800' : 'text-slate-800'
                           }`}>
                             {bulkImportStatus === 'writing'
-                              ? `جارٍ الرفع السحابي... ${bulkImportProgress.done.toLocaleString()} / ${bulkImportProgress.total.toLocaleString()}`
+                              ? `جارٍ الرفع السحابي... ${fmtNum(bulkImportProgress.done)} / ${fmtNum(bulkImportProgress.total)}`
                               : bulkImportMsg}
                           </p>
                           {bulkImportStatus === 'writing' && (
@@ -5550,12 +5523,12 @@ export default function Dashboard() {
                               <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-600"></span>
                             </span>
                             <div>
-                              <h4 className="font-extrabold text-xs text-rose-900">تنبيه تلقائي: مستحضرات قاربت صلاحيتها على الانتهاء (30 يوماً أو أقل)</h4>
-                              <p className="text-[9px] text-rose-500 font-bold mt-0.5 font-sans">يرجى اتخاذ تدابير الوقاية وتوريد كميات جديدة أو إبرام طلبية مرتجع مع المذخر المعني</p>
+                              <h4 className="font-semibold text-xs text-rose-900">تنبيه تلقائي: مستحضرات قاربت صلاحيتها على الانتهاء (30 يوماً أو أقل)</h4>
+                              <p className="text-xs text-rose-500 font-bold mt-0.5 font-sans">يرجى اتخاذ تدابير الوقاية وتوريد كميات جديدة أو إبرام طلبية مرتجع مع المذخر المعني</p>
                             </div>
                           </div>
                           <div className="flex items-center space-x-reverse space-x-2">
-                            <span className="text-[10px] bg-rose-100 text-rose-850 font-extrabold px-3 py-0.5 rounded-full border border-rose-200/50">
+                            <span className="text-sm bg-rose-100 text-rose-850 font-semibold px-3 py-0.5 rounded-full border border-rose-200/50">
                               {getNearExpiryMeds().length} {getNearExpiryMeds().length === 1 ? "مستحضر حرج" : "مستحضرات حرجة"}
                             </span>
                             <ChevronDown className={`w-4 h-4 text-rose-400 transition-transform ${showNearExpiry30 ? 'rotate-180' : ''}`} />
@@ -5571,20 +5544,20 @@ export default function Dashboard() {
                             return (
                               <div key={med.id} className="bg-white border border-rose-100/70 p-3.5 rounded-xl flex items-center justify-between text-xs transition hover:shadow-xs hover:border-rose-200">
                                 <div className="space-y-1">
-                                  <strong className="font-extrabold text-slate-950 block">{med.nameAr}</strong>
-                                  <span className="text-[10px] text-slate-500 font-mono block">
+                                  <strong className="font-semibold text-slate-950 block">{med.nameAr}</strong>
+                                  <span className="text-sm text-slate-500 font-mono block">
                                     {med.nameEn} • {med.scientificName}
                                   </span>
                                   <div className="flex items-center space-x-reverse space-x-1.5 mt-1">
                                     <Clock className="w-3.5 h-3.5 text-rose-600" />
-                                    <span className="text-[10px] font-bold text-rose-600 font-mono">
+                                    <span className="text-sm font-bold text-rose-600 font-mono">
                                       انتهاء الصلاحية: {expDate}
                                     </span>
                                   </div>
                                 </div>
                                 
                                 <div className="flex flex-col items-end space-y-2.5">
-                                  <span className="px-2.5 py-0.5 bg-rose-50 text-rose-800 rounded-lg border border-rose-200/40 font-extrabold text-[10px] tracking-wide">
+                                  <span className="px-2.5 py-0.5 bg-rose-50 text-rose-800 rounded-lg border border-rose-200/40 font-semibold text-sm tracking-wide">
                                     {days < 0 ? `منتهية منذ ${Math.abs(days)} يوم` : days === 0 ? 'تنتهي اليوم!' : `متبقي ${days} يوم`}
                                   </span>
                                   <button
@@ -5593,7 +5566,7 @@ export default function Dashboard() {
                                       addToPurchaseDraft(med);
                                       setActiveTab('b2b');
                                     }}
-                                    className="text-[9px] bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-850 font-black px-2.5 py-1 rounded-lg transition border border-emerald-150 cursor-pointer flex items-center gap-1"
+                                    className="text-xs bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-850 font-bold px-2.5 py-1 rounded-lg transition border border-emerald-150 cursor-pointer flex items-center gap-1"
                                   >
                                     <Plus className="w-3 h-3" />
                                     <span>طلب توريد B2B</span>
@@ -5603,8 +5576,8 @@ export default function Dashboard() {
                             );
                           })}
                           {getNearExpiryMeds().length > EXPIRY_LIST_LIMIT && (
-                            <div className="md:col-span-2 text-[10px] text-slate-400 font-bold text-center py-1">
-                              يُعرض {EXPIRY_LIST_LIMIT} من أصل {getNearExpiryMeds().length.toLocaleString()} مستحضر — راجع سجلّ الصلاحيات الموسّع أدناه
+                            <div className="md:col-span-2 text-sm text-slate-400 font-bold text-center py-1">
+                              يُعرض {EXPIRY_LIST_LIMIT} من أصل {fmtNum(getNearExpiryMeds().length)} مستحضر — راجع سجلّ الصلاحيات الموسّع أدناه
                             </div>
                           )}
                         </div>
@@ -5625,12 +5598,12 @@ export default function Dashboard() {
                               <CalendarClock className="w-4 h-4 text-amber-600" />
                             </span>
                             <div>
-                              <h4 className="font-extrabold text-xs text-slate-900">سجلّ الصلاحيات الموسّع — أفق 6 أشهر</h4>
-                              <p className="text-[9px] text-slate-400 font-bold mt-0.5">اضغط شهراً لعرض كل المواد المنتهية فيه، مرتّبة بالأولوية (الأقرب انتهاءً أولاً)</p>
+                              <h4 className="font-semibold text-xs text-slate-900">سجلّ الصلاحيات الموسّع — أفق 6 أشهر</h4>
+                              <p className="text-xs text-slate-400 font-bold mt-0.5">اضغط شهراً لعرض كل المواد المنتهية فيه، مرتّبة بالأولوية (الأقرب انتهاءً أولاً)</p>
                             </div>
                           </div>
                           <div className="flex items-center space-x-reverse space-x-2">
-                            <span className="text-[10px] bg-amber-100 text-amber-800 font-extrabold px-3 py-0.5 rounded-full border border-amber-200/50">
+                            <span className="text-sm bg-amber-100 text-amber-800 font-semibold px-3 py-0.5 rounded-full border border-amber-200/50">
                               {getHorizonExpiryMeds().length} مستحضر
                             </span>
                             <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${showExpiryHorizon ? 'rotate-180' : ''}`} />
@@ -5644,7 +5617,7 @@ export default function Dashboard() {
                               <button
                                 type="button"
                                 onClick={() => setSelectedExpiryMonth(null)}
-                                className={`text-[10px] font-extrabold px-3 py-1.5 rounded-lg border transition cursor-pointer ${selectedExpiryMonth === null ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'}`}
+                                className={`text-sm font-semibold px-3 py-1.5 rounded-lg border transition cursor-pointer ${selectedExpiryMonth === null ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'}`}
                               >
                                 الكل ({getHorizonExpiryMeds().length})
                               </button>
@@ -5654,11 +5627,11 @@ export default function Dashboard() {
                                   type="button"
                                   disabled={mo.count === 0}
                                   onClick={() => setSelectedExpiryMonth(mo.key)}
-                                  className={`text-[10px] font-extrabold px-3 py-1.5 rounded-lg border transition flex items-center gap-1.5 ${mo.count === 0 ? 'bg-slate-50/50 text-slate-300 border-slate-100 cursor-not-allowed' : selectedExpiryMonth === mo.key ? 'bg-amber-500 text-white border-amber-500 cursor-pointer' : 'bg-amber-50 text-amber-700 border-amber-200/60 hover:border-amber-300 cursor-pointer'}`}
+                                  className={`text-sm font-semibold px-3 py-1.5 rounded-lg border transition flex items-center gap-1.5 ${mo.count === 0 ? 'bg-slate-50/50 text-slate-300 border-slate-100 cursor-not-allowed' : selectedExpiryMonth === mo.key ? 'bg-amber-500 text-white border-amber-500 cursor-pointer' : 'bg-amber-50 text-amber-700 border-amber-200/60 hover:border-amber-300 cursor-pointer'}`}
                                 >
                                   <span>{mo.label}</span>
                                   {mo.count > 0 && (
-                                    <span className={`text-[8px] px-1.5 py-0.5 rounded-full ${selectedExpiryMonth === mo.key ? 'bg-white/25' : 'bg-amber-200/70'}`}>{mo.count}</span>
+                                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${selectedExpiryMonth === mo.key ? 'bg-white/25' : 'bg-amber-200/70'}`}>{mo.count}</span>
                                   )}
                                 </button>
                               ))}
@@ -5685,21 +5658,21 @@ export default function Dashboard() {
                                   return (
                                     <div key={med.id} className={`bg-white border ${tone.card} p-3.5 rounded-xl flex items-center justify-between text-xs transition hover:shadow-xs`}>
                                       <div className="space-y-1">
-                                        <strong className="font-extrabold text-slate-950 block">{med.nameAr}</strong>
-                                        <span className="text-[10px] text-slate-500 font-mono block">{med.nameEn} • {med.scientificName}</span>
+                                        <strong className="font-semibold text-slate-950 block">{med.nameAr}</strong>
+                                        <span className="text-sm text-slate-500 font-mono block">{med.nameEn} • {med.scientificName}</span>
                                         <div className="flex items-center space-x-reverse space-x-1.5 mt-1">
                                           <Clock className={`w-3.5 h-3.5 ${tone.icon}`} />
-                                          <span className={`text-[10px] font-bold font-mono ${tone.icon}`}>انتهاء الصلاحية: {expiryDates[med.id]}</span>
+                                          <span className={`text-sm font-bold font-mono ${tone.icon}`}>انتهاء الصلاحية: {expiryDates[med.id]}</span>
                                         </div>
                                       </div>
                                       <div className="flex flex-col items-end space-y-2.5">
-                                        <span className={`px-2.5 py-0.5 rounded-lg border font-extrabold text-[10px] tracking-wide ${tone.badge}`}>
+                                        <span className={`px-2.5 py-0.5 rounded-lg border font-semibold text-sm tracking-wide ${tone.badge}`}>
                                           {days < 0 ? `منتهية منذ ${Math.abs(days)} يوم` : days === 0 ? 'تنتهي اليوم!' : `متبقي ${days} يوم`}
                                         </span>
                                         <button
                                           type="button"
                                           onClick={() => { addToPurchaseDraft(med); setActiveTab('b2b'); }}
-                                          className="text-[9px] bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-850 font-black px-2.5 py-1 rounded-lg transition border border-emerald-150 cursor-pointer flex items-center gap-1"
+                                          className="text-xs bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 text-emerald-850 font-bold px-2.5 py-1 rounded-lg transition border border-emerald-150 cursor-pointer flex items-center gap-1"
                                         >
                                           <Plus className="w-3 h-3" />
                                           <span>طلب توريد B2B</span>
@@ -5709,8 +5682,8 @@ export default function Dashboard() {
                                   );
                                 })}
                               {horizonFiltered.length > EXPIRY_LIST_LIMIT && (
-                                <div className="md:col-span-2 text-[10px] text-slate-400 font-bold text-center py-1">
-                                  يُعرض {EXPIRY_LIST_LIMIT} من أصل {horizonFiltered.length.toLocaleString()} مستحضر (الأقرب انتهاءً أولاً) — اختر شهراً لتضييق القائمة
+                                <div className="md:col-span-2 text-sm text-slate-400 font-bold text-center py-1">
+                                  يُعرض {EXPIRY_LIST_LIMIT} من أصل {fmtNum(horizonFiltered.length)} مستحضر (الأقرب انتهاءً أولاً) — اختر شهراً لتضييق القائمة
                                 </div>
                               )}
                             </div>
@@ -5724,11 +5697,11 @@ export default function Dashboard() {
                     {/* Expandable Box: Add drug Form */}
                     {isAddingDrug && (
                       <form onSubmit={handleAddNewDrug} className="bg-slate-50 p-5 rounded-2xl border border-slate-100 p-6 space-y-4">
-                        <h4 className="font-black text-slate-900 text-xs">إدخال دواء ومستحضر تجميل جديد يدوياً في صيدلية انوار الحسن</h4>
+                        <h4 className="font-bold text-slate-900 text-xs">إدخال دواء ومستحضر تجميل جديد يدوياً في صيدلية انوار الحسن</h4>
                         
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                           <div className="space-y-1">
-                            <label className="block text-[10px] font-bold text-slate-500">الاسم التجاري (عربي):</label>
+                            <label className="block text-sm font-bold text-slate-500">الاسم التجاري (عربي):</label>
                             <input 
                               type="text" required
                               value={newDrugAr} onChange={(e) => setNewDrugAr(e.target.value)}
@@ -5738,7 +5711,7 @@ export default function Dashboard() {
                           </div>
                           
                           <div className="space-y-1">
-                            <label className="block text-[10px] font-bold text-slate-500">الاسم التجاري (إنجليزي):</label>
+                            <label className="block text-sm font-bold text-slate-500">الاسم التجاري (إنجليزي):</label>
                             <input 
                               type="text" required
                               value={newDrugEn} onChange={(e) => setNewDrugEn(e.target.value)}
@@ -5748,7 +5721,7 @@ export default function Dashboard() {
                           </div>
 
                           <div className="space-y-1">
-                            <label className="block text-[10px] font-bold text-slate-500">الاسم العلمي والمادة النشطة:</label>
+                            <label className="block text-sm font-bold text-slate-500">الاسم العلمي والمادة النشطة:</label>
                             <input 
                               type="text"
                               value={newDrugSci} onChange={(e) => setNewDrugSci(e.target.value)}
@@ -5758,7 +5731,7 @@ export default function Dashboard() {
                           </div>
 
                           <div className="space-y-1">
-                            <label className="block text-[10px] font-bold text-slate-500">رمز الباركود الدولي (Barcode):</label>
+                            <label className="block text-sm font-bold text-slate-500">رمز الباركود الدولي (Barcode):</label>
                             <div className="flex gap-1.5">
                               <input 
                                 type="text"
@@ -5778,7 +5751,7 @@ export default function Dashboard() {
                           </div>
 
                           <div className="space-y-1">
-                            <label className="block text-[10px] font-bold text-slate-500">السعر النقدي للجمهور (د.ع):</label>
+                            <label className="block text-sm font-bold text-slate-500">السعر النقدي للجمهور (د.ع):</label>
                             <input 
                               type="number" required
                               value={newDrugPrice} onChange={(e) => setNewDrugPrice(Number(e.target.value))}
@@ -5787,7 +5760,7 @@ export default function Dashboard() {
                           </div>
 
                           <div className="space-y-1">
-                            <label className="block text-[10px] font-bold text-slate-500">سعر البيع في قائمة المخزون (د.ع - رسمي):</label>
+                            <label className="block text-sm font-bold text-slate-500">سعر البيع في قائمة المخزون (د.ع - رسمي):</label>
                             <input 
                               type="number" required
                               value={newDrugSecondaryPrice} onChange={(e) => setNewDrugSecondaryPrice(Number(e.target.value))}
@@ -5796,7 +5769,7 @@ export default function Dashboard() {
                           </div>
 
                           <div className="space-y-1">
-                            <label className="block text-[10px] font-bold text-slate-500">الكمية الأولية (علبة):</label>
+                            <label className="block text-sm font-bold text-slate-500">الكمية الأولية (علبة):</label>
                             <input 
                               type="number" required
                               value={newDrugQty} onChange={(e) => setNewDrugQty(Number(e.target.value))}
@@ -5805,7 +5778,7 @@ export default function Dashboard() {
                           </div>
 
                           <div className="space-y-1">
-                            <label className="block text-[10px] font-bold text-slate-500">تاريخ انتهاء الصلاحية للمنتج:</label>
+                            <label className="block text-sm font-bold text-slate-500">تاريخ انتهاء الصلاحية للمنتج:</label>
                             <input 
                               type="date"
                               value={newDrugExpiry} onChange={(e) => setNewDrugExpiry(e.target.value)}
@@ -5815,7 +5788,7 @@ export default function Dashboard() {
                         </div>
 
                         <div className="space-y-1">
-                          <label className="block text-[10px] font-bold text-slate-500">حد التنبيه (أدنى كمية):</label>
+                          <label className="block text-sm font-bold text-slate-500">حد التنبيه (أدنى كمية):</label>
                           <input
                             type="number" min="1"
                             value={newDrugMinStock ?? 15}
@@ -5834,7 +5807,7 @@ export default function Dashboard() {
                           </button>
                           <button 
                             type="submit"
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl text-xs font-black cursor-pointer"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl text-xs font-bold cursor-pointer"
                           >
                             حفظ المنتج في انوار الحسن
                           </button>
@@ -5851,15 +5824,15 @@ export default function Dashboard() {
                         <RefreshCw className="w-4 h-4 text-indigo-600" />
                       </div>
                       <div>
-                        <h4 className="font-extrabold text-slate-900 text-sm">حركة المادة — سجل الوارد والصادر</h4>
-                        <p className="text-[10px] text-slate-400 font-bold mt-0.5">اختر صنفاً لعرض كميات الشراء والبيع وتواريخها ضمن مدة زمنية قابلة للتحديد</p>
+                        <h4 className="font-semibold text-slate-900 text-sm">حركة المادة — سجل الوارد والصادر</h4>
+                        <p className="text-sm text-slate-400 font-bold mt-0.5">اختر صنفاً لعرض كميات الشراء والبيع وتواريخها ضمن مدة زمنية قابلة للتحديد</p>
                       </div>
                     </div>
 
                     {/* أدوات التحكم: اختيار الصنف + المدى الزمني */}
                     <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
                       <div className="md:col-span-5 space-y-1 relative">
-                        <label className="block text-[10px] font-black text-slate-500">الصنف / الدواء (بحث بالاسم أو الباركود)</label>
+                        <label className="block text-sm font-bold text-slate-500">الصنف / الدواء (بحث بالاسم أو الباركود)</label>
                         <div className="flex gap-1.5">
                           <div className="relative flex-1">
                             <Search className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -5914,7 +5887,7 @@ export default function Dashboard() {
                           return (
                             <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
                               {filtered.length === 0 ? (
-                                <p className="text-[10px] text-slate-400 font-bold text-center py-3">لا توجد نتائج مطابقة</p>
+                                <p className="text-sm text-slate-400 font-bold text-center py-3">لا توجد نتائج مطابقة</p>
                               ) : filtered.slice(0, MOVEMENT_DROPDOWN_LIMIT).map(m => (
                                 // سقف العرض: بدون بحث تتطابق كل الأصناف (~7000 زر) فتجمّد القائمة المنسدلة
                                 <button
@@ -5929,15 +5902,15 @@ export default function Dashboard() {
                                   className={`w-full text-right px-3 py-2 hover:bg-indigo-50 cursor-pointer border-none flex items-center justify-between gap-2 transition ${m.id === movementMedId ? 'bg-indigo-50' : 'bg-transparent'}`}
                                 >
                                   <div className="min-w-0">
-                                    <span className="block text-[11px] font-black text-slate-800 truncate">{m.nameAr} <span className="text-slate-400 font-mono text-[9px]">{m.nameEn}</span></span>
-                                    <span className="block text-[9px] text-slate-400 font-mono">{m.barcode || '—'}</span>
+                                    <span className="block text-sm font-bold text-slate-800 truncate">{m.nameAr} <span className="text-slate-400 font-mono text-xs">{m.nameEn}</span></span>
+                                    <span className="block text-xs text-slate-400 font-mono">{m.barcode || '—'}</span>
                                   </div>
-                                  <span className="text-[9px] text-slate-400 font-bold shrink-0 whitespace-nowrap">{m.availableQuantity} علبة</span>
+                                  <span className="text-xs text-slate-400 font-bold shrink-0 whitespace-nowrap">{m.availableQuantity} علبة</span>
                                 </button>
                               ))}
                               {filtered.length > MOVEMENT_DROPDOWN_LIMIT && (
-                                <p className="text-[10px] text-slate-400 font-bold text-center py-2">
-                                  يُعرض {MOVEMENT_DROPDOWN_LIMIT} من أصل {filtered.length.toLocaleString()} صنف — اكتب في البحث لعرض المزيد
+                                <p className="text-sm text-slate-400 font-bold text-center py-2">
+                                  يُعرض {MOVEMENT_DROPDOWN_LIMIT} من أصل {fmtNum(filtered.length)} صنف — اكتب في البحث لعرض المزيد
                                 </p>
                               )}
                             </div>
@@ -5945,7 +5918,7 @@ export default function Dashboard() {
                         })()}
                       </div>
                       <div className="md:col-span-3 space-y-1">
-                        <label className="block text-[10px] font-black text-slate-500">من تاريخ</label>
+                        <label className="block text-sm font-bold text-slate-500">من تاريخ</label>
                         <input
                           type="date"
                           value={movementFrom}
@@ -5954,7 +5927,7 @@ export default function Dashboard() {
                         />
                       </div>
                       <div className="md:col-span-3 space-y-1">
-                        <label className="block text-[10px] font-black text-slate-500">إلى تاريخ</label>
+                        <label className="block text-sm font-bold text-slate-500">إلى تاريخ</label>
                         <input
                           type="date"
                           value={movementTo}
@@ -5966,7 +5939,7 @@ export default function Dashboard() {
                         <button
                           type="button"
                           onClick={() => { setMovementFrom(''); setMovementTo(''); }}
-                          className="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-black py-2.5 rounded-xl text-[10px] cursor-pointer transition border-none"
+                          className="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-sm cursor-pointer transition border-none"
                           title="مسح المدى الزمني"
                         >
                           مسح
@@ -5978,7 +5951,7 @@ export default function Dashboard() {
                     {!movementMedId ? (
                       <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl py-10 text-center">
                         <Search className="w-6 h-6 text-slate-300 mx-auto mb-2" />
-                        <p className="text-[11px] text-slate-400 font-bold">اختر صنفاً من القائمة أعلاه لعرض سجل حركته (الوارد والصادر)</p>
+                        <p className="text-sm text-slate-400 font-bold">اختر صنفاً من القائمة أعلاه لعرض سجل حركته (الوارد والصادر)</p>
                       </div>
                     ) : (() => {
                       const med = inventory.find(m => m.id === movementMedId);
@@ -5989,35 +5962,35 @@ export default function Dashboard() {
                           {/* بطاقات الملخص */}
                           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                             <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4">
-                              <span className="text-[9px] text-emerald-700 font-black block mb-1">إجمالي الوارد (شراء)</span>
-                              <strong className="text-lg font-black text-emerald-700 font-mono block">{totalIn.toLocaleString()} <span className="text-[9px] font-bold">علبة</span></strong>
-                              <span className="text-[9px] text-emerald-600/70 font-bold font-mono">{valueIn.toLocaleString()} د.ع</span>
+                              <span className="text-xs text-emerald-700 font-bold block mb-1">إجمالي الوارد (شراء)</span>
+                              <strong className="text-lg font-bold text-emerald-700 font-mono block">{fmtNum(totalIn)} <span className="text-xs font-bold">علبة</span></strong>
+                              <span className="text-xs text-emerald-600/70 font-bold font-mono">{fmtNum(valueIn)} د.ع</span>
                             </div>
                             <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
-                              <span className="text-[9px] text-blue-700 font-black block mb-1">إجمالي الصادر (بيع)</span>
-                              <strong className="text-lg font-black text-blue-700 font-mono block">{totalOut.toLocaleString()} <span className="text-[9px] font-bold">علبة</span></strong>
-                              <span className="text-[9px] text-blue-600/70 font-bold font-mono">{valueOut.toLocaleString()} د.ع</span>
+                              <span className="text-xs text-blue-700 font-bold block mb-1">إجمالي الصادر (بيع)</span>
+                              <strong className="text-lg font-bold text-blue-700 font-mono block">{fmtNum(totalOut)} <span className="text-xs font-bold">علبة</span></strong>
+                              <span className="text-xs text-blue-600/70 font-bold font-mono">{fmtNum(valueOut)} د.ع</span>
                             </div>
                             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
-                              <span className="text-[9px] text-slate-500 font-black block mb-1">صافي الحركة</span>
-                              <strong className={`text-lg font-black font-mono block ${net >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>{net >= 0 ? '+' : ''}{net.toLocaleString()} <span className="text-[9px] font-bold">علبة</span></strong>
-                              <span className="text-[9px] text-slate-400 font-bold">وارد − صادر</span>
+                              <span className="text-xs text-slate-500 font-bold block mb-1">صافي الحركة</span>
+                              <strong className={`text-lg font-bold font-mono block ${net >= 0 ? 'text-emerald-700' : 'text-rose-600'}`}>{net >= 0 ? '+' : ''}{fmtNum(net)} <span className="text-xs font-bold">علبة</span></strong>
+                              <span className="text-xs text-slate-400 font-bold">وارد − صادر</span>
                             </div>
                             <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4">
-                              <span className="text-[9px] text-indigo-700 font-black block mb-1">الرصيد الحالي بالمخزن</span>
-                              <strong className="text-lg font-black text-indigo-700 font-mono block">{(med?.availableQuantity ?? 0).toLocaleString()} <span className="text-[9px] font-bold">علبة</span></strong>
-                              <span className="text-[9px] text-indigo-600/70 font-bold">{med?.nameAr}</span>
+                              <span className="text-xs text-indigo-700 font-bold block mb-1">الرصيد الحالي بالمخزن</span>
+                              <strong className="text-lg font-bold text-indigo-700 font-mono block">{fmtNum((med?.availableQuantity ?? 0))} <span className="text-xs font-bold">علبة</span></strong>
+                              <span className="text-xs text-indigo-600/70 font-bold">{med?.nameAr}</span>
                             </div>
                           </div>
 
                           {/* جدول الحركات الزمني */}
                           {movements.length === 0 ? (
                             <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl py-8 text-center">
-                              <p className="text-[11px] text-slate-400 font-bold">لا توجد حركات مسجّلة لهذا الصنف{(movementFrom || movementTo) ? ' ضمن المدى الزمني المحدد' : ''}</p>
+                              <p className="text-sm text-slate-400 font-bold">لا توجد حركات مسجّلة لهذا الصنف{(movementFrom || movementTo) ? ' ضمن المدى الزمني المحدد' : ''}</p>
                             </div>
                           ) : (
                             <div className="overflow-x-auto border border-slate-100 rounded-2xl">
-                              <table className="w-full text-right text-[11px]">
+                              <table className="w-full text-right text-sm">
                                 <thead>
                                   <tr className="bg-slate-50 text-slate-500 border-b border-slate-100 font-bold">
                                     <th className="py-2.5 px-3 rounded-r-xl">التاريخ</th>
@@ -6034,15 +6007,15 @@ export default function Dashboard() {
                                     <tr key={mv.ref + '-' + i} className="border-b border-slate-100/70 hover:bg-slate-50/50 transition">
                                       <td className="py-2.5 px-3 font-mono text-slate-500 whitespace-nowrap">{mv.date}</td>
                                       <td className="py-2.5 px-3 text-center">
-                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[9px] font-black ${mv.type === 'in' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>
+                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-bold ${mv.type === 'in' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>
                                           {mv.type === 'in' ? '↓ وارد (شراء)' : '↑ صادر (بيع)'}
                                         </span>
                                       </td>
-                                      <td className={`py-2.5 px-3 text-center font-mono font-black ${mv.type === 'in' ? 'text-emerald-700' : 'text-blue-700'}`}>
-                                        {mv.type === 'in' ? '+' : '−'}{mv.qty.toLocaleString()}
+                                      <td className={`py-2.5 px-3 text-center font-mono font-bold ${mv.type === 'in' ? 'text-emerald-700' : 'text-blue-700'}`}>
+                                        {mv.type === 'in' ? '+' : '−'}{fmtNum(mv.qty)}
                                       </td>
-                                      <td className="py-2.5 px-3 text-center font-mono text-slate-600">{mv.price.toLocaleString()} د.ع</td>
-                                      <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-700">{(mv.qty * mv.price).toLocaleString()} د.ع</td>
+                                      <td className="py-2.5 px-3 text-center font-mono text-slate-600">{fmtNum(mv.price)} د.ع</td>
+                                      <td className="py-2.5 px-3 text-center font-mono font-bold text-slate-700">{fmtNum((mv.qty * mv.price))} د.ع</td>
                                       <td className="py-2.5 px-3 font-mono text-slate-400">{mv.ref}</td>
                                       <td className="py-2.5 px-3 text-slate-600 font-semibold max-w-[160px] truncate" title={mv.party}>{mv.party}</td>
                                     </tr>
@@ -6051,7 +6024,7 @@ export default function Dashboard() {
                               </table>
                             </div>
                           )}
-                          <p className="text-[9px] text-slate-400 font-bold">* الوارد يُحتسب من طلبيات الشراء (المذاخر)، والصادر من سجل فواتير البيع (POS). عدد الحركات: {movements.length}</p>
+                          <p className="text-xs text-slate-400 font-bold">* الوارد يُحتسب من طلبيات الشراء (المذاخر)، والصادر من سجل فواتير البيع (POS). عدد الحركات: {movements.length}</p>
                         </div>
                       );
                     })()}
@@ -6099,8 +6072,8 @@ export default function Dashboard() {
                             className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition text-right"
                           >
                             <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                            <span className="text-xs font-black text-amber-900">أصناف نفدت أو شارفت على النفاد</span>
-                            <span className="text-[10px] bg-amber-200 text-amber-900 font-extrabold px-2.5 py-0.5 rounded-full">{lowItems.length} صنف</span>
+                            <span className="text-xs font-bold text-amber-900">أصناف نفدت أو شارفت على النفاد</span>
+                            <span className="text-sm bg-amber-200 text-amber-900 font-semibold px-2.5 py-0.5 rounded-full">{lowItems.length} صنف</span>
                             <ChevronDown className={`w-3.5 h-3.5 text-amber-600 transition-transform duration-200 ${showLowStock ? 'rotate-180' : ''}`} />
                           </button>
                           {/* زر الطباعة */}
@@ -6117,7 +6090,7 @@ export default function Dashboard() {
                                 th{background:#fef3c7;font-weight:bold}
                                 h2{color:#92400e}</style></head><body>
                                 <h2>قائمة الطلب العاجل — صيدلية انوار الحسن</h2>
-                                <p style="color:#666;font-size:12px">${new Date().toLocaleDateString('ar-IQ')}</p>
+                                <p style="color:#666;font-size:12px">${fmtDate(new Date())}</p>
                                 <table><thead><tr><th>الدواء</th><th>الكمية الحالية</th><th>الكمية المقترحة للطلب</th></tr></thead>
                                 <tbody>${lowItems.map(m => `<tr><td>${escapeHtml(m.nameAr)}</td><td>${m.availableQuantity} علبة</td><td>${getSuggestedQty(m)} علبة</td></tr>`).join('')}
                                 </tbody></table></body></html>
@@ -6125,7 +6098,7 @@ export default function Dashboard() {
                               win.document.close();
                               win.print();
                             }}
-                            className="flex items-center gap-1.5 text-[10px] font-black bg-amber-200 hover:bg-amber-300 text-amber-900 px-3 py-1.5 rounded-xl transition cursor-pointer border-none"
+                            className="flex items-center gap-1.5 text-sm font-bold bg-amber-200 hover:bg-amber-300 text-amber-900 px-3 py-1.5 rounded-xl transition cursor-pointer border-none"
                           >
                             <FileText className="w-3.5 h-3.5" />
                             طباعة القائمة
@@ -6141,26 +6114,26 @@ export default function Dashboard() {
                               <div key={m.id} className="bg-white border border-amber-100 rounded-xl px-3 py-2.5 flex items-center justify-between text-xs gap-2">
                                 <div className="min-w-0 flex-1">
                                   <span className="font-bold text-slate-800 block">{m.nameAr}</span>
-                                  <span className={`font-mono font-bold text-[10px] ${m.availableQuantity === 0 ? 'text-rose-600' : 'text-amber-600'}`}>
+                                  <span className={`font-mono font-bold text-sm ${m.availableQuantity === 0 ? 'text-rose-600' : 'text-amber-600'}`}>
                                     {m.availableQuantity === 0 ? 'نفد المخزون' : `${m.availableQuantity} علبة متبقية`}
                                   </span>
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
                                   {/* اقتراح الكمية */}
                                   <div className="text-center">
-                                    <span className="text-[8px] text-slate-400 font-bold block">اقتراح الطلب</span>
-                                    <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg font-mono">
+                                    <span className="text-xs text-slate-400 font-bold block">اقتراح الطلب</span>
+                                    <span className="text-sm font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg font-mono">
                                       {suggestedQty} علبة
                                     </span>
                                     {maxPast > 0 && (
-                                      <span className="text-[8px] text-slate-400 block">بناءً على {maxPast} سابقاً</span>
+                                      <span className="text-xs text-slate-400 block">بناءً على {maxPast} سابقاً</span>
                                     )}
                                   </div>
                                   {/* زر إضافة للشراء */}
                                   <button
                                     type="button"
                                     onClick={() => { addToPurchaseDraft(m, suggestedQty); setActiveTab('b2b'); }}
-                                    className="text-[9px] font-black px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition cursor-pointer border-none"
+                                    className="text-xs font-bold px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition cursor-pointer border-none"
                                   >
                                     أضف للشراء
                                   </button>
@@ -6168,7 +6141,7 @@ export default function Dashboard() {
                                   <button
                                     type="button"
                                     onClick={() => setDismissedLowStock(prev => new Set([...prev, m.id]))}
-                                    className="text-[9px] font-black px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-lg transition cursor-pointer border-none"
+                                    className="text-xs font-bold px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-lg transition cursor-pointer border-none"
                                     title="إخفاء من القائمة"
                                   >
                                     ✕
@@ -6182,7 +6155,7 @@ export default function Dashboard() {
                           <button
                             type="button"
                             onClick={() => setDismissedLowStock(new Set())}
-                            className="text-[9px] text-amber-700 font-bold underline cursor-pointer bg-transparent border-none"
+                            className="text-xs text-amber-700 font-bold underline cursor-pointer bg-transparent border-none"
                           >
                             إعادة عرض الأصناف المخفية ({dismissedLowStock.size})
                           </button>
@@ -6202,7 +6175,7 @@ export default function Dashboard() {
                         <button
                           type="button"
                           onClick={() => { invSearchRef.current?.setValue(''); }}
-                          className="text-[10px] font-black text-slate-500 hover:text-rose-600 px-2 py-2 transition cursor-pointer"
+                          className="text-sm font-bold text-slate-500 hover:text-rose-600 px-2 py-2 transition cursor-pointer"
                         >
                           مسح ✕
                         </button>
@@ -6218,7 +6191,7 @@ export default function Dashboard() {
                       </button>
                       <button
                         onClick={() => setIsAddingDrug(!isAddingDrug)}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5"
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5"
                       >
                         <Plus className="w-4 h-4" />
                         <span>إضافة دواء</span>
@@ -6226,16 +6199,16 @@ export default function Dashboard() {
                       {/* زر مؤقت للاختبار */}
                       <button
                         onClick={handleSeedTestData}
-                        className="bg-orange-500 hover:bg-orange-600 text-white font-black text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5"
+                        className="bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5"
                         title="إضافة 5 أدوية تجريبية"
                       >
-                        <span>🧪 بيانات تجريبية</span>
+                        <span className="inline-flex items-center gap-1"><FlaskConical className="w-3.5 h-3.5" />بيانات تجريبية</span>
                       </button>
                       {currentRole === 'admin' && (
                         <button
                           onClick={() => setShowBulkImportConfirm(true)}
                           disabled={bulkImportStatus === 'loading' || bulkImportStatus === 'writing'}
-                          className="bg-slate-800 hover:bg-slate-900 text-white font-black text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <Download className="w-4 h-4" />
                           <span>استيراد المخزون</span>
@@ -6247,7 +6220,7 @@ export default function Dashboard() {
                     <div className="overflow-x-auto">
                       <table className="w-full text-right border-collapse text-xs">
                         <thead>
-                          <tr className="bg-slate-50 text-slate-400 font-black border-b border-slate-100 text-[10px]">
+                          <tr className="bg-slate-50 text-slate-400 font-bold border-b border-slate-100 text-sm">
                             <th className="py-3 px-4">رقم الرف</th>
                             <th className="py-3 px-4">الاسم والدواء</th>
                             <th className="py-3 px-4">سعر البيع للجمهور</th>
@@ -6271,9 +6244,9 @@ export default function Dashboard() {
                                   <td className="py-3 px-4 font-mono text-slate-400">REF-{1000 + idx}</td>
                                   <td className="py-3 px-4 space-y-0.5">
                                     <strong className="text-slate-900 block font-bold">{med.nameAr}</strong>
-                                    <span className="text-[10px] text-slate-400 font-mono block">{med.nameEn} • {med.scientificName}</span>
+                                    <span className="text-sm text-slate-400 font-mono block">{med.nameEn} • {med.scientificName}</span>
                                     {med.manufacturer && (
-                                      <span className="text-[9px] text-slate-400 font-bold block">🏭 {med.manufacturer}</span>
+                                      <span className="text-xs text-slate-400 font-bold flex items-center gap-1"><Factory className="w-3 h-3 shrink-0" />{med.manufacturer}</span>
                                     )}
                                   </td>
                                   {editingPriceId === med.id ? (
@@ -6305,19 +6278,19 @@ export default function Dashboard() {
                                     <>
                                       <td className="py-3 px-4 font-mono font-bold text-emerald-800">
                                         <button type="button" onClick={() => startEditingPrice(med)} className="group flex items-center gap-1.5 hover:text-emerald-600 transition cursor-pointer" title="تعديل السعر">
-                                          <span>{med.price.toLocaleString()} د.ع</span>
+                                          <span>{fmtNum(med.price)} د.ع</span>
                                           <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-100 transition" />
                                         </button>
                                       </td>
-                                      <td className="py-3 px-4 font-mono font-bold text-slate-500/80">{(med.secondaryPrice || (med.price + 500)).toLocaleString()} د.ع</td>
+                                      <td className="py-3 px-4 font-mono font-bold text-slate-500/80">{fmtNum((med.secondaryPrice || (med.price + 500)))} د.ع</td>
                                     </>
                                   )}
                                   <td className="py-3 px-4 font-mono">
-                                    <span className={`px-2 py-0.5 rounded-full font-bold ${med.availableQuantity <= 0 ? 'bg-rose-100 text-rose-800 font-sans text-[10px]' : med.availableQuantity < 15 ? 'bg-amber-100 text-amber-800 font-sans text-[10px]' : 'text-slate-800'}`}>
+                                    <span className={`px-2 py-0.5 rounded-full font-bold ${med.availableQuantity <= 0 ? 'bg-rose-100 text-rose-800 font-sans text-sm' : med.availableQuantity < 15 ? 'bg-amber-100 text-amber-800 font-sans text-sm' : 'text-slate-800'}`}>
                                       {med.availableQuantity <= 0 ? 'نفذ بالكامل' : `${med.availableQuantity} علبة`}
                                     </span>
                                     {med.availableQuantity <= (med.minStock ?? 15) && med.availableQuantity > 0 && (
-                                      <span className="text-[8px] bg-amber-500 text-white font-bold px-1.5 py-0.5 rounded mr-1">طلب عاجل</span>
+                                      <span className="text-xs bg-amber-500 text-white font-bold px-1.5 py-0.5 rounded mr-1">طلب عاجل</span>
                                     )}
                                   </td>
                                   <td className={`py-3 px-4 font-mono font-bold ${isNearExpiry30 ? 'text-rose-600' : 'text-slate-400'}`}>
@@ -6341,9 +6314,9 @@ export default function Dashboard() {
                                       </div>
                                     ) : (
                                       <div className="flex items-center justify-center space-x-reverse space-x-1.5">
-                                        <button type="button" onClick={() => startEditingQty(med)} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-lg font-bold transition cursor-pointer text-[10px] flex items-center gap-1 border border-emerald-150" title="تعديل الكمية يدوياً"><Pencil className="w-3 h-3" /><span>تعديل</span></button>
-                                        <button onClick={() => adjustStockQty(med.id, 10)} className="bg-slate-100 hover:bg-emerald-100 text-slate-600 hover:text-emerald-800 px-2 py-1 rounded font-bold transition cursor-pointer text-[10px]" title="إضافة 10 علب">+10</button>
-                                        <button onClick={() => adjustStockQty(med.id, -5)} className="bg-slate-150 hover:bg-rose-100 text-slate-600 hover:text-rose-800 px-2 py-1 rounded font-bold transition cursor-pointer text-[10px]" title="تخفيض 5 علب">-5</button>
+                                        <button type="button" onClick={() => startEditingQty(med)} className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 px-2.5 py-1 rounded-lg font-bold transition cursor-pointer text-sm flex items-center gap-1 border border-emerald-150" title="تعديل الكمية يدوياً"><Pencil className="w-3 h-3" /><span>تعديل</span></button>
+                                        <button onClick={() => adjustStockQty(med.id, 10)} className="bg-slate-100 hover:bg-emerald-100 text-slate-600 hover:text-emerald-800 px-3 py-2 min-h-10 rounded-lg font-bold transition cursor-pointer text-xs" title="إضافة 10 علب">+10</button>
+                                        <button onClick={() => adjustStockQty(med.id, -5)} className="bg-slate-150 hover:bg-rose-100 text-slate-600 hover:text-rose-800 px-3 py-2 min-h-10 rounded-lg font-bold transition cursor-pointer text-xs" title="تخفيض 5 علب">-5</button>
                                       </div>
                                     )}
                                   </td>
@@ -6352,7 +6325,7 @@ export default function Dashboard() {
                                       <button
                                         type="button"
                                         onClick={() => quickAuditId === med.id ? setQuickAuditId(null) : startQuickAudit(med)}
-                                        className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition cursor-pointer border ${quickAuditId === med.id ? 'bg-violet-600 text-white border-violet-600' : 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'}`}
+                                        className={`px-2.5 py-1 rounded-lg text-sm font-bold transition cursor-pointer border ${quickAuditId === med.id ? 'bg-violet-600 text-white border-violet-600' : 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'}`}
                                         title="جرد سريع"
                                       >
                                         جرد
@@ -6375,39 +6348,39 @@ export default function Dashboard() {
                                     <td colSpan={8} className="px-4 py-4">
                                       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
                                         <div className="space-y-1">
-                                          <label className="block text-[10px] font-black text-violet-700">الاسم عربي</label>
+                                          <label className="block text-sm font-bold text-violet-700">الاسم عربي</label>
                                           <input value={qaNameAr} onChange={e => setQaNameAr(e.target.value)}
                                             className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-800 focus:outline-violet-500" />
                                         </div>
                                         <div className="space-y-1">
-                                          <label className="block text-[10px] font-black text-violet-700">الاسم إنجليزي</label>
+                                          <label className="block text-sm font-bold text-violet-700">الاسم إنجليزي</label>
                                           <input value={qaNameEn} onChange={e => setQaNameEn(e.target.value)}
                                             className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-800 focus:outline-violet-500" />
                                         </div>
                                         <div className="space-y-1">
-                                          <label className="block text-[10px] font-black text-violet-700">سعر البيع (د.ع)</label>
+                                          <label className="block text-sm font-bold text-violet-700">سعر البيع (د.ع)</label>
                                           <input type="number" min={0} step={250} value={qaPrice} onChange={e => setQaPrice(e.target.value)}
                                             className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs font-mono font-bold text-slate-800 focus:outline-violet-500" />
                                         </div>
                                         <div className="space-y-1">
-                                          <label className="block text-[10px] font-black text-violet-700">سعر الشراء (د.ع)</label>
+                                          <label className="block text-sm font-bold text-violet-700">سعر الشراء (د.ع)</label>
                                           <input type="number" min={0} step={250} value={qaCostPrice} onChange={e => setQaCostPrice(e.target.value)}
                                             className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs font-mono font-bold text-slate-800 focus:outline-violet-500" />
                                         </div>
                                         <div className="space-y-1">
-                                          <label className="block text-[10px] font-black text-violet-700">الكمية الفعلية</label>
+                                          <label className="block text-sm font-bold text-violet-700">الكمية الفعلية</label>
                                           <input type="number" min={0} value={qaQty} onChange={e => setQaQty(e.target.value)}
                                             className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs font-mono font-bold text-slate-800 focus:outline-violet-500" />
                                         </div>
                                         <div className="space-y-1">
-                                          <label className="block text-[10px] font-black text-violet-700">انتهاء الصلاحية</label>
+                                          <label className="block text-sm font-bold text-violet-700">انتهاء الصلاحية</label>
                                           <input type="date" value={qaExpiry} onChange={e => setQaExpiry(e.target.value)}
                                             className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs font-mono font-bold text-slate-800 focus:outline-violet-500" />
                                         </div>
                                       </div>
                                       <div className="flex items-center gap-2 mt-3">
                                         <button type="button" onClick={() => saveQuickAudit(med.id)}
-                                          className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-1.5">
+                                          className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5">
                                           <Check className="w-3.5 h-3.5" />حفظ الجرد
                                         </button>
                                         <button type="button" onClick={() => setQuickAuditId(null)}
@@ -6429,7 +6402,7 @@ export default function Dashboard() {
                         <button
                           type="button"
                           onClick={() => setInvRenderCap(c => c + 200)}
-                          className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-xs px-5 py-2.5 rounded-xl cursor-pointer transition"
+                          className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-5 py-2.5 rounded-xl cursor-pointer transition"
                         >
                           عرض المزيد ({filteredInventory.length - invRenderCap} مادة متبقية)
                         </button>
@@ -6455,8 +6428,8 @@ export default function Dashboard() {
                     <div className="absolute top-0 left-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl -ml-20 -mt-20" />
                     <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div className="space-y-1 text-right">
-                        <span className="text-[10px] uppercase tracking-wider font-extrabold bg-emerald-500/30 text-emerald-100 px-3.5 py-1 rounded-full">إدارة مشتريات وتوريدات الأدوية</span>
-                        <h3 className="font-extrabold text-lg mt-2 font-sans">طلبيات الشراء والتغذية اليومية للمخزون</h3>
+                        <span className="text-sm uppercase tracking-wider font-semibold bg-emerald-500/30 text-emerald-100 px-3.5 py-1 rounded-full">إدارة مشتريات وتوريدات الأدوية</span>
+                        <h3 className="font-semibold text-lg mt-2 font-sans">طلبيات الشراء والتغذية اليومية للمخزون</h3>
                         <p className="text-xs text-slate-300 leading-relaxed max-w-2xl font-medium">
                           منظومة متكاملة لتهيئة وتخطيط طلبيات الشراء اليومية من المكاتب العلمية والمذاخر. قم باضافة كمياتك والتحكم المباشر في الأسعار، التواريخ، والباركود لتنزيلها في المخزن بضغطة زر واحدة.
                         </p>
@@ -6465,8 +6438,8 @@ export default function Dashboard() {
                       <div className="flex items-center gap-2 bg-slate-800/40 border border-slate-700/50 p-4 rounded-2xl backdrop-blur-md">
                         <DollarSign className="w-8 h-8 text-emerald-400" />
                         <div className="text-right">
-                          <span className="text-[10px] text-slate-400 block font-bold">ميزانية الصندوق المتاحة:</span>
-                          <strong className="text-base text-emerald-400 font-mono tracking-wide">{walletBalance.toLocaleString()} د.ع</strong>
+                          <span className="text-sm text-slate-400 block font-bold">ميزانية الصندوق المتاحة:</span>
+                          <strong className="text-base text-emerald-400 font-mono tracking-wide">{fmtNum(walletBalance)} د.ع</strong>
                         </div>
                       </div>
                     </div>
@@ -6482,7 +6455,7 @@ export default function Dashboard() {
                       <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
                       <div>
                         <strong>عملية توريد ناجحة !</strong>
-                        <p className="text-[10px] text-emerald-800 mt-1">{purchaseSuccessBanner}</p>
+                        <p className="text-sm text-emerald-800 mt-1">{purchaseSuccessBanner}</p>
                       </div>
                     </motion.div>
                   )}
@@ -6502,8 +6475,8 @@ export default function Dashboard() {
                           <ScanLine className="w-5 h-5" />
                         </div>
                         <div className="text-right">
-                          <p className="text-xs font-extrabold">استيراد فاتورة من صورة</p>
-                          <p className="text-[10px] text-emerald-100 font-bold mt-0.5">ارفع صورة القائمة وسيُعبّأ المخزون تلقائياً</p>
+                          <p className="text-xs font-semibold">استيراد فاتورة من صورة</p>
+                          <p className="text-sm text-emerald-100 font-bold mt-0.5">ارفع صورة القائمة وسيُعبّأ المخزون تلقائياً</p>
                         </div>
                       </button>
 
@@ -6511,11 +6484,11 @@ export default function Dashboard() {
                       <div className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-xs space-y-4">
                         <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
                           <PlusCircle className="w-5 h-5 text-emerald-600" />
-                          <h4 className="font-extrabold text-xs text-slate-900">إضافة سريعة بالاسم أو التفاصيل</h4>
+                          <h4 className="font-semibold text-xs text-slate-900">إضافة سريعة بالاسم أو التفاصيل</h4>
                         </div>
                         
                         <div className="space-y-3">
-                          <p className="text-[10px] text-slate-400 font-bold leading-relaxed">
+                          <p className="text-sm text-slate-400 font-bold leading-relaxed">
                             اختر أي دواء مسجل مسبقاً في الصيدلية لإدراجه مباشرةً في مسودة الشراء اليومي مع تطبيق التخفيضات:
                           </p>
                           
@@ -6572,19 +6545,19 @@ export default function Dashboard() {
                                     className="w-full p-3 hover:bg-slate-50 transition text-right text-xs block cursor-pointer"
                                   >
                                     <div className="flex justify-between items-center">
-                                      <strong className="font-extrabold text-slate-900 block">{med.nameAr}</strong>
-                                      <span className="text-[9px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-mono font-bold">
+                                      <strong className="font-semibold text-slate-900 block">{med.nameAr}</strong>
+                                      <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-mono font-bold">
                                         رصيد: {med.availableQuantity}
                                       </span>
                                     </div>
-                                    <span className="text-[10px] text-slate-400 font-mono block mt-0.5">{med.nameEn} • {med.scientificName}</span>
+                                    <span className="text-sm text-slate-400 font-mono block mt-0.5">{med.nameEn} • {med.scientificName}</span>
                                   </button>
                                 ))}
                               {inventory.filter(m => 
                                   m.nameAr.toLowerCase().includes(purchaseSearchWord.toLowerCase()) || 
                                   m.nameEn.toLowerCase().includes(purchaseSearchWord.toLowerCase())
                                ).length === 0 && (
-                                <p className="p-4 text-[10px] text-slate-400 text-center font-bold">لم نعثر على دواء مطابق. هل ترغب بإضافة منتج جديد؟</p>
+                                <p className="p-4 text-sm text-slate-400 text-center font-bold">لم نعثر على دواء مطابق. هل ترغب بإضافة منتج جديد؟</p>
                               )}
                             </div>
                           )}
@@ -6601,9 +6574,9 @@ export default function Dashboard() {
                         >
                           <div className="flex items-center gap-2 text-slate-800">
                             <PlusCircle className="w-5 h-5 text-emerald-600" />
-                            <h4 className="font-extrabold text-xs text-slate-900">تسجيل وإضافة دواء جديد كلياً 🆕</h4>
+                            <h4 className="font-semibold text-xs text-slate-900">تسجيل وإضافة دواء جديد كلياً 🆕</h4>
                           </div>
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          <span className={`text-sm font-bold px-2 py-0.5 rounded-full ${
                             showPurchaseNewProdForm ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-500'
                           }`}>
                             {showPurchaseNewProdForm ? 'إغلاق' : 'توسعة'}
@@ -6619,7 +6592,7 @@ export default function Dashboard() {
                               className="overflow-hidden space-y-3.5 pt-3 text-right"
                             >
                               <div className="space-y-1.5 text-xs text-slate-600 font-bold">
-                                <label className="block text-[10px]">الاسم العربي للمنتج:</label>
+                                <label className="block text-sm">الاسم العربي للمنتج:</label>
                                 <input
                                   type="text"
                                   value={purchaseNewProdAr}
@@ -6630,7 +6603,7 @@ export default function Dashboard() {
                               </div>
 
                               <div className="space-y-1.5 text-xs text-slate-600 font-bold">
-                                <label className="block text-[10px]">الاسم الإنكليزي للمنتج:</label>
+                                <label className="block text-sm">الاسم الإنكليزي للمنتج:</label>
                                 <input
                                   type="text"
                                   value={purchaseNewProdEn}
@@ -6641,7 +6614,7 @@ export default function Dashboard() {
                               </div>
 
                               <div className="space-y-1.5 text-xs text-slate-600 font-bold">
-                                <label className="block text-[10px]">الاسم العلمي والمادة الفعالة:</label>
+                                <label className="block text-sm">الاسم العلمي والمادة الفعالة:</label>
                                 <input
                                   type="text"
                                   value={purchaseNewProdSci}
@@ -6653,7 +6626,7 @@ export default function Dashboard() {
 
                               <div className="grid grid-cols-2 gap-2">
                                 <div className="space-y-1 text-xs text-slate-600 font-bold">
-                                  <label className="block text-[10px]">تاريخ انتهاء الصلاحية:</label>
+                                  <label className="block text-sm">تاريخ انتهاء الصلاحية:</label>
                                   <input
                                     type="date"
                                     value={purchaseNewProdExpiry}
@@ -6665,7 +6638,7 @@ export default function Dashboard() {
 
                               <div className="grid grid-cols-2 gap-2">
                                 <div className="space-y-1 text-xs text-slate-600 font-bold">
-                                  <label className="block text-[10px]">سعر شراء الجملة (د.ع):</label>
+                                  <label className="block text-sm">سعر شراء الجملة (د.ع):</label>
                                   <input
                                     type="number"
                                     value={purchaseNewProdPrice}
@@ -6675,7 +6648,7 @@ export default function Dashboard() {
                                 </div>
 
                                 <div className="space-y-1 text-xs text-slate-600 font-bold">
-                                  <label className="block text-[10px]">الكمية المطلوبة (علب):</label>
+                                  <label className="block text-sm">الكمية المطلوبة (علب):</label>
                                   <input
                                     type="number"
                                     value={purchaseNewProdQty}
@@ -6686,7 +6659,7 @@ export default function Dashboard() {
                               </div>
 
                               <div className="space-y-1.5 text-xs text-slate-600 font-bold">
-                                <label className="block text-[10px]">الباركود الرقمي للمنتج:</label>
+                                <label className="block text-sm">الباركود الرقمي للمنتج:</label>
                                 <div className="flex gap-1.5">
                                   <input
                                     type="text"
@@ -6735,7 +6708,7 @@ export default function Dashboard() {
                                   setPurchaseNewProdBarcode('');
                                   setShowPurchaseNewProdForm(false);
                                 }}
-                                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2.5 rounded-xl text-center transition shadow-sm cursor-pointer text-xs border-none"
+                                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-center transition shadow-sm cursor-pointer text-xs border-none"
                               >
                                 إضافة المنتج الجديد إلى جدول المشتريات
                               </button>
@@ -6753,9 +6726,9 @@ export default function Dashboard() {
                       <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm space-y-5">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
                           <div className="space-y-0.5 text-right">
-                            <span className="text-[9px] bg-indigo-50 text-indigo-700 font-black px-2.5 py-0.5 rounded-full inline-block">حالة المسودة: قيد التعديل والتخصيص</span>
-                            <h4 className="font-extrabold text-sm text-slate-900 mt-1">مسودة قائمة الشراء والتوريد النشطة</h4>
-                            <p className="text-[10px] text-slate-400 font-bold">قم بتعديل الأعداد، الأسعار، وحالات الصلاحية مباشرة في الجدول لتحديث رصيد المخزن تلقائياً</p>
+                            <span className="text-xs bg-indigo-50 text-indigo-700 font-bold px-2.5 py-0.5 rounded-full inline-block">حالة المسودة: قيد التعديل والتخصيص</span>
+                            <h4 className="font-semibold text-sm text-slate-900 mt-1">مسودة قائمة الشراء والتوريد النشطة</h4>
+                            <p className="text-sm text-slate-400 font-bold">قم بتعديل الأعداد، الأسعار، وحالات الصلاحية مباشرة في الجدول لتحديث رصيد المخزن تلقائياً</p>
                           </div>
                           
                           <div className="flex items-center gap-2">
@@ -6766,7 +6739,7 @@ export default function Dashboard() {
                                   setPurchaseDraft([]);
                                 }
                               }}
-                              className="text-[10px] text-rose-500 hover:text-rose-700 font-extrabold bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-xl transition cursor-pointer border-none"
+                              className="text-sm text-rose-500 hover:text-rose-700 font-semibold bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-xl transition cursor-pointer border-none"
                             >
                               مسح المسودة
                             </button>
@@ -6777,7 +6750,7 @@ export default function Dashboard() {
                           <div className="p-12 text-center border-2 border-dashed border-slate-100 rounded-2xl bg-slate-50/50 space-y-3">
                             <ClipboardList className="w-10 h-10 text-slate-300 mx-auto" />
                             <strong className="text-xs text-slate-700 block">جدول الشراء اليومي فارغ تماماً</strong>
-                            <p className="text-[10px] text-slate-400 max-w-sm mx-auto font-bold leading-relaxed">
+                            <p className="text-sm text-slate-400 max-w-sm mx-auto font-bold leading-relaxed">
                               ابدأ الآن بإضافة منتجاتك المطلوبة، أو ابحث عن النواقص بالاسم، أو تصفّح النواقص التي أوشكت صلاحيتها على الانتهاء، أو استخدم مسدس الكاميرا المحاكي.
                             </p>
                           </div>
@@ -6793,7 +6766,7 @@ export default function Dashboard() {
                                 const liveMed = inventory.find(m => m.id === item.medicineId);
                                 const liveQty = liveMed?.availableQuantity ?? 0;
                                 const fieldCls = 'w-full rounded-lg border p-1.5 font-mono text-center text-xs focus:outline-emerald-500';
-                                const labelCls = 'block text-[9px] font-bold text-slate-500 mb-0.5 text-center';
+                                const labelCls = 'block text-xs font-bold text-slate-500 mb-0.5 text-center';
                                 return (
                                   <div key={item.id} className="bg-white border border-slate-200 rounded-2xl p-3 space-y-2.5 hover:border-slate-300 transition">
 
@@ -6832,7 +6805,7 @@ export default function Dashboard() {
                                                 defaultValue={item.stockCorrection ?? liveQty}
                                                 onBlur={e => saveDraftStock(item.id, liveQty, e.target.value)}
                                                 onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingDraftStockId(null); }}
-                                                className="w-16 bg-white border border-blue-400 rounded-full px-2 py-0.5 text-[9px] font-black text-blue-900 text-center focus:outline-blue-500"
+                                                className="w-16 bg-white border border-blue-400 rounded-full px-2 py-0.5 text-xs font-bold text-blue-900 text-center focus:outline-blue-500"
                                               />
                                             ) : (() => {
                                               const effQty = item.stockCorrection ?? liveQty;
@@ -6840,17 +6813,17 @@ export default function Dashboard() {
                                               return (
                                                 <span
                                                   onDoubleClick={() => setEditingDraftStockId(item.id)}
-                                                  className={`text-[8px] font-black px-1.5 py-0.5 rounded-full shrink-0 cursor-pointer ${corrected ? 'bg-amber-100 text-amber-800 border border-amber-300' : effQty <= 0 ? 'bg-rose-100 text-rose-700' : effQty < (liveMed.minStock ?? 15) ? 'bg-amber-100 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}
+                                                  className={`text-xs font-bold px-1.5 py-0.5 rounded-full shrink-0 cursor-pointer ${corrected ? 'bg-amber-100 text-amber-800 border border-amber-300' : effQty <= 0 ? 'bg-rose-100 text-rose-700' : effQty < (liveMed.minStock ?? 15) ? 'bg-amber-100 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}
                                                   title="الرصيد الحالي في المخزن — انقر مرتين لتصحيحه"
                                                 >بالمخزن: {effQty}{corrected ? ' ✎' : ''}</span>
                                               );
                                             })()
                                           ) : (
-                                            <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full shrink-0 bg-blue-50 text-blue-700" title="صنف جديد غير موجود بالمخزن بعد">جديد</span>
+                                            <span className="text-xs font-bold px-1.5 py-0.5 rounded-full shrink-0 bg-blue-50 text-blue-700" title="صنف جديد غير موجود بالمخزن بعد">جديد</span>
                                           )}
                                         </div>
                                         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                                          <span className="text-[9px] text-slate-500 font-mono">
+                                          <span className="text-xs text-slate-500 font-mono">
                                             {item.nameEn} • {item.scientificName}
                                           </span>
                                           {/* الباركود — ثلاث نقرات للتعديل مع انتشار للمخزون */}
@@ -6865,12 +6838,12 @@ export default function Dashboard() {
                                                 else if (e.key === 'Escape') { draftEditCancelRef.current = true; (e.target as HTMLInputElement).blur(); }
                                               }}
                                               onBlur={saveDraftField}
-                                              className="text-[8px] text-slate-500 font-mono bg-indigo-50 border border-indigo-300 rounded px-1 w-24 text-right focus:outline-indigo-500"
+                                              className="text-xs text-slate-500 font-mono bg-indigo-50 border border-indigo-300 rounded px-1 w-24 text-right focus:outline-indigo-500"
                                               title="اضغط Enter للحفظ أو Escape للإلغاء"
                                             />
                                           ) : (
                                             <span
-                                              className="text-[8px] text-slate-500 font-mono cursor-text select-none border-b border-dashed border-slate-200"
+                                              className="text-xs text-slate-500 font-mono cursor-text select-none border-b border-dashed border-slate-200"
                                               title="انقر ثلاث مرات لتعديل الباركود"
                                               onClick={e => { if (e.detail === 3) startEditDraftField(item, 'barcode'); }}
                                             >{item.barcode || '—'}</span>
@@ -6879,8 +6852,8 @@ export default function Dashboard() {
                                       </div>
                                       <div className="flex items-center gap-2 shrink-0">
                                         <div className="text-left">
-                                          <span className="block text-[8px] font-bold text-slate-400">الإجمالي</span>
-                                          <span className="font-mono font-extrabold text-slate-800 text-sm">{subTotal.toLocaleString()} <span className="text-[9px]">د.ع</span></span>
+                                          <span className="block text-xs font-bold text-slate-400">الإجمالي</span>
+                                          <span className="font-mono font-semibold text-slate-800 text-sm">{fmtNum(subTotal)} <span className="text-xs">د.ع</span></span>
                                         </div>
                                         <button
                                           type="button"
@@ -6906,7 +6879,7 @@ export default function Dashboard() {
                                             onClick={() => {
                                               setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, qty: Math.max(1, Number(d.qty) - 5) } : d));
                                             }}
-                                            className="w-7 h-7 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-lg flex items-center justify-center transition focus:outline-none border-none cursor-pointer shrink-0"
+                                            className="w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg flex items-center justify-center transition focus:outline-none border-none cursor-pointer shrink-0"
                                             title="−5"
                                           >
                                             -
@@ -6926,7 +6899,7 @@ export default function Dashboard() {
                                             onClick={() => {
                                               setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, qty: Number(d.qty) + 10 } : d));
                                             }}
-                                            className="w-7 h-7 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-lg flex items-center justify-center transition focus:outline-none border-none cursor-pointer shrink-0"
+                                            className="w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg flex items-center justify-center transition focus:outline-none border-none cursor-pointer shrink-0"
                                             title="+10"
                                           >
                                             +
@@ -6994,7 +6967,7 @@ export default function Dashboard() {
                                             setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, expiryDate: val } : d));
                                             if (item.medicineId) setExpiryDates(prev => ({ ...prev, [item.medicineId]: val }));
                                           }}
-                                          className={`${fieldCls} bg-slate-50 border-slate-200 text-slate-900 text-[10px]`}
+                                          className={`${fieldCls} bg-slate-50 border-slate-200 text-slate-900 text-sm`}
                                         />
                                       </div>
                                     </div>
@@ -7008,11 +6981,11 @@ export default function Dashboard() {
                               <div className="space-y-1.5 text-right font-bold text-slate-700">
                                 <div className="flex items-center gap-2 text-xs">
                                   <span>مجموع المنتجات المسجلة للتوريد:</span>
-                                  <span className="bg-emerald-100 text-emerald-800 font-mono px-2.5 py-0.5 rounded-full text-[10px]">
+                                  <span className="bg-emerald-100 text-emerald-800 font-mono px-2.5 py-0.5 rounded-full text-sm">
                                     {purchaseDraft.reduce((acc, curr) => acc + Number(curr.qty), 0)} علبة إجمالية
                                   </span>
                                 </div>
-                                <div className="text-[10px] text-slate-400 leading-normal font-medium">
+                                <div className="text-sm text-slate-400 leading-normal font-medium">
                                   <p>سعر توريد الجملة النهائي خاضع لحسابات الصيدلية و يحدّث أرصدة دواء صيدلية انوار الحسن مع تطبيق الأرباح تلقائياً عند التأكيد.</p>
                                 </div>
 
@@ -7020,7 +6993,7 @@ export default function Dashboard() {
                                   {/* المورّد الموحّد — يُختار من الموردين المحفوظين عبر قائمة منسدلة،
                                       أو يُكتب اسم جديد فيُحفظ كمورد عند اعتماد الشراء */}
                                   <div className="space-y-1">
-                                    <label className="block text-slate-500 text-[10px] font-bold">المورّد (يُطبَّق على كل الأصناف)</label>
+                                    <label className="block text-slate-500 text-sm font-bold">المورّد (يُطبَّق على كل الأصناف)</label>
                                     <SupplierPicker suppliers={suppliers} value={purchaseSupplier} onChange={applyDraftSupplier} />
                                   </div>
 
@@ -7032,18 +7005,18 @@ export default function Dashboard() {
                                       onChange={(e) => setPurchaseOnCredit(e.target.checked)}
                                       className="w-4 h-4 accent-rose-600 cursor-pointer"
                                     />
-                                    <span className="text-[11px] font-black text-rose-700">شراء بالآجل (على حساب المذخر)</span>
+                                    <span className="text-sm font-bold text-rose-700">شراء بالآجل (على حساب المذخر)</span>
                                   </label>
                                   {purchaseOnCredit && (
-                                    <p className="text-[9px] text-rose-500 font-bold leading-normal">* لن تُخصم القيمة من الصندوق، وستُسجَّل كذمّة مستحقة في دفتر ديون الموردين باسم المورّد المحدّد أعلاه.</p>
+                                    <p className="text-xs text-rose-500 font-bold leading-normal">* لن تُخصم القيمة من الصندوق، وستُسجَّل كذمّة مستحقة في دفتر ديون الموردين باسم المورّد المحدّد أعلاه.</p>
                                   )}
                                 </div>
                               </div>
 
                               <div className="flex flex-col items-end gap-2 text-right shrink-0">
-                                <span className="text-[10px] text-slate-400 font-bold">إجمالي فاتورة الشراء المتبقية:</span>
-                                <strong className="text-xl text-emerald-700 font-mono font-extrabold tracking-wide">
-                                  {purchaseDraft.reduce((acc, curr) => acc + (curr.price * curr.qty), 0).toLocaleString()} د.ع
+                                <span className="text-sm text-slate-400 font-bold">إجمالي فاتورة الشراء المتبقية:</span>
+                                <strong className="text-xl text-emerald-700 font-mono font-semibold tracking-wide">
+                                  {fmtNum(purchaseDraft.reduce((acc, curr) => acc + (curr.price * curr.qty), 0))} د.ع
                                 </strong>
                               </div>
                             </div>
@@ -7052,7 +7025,7 @@ export default function Dashboard() {
                             <button
                               type="button"
                               onClick={commitPurchaseDraft}
-                              className="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-black py-3 px-5 rounded-2xl flex items-center justify-center gap-2 transition shadow-md cursor-pointer hover:shadow-emerald-200 text-sm border-none"
+                              className="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold py-3 px-5 rounded-2xl flex items-center justify-center gap-2 transition shadow-md cursor-pointer hover:shadow-emerald-200 text-sm border-none"
                             >
                               <CheckCircle2 className="w-5 h-5 text-emerald-100 animate-pulse" />
                               <span>تأكيد واعتماد طلبيات الشراء وتغذية المخزون الفوري</span>
@@ -7067,9 +7040,9 @@ export default function Dashboard() {
                         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                           <div className="flex items-center gap-2">
                             <ClipboardList className="w-5 h-5 text-indigo-600" />
-                            <h4 className="font-extrabold text-xs text-slate-900">سجل قوائم المشتريات والطلبيات السابقة</h4>
+                            <h4 className="font-semibold text-xs text-slate-900">سجل قوائم المشتريات والطلبيات السابقة</h4>
                           </div>
-                          <span className="text-[10px] text-slate-400 font-bold">حالة تدفق الفواتير: موثقة بكامل القيود</span>
+                          <span className="text-sm text-slate-400 font-bold">حالة تدفق الفواتير: موثقة بكامل القيود</span>
                         </div>
 
                         {/* حقل البحث برقم القائمة أو اسم المورد */}
@@ -7080,7 +7053,7 @@ export default function Dashboard() {
                             value={b2bOrderSearch}
                             onChange={e => setB2bOrderSearch(e.target.value)}
                             placeholder="ابحث برقم القائمة (مثال: CAP-28109) أو اسم المورد..."
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-8 pl-3 py-2 text-[11px] font-bold text-slate-700 placeholder:text-slate-400 placeholder:font-normal focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 transition"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-8 pl-3 py-2 text-sm font-bold text-slate-700 placeholder:text-slate-400 placeholder:font-normal focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 transition"
                           />
                           {b2bOrderSearch && (
                             <button
@@ -7103,13 +7076,13 @@ export default function Dashboard() {
                             : b2bOrders;
 
                           if (b2bOrders.length === 0) {
-                            return <p className="p-8 text-center text-[11px] text-slate-400 font-bold">لا يوجد طلبيات شراء سابقة مسجلة حالياً.</p>;
+                            return <p className="p-8 text-center text-sm text-slate-400 font-bold">لا يوجد طلبيات شراء سابقة مسجلة حالياً.</p>;
                           }
                           if (filtered.length === 0) {
                             return (
                               <div className="p-6 text-center space-y-1">
-                                <p className="text-[11px] text-slate-500 font-bold">لا توجد نتائج لـ «{b2bOrderSearch}»</p>
-                                <p className="text-[10px] text-slate-400 font-medium">تأكد من رقم القائمة أو اسم المورد</p>
+                                <p className="text-sm text-slate-500 font-bold">لا توجد نتائج لـ «{b2bOrderSearch}»</p>
+                                <p className="text-sm text-slate-400 font-medium">تأكد من رقم القائمة أو اسم المورد</p>
                               </div>
                             );
                           }
@@ -7130,23 +7103,23 @@ export default function Dashboard() {
                               <div key={order.id} className="bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs transition">
                                 <div className="space-y-1 text-right">
                                   <div className="flex items-center gap-2 mb-1">
-                                    <span className="flex items-center gap-1.5 bg-indigo-50 text-indigo-800 border border-indigo-150 px-2.5 py-1 rounded-lg font-extrabold text-[11px]">
+                                    <span className="flex items-center gap-1.5 bg-indigo-50 text-indigo-800 border border-indigo-150 px-2.5 py-1 rounded-lg font-semibold text-sm">
                                       <Truck className="w-3.5 h-3.5 text-indigo-600" />
                                       <span>المورد: {supplierLabel}</span>
                                     </span>
                                   </div>
                                   <div className="flex items-center gap-2">
                                     <strong className="text-slate-900 font-mono font-bold">{order.id}</strong>
-                                    <span className="text-[8px] bg-slate-200 text-slate-600 px-2.5 py-0.2 rounded font-sans font-bold">
+                                    <span className="text-xs bg-slate-200 text-slate-600 px-2.5 py-0.2 rounded font-sans font-bold">
                                       {order.warehouseName || "توريد مباشر"}
                                     </span>
                                   </div>
-                                  <span className="text-[10px] text-slate-400 font-mono block">التاريخ والمشرف: {order.date} • {order.itemsCount} أدوية مختلفة</span>
+                                  <span className="text-sm text-slate-400 font-mono block">التاريخ والمشرف: {order.date} • {order.itemsCount} أدوية مختلفة</span>
                                   
                                   {/* Detailed medicine items in order */}
                                   <div className="flex flex-wrap gap-1 mt-1.5">
                                     {order.items && order.items.map((item, id) => (
-                                      <span key={id} className="text-[9px] bg-white border border-slate-200/60 text-slate-600 px-2.5 py-0.5 rounded-lg font-bold">
+                                      <span key={id} className="text-xs bg-white border border-slate-200/60 text-slate-600 px-2.5 py-0.5 rounded-lg font-bold">
                                         {item.medicineName} x{item.quantity}
                                       </span>
                                     ))}
@@ -7155,21 +7128,21 @@ export default function Dashboard() {
 
                                 <div className="flex items-center gap-4 text-right sm:text-left shrink-0">
                                   <div className="space-y-1">
-                                    <span className="text-[10px] text-slate-400 block font-bold">إجمالي المدفوع:</span>
+                                    <span className="text-sm text-slate-400 block font-bold">إجمالي المدفوع:</span>
                                     <strong className="text-sm text-slate-950 font-mono font-bold">
-                                      {order.totalAmount.toLocaleString()} د.ع
+                                      {fmtNum(order.totalAmount)} د.ع
                                     </strong>
                                   </div>
 
                                   <div className="flex flex-col items-stretch gap-1.5">
-                                    <span className="px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-150 rounded-xl font-extrabold text-[10px] text-center">
+                                    <span className="px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-150 rounded-xl font-semibold text-sm text-center">
                                       تم استيرادها بالكامل ✅
                                     </span>
                                     <button
                                       type="button"
                                       onClick={() => reopenPurchaseOrderForEdit(order.id)}
                                       title="إعادة فتح الطلبية للتعديل — يُعكس أثرها على المخزون والحسابات وتعود بنودها إلى المسودة"
-                                      className="px-3 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl font-extrabold text-[10px] flex items-center justify-center gap-1 transition cursor-pointer"
+                                      className="px-3 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl font-semibold text-sm flex items-center justify-center gap-1 transition cursor-pointer"
                                     >
                                       <Pencil className="w-3 h-3" />
                                       <span>تعديل القائمة</span>
@@ -7208,8 +7181,8 @@ export default function Dashboard() {
                       <ShieldCheck className="w-8 h-8 text-violet-600" />
                     </div>
                     <div>
-                      <h3 className="font-black text-slate-800 text-base">الحسابات المالية</h3>
-                      <p className="text-[11px] text-slate-500 font-semibold mt-1">أدخل كلمة المرور للوصول إلى السجلات المالية</p>
+                      <h3 className="font-bold text-slate-800 text-base">الحسابات المالية</h3>
+                      <p className="text-sm text-slate-500 font-semibold mt-1">أدخل كلمة المرور للوصول إلى السجلات المالية</p>
                     </div>
                     <form
                       onSubmit={(e) => {
@@ -7237,12 +7210,12 @@ export default function Dashboard() {
                           className={`w-full text-center text-2xl font-mono tracking-[0.5em] bg-slate-50 border rounded-xl py-3 px-4 focus:outline-none focus:ring-2 transition ${pinError ? 'border-rose-400 focus:ring-rose-200 bg-rose-50' : 'border-slate-200 focus:ring-violet-200 focus:border-violet-400'}`}
                         />
                         {pinError && (
-                          <p className="text-[11px] text-rose-600 font-bold mt-1.5 text-center">كلمة المرور غير صحيحة</p>
+                          <p className="text-sm text-rose-600 font-bold mt-1.5 text-center">كلمة المرور غير صحيحة</p>
                         )}
                       </div>
                       <button
                         type="submit"
-                        className="w-full bg-violet-600 hover:bg-violet-700 text-white font-black py-3 rounded-xl cursor-pointer transition border-none font-sans text-sm"
+                        className="w-full bg-violet-600 hover:bg-violet-700 text-white font-bold py-3 rounded-xl cursor-pointer transition border-none font-sans text-sm"
                       >
                         دخول
                       </button>
@@ -7262,23 +7235,23 @@ export default function Dashboard() {
                   <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
                     <div className="border-b border-slate-100 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div>
-                        <span className="text-xs text-emerald-600 font-extrabold bg-emerald-50 px-3 py-1 rounded-full uppercase">كشاف الحسابات انوار الحسن</span>
-                        <h3 className="font-extrabold text-slate-900 text-sm mt-3">الحساب المالي الموحد ومحاكاة المقاصة للذمم</h3>
-                        <p className="text-[10px] text-slate-400 font-bold mt-1">
+                        <span className="text-xs text-emerald-600 font-semibold bg-emerald-50 px-3 py-1 rounded-full uppercase">كشاف الحسابات انوار الحسن</span>
+                        <h3 className="font-semibold text-slate-900 text-sm mt-3">الحساب المالي الموحد ومحاكاة المقاصة للذمم</h3>
+                        <p className="text-sm text-slate-400 font-bold mt-1">
                           تتبع جرد الصيدلية الإجمالي، الحسابات المدينة والذمم المترتبة لمذاخر أدوية العراق لتسويتها عبر انوار الحسن باي
                         </p>
                       </div>
                       <div className="flex flex-col sm:flex-row gap-2 shrink-0">
                         <button
                           onClick={exportFinancialsToCSV}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition shadow-sm cursor-pointer border-none text-xs font-sans hover:scale-102"
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition shadow-sm cursor-pointer border-none text-xs font-sans hover:scale-102"
                         >
                           <Download className="w-4 h-4 text-emerald-100 animate-bounce-slow" />
                           <span>تصدير CSV</span>
                         </button>
                         <button
                           onClick={() => downloadBackupFile(buildBackupSnapshot())}
-                          className="bg-slate-700 hover:bg-slate-800 text-white font-black py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
+                          className="bg-slate-700 hover:bg-slate-800 text-white font-bold py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
                           title="تنزيل نسخة احتياطية كاملة الآن (تشمل المخزون والمبيعات والموردين والذمم وسجل التدقيق والصلاحيات)"
                         >
                           <Download className="w-4 h-4" />
@@ -7286,15 +7259,15 @@ export default function Dashboard() {
                         </button>
                         <button
                           onClick={restoreFromBrowserBackup}
-                          className="bg-amber-600 hover:bg-amber-700 text-white font-black py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
-                          title={lastAutoBackupAt ? `استعادة آخر نسخة محفوظة تلقائياً في المتصفح (${new Date(lastAutoBackupAt).toLocaleString('ar')})` : 'استعادة من النسخة المحفوظة تلقائياً في المتصفح'}
+                          className="bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
+                          title={lastAutoBackupAt ? `استعادة آخر نسخة محفوظة تلقائياً في المتصفح (${fmtDateTime(new Date(lastAutoBackupAt))})` : 'استعادة من النسخة المحفوظة تلقائياً في المتصفح'}
                         >
                           <RefreshCw className="w-4 h-4" />
                           <span>استعادة (المتصفح)</span>
                         </button>
                         <button
                           onClick={() => restoreFileRef.current?.click()}
-                          className="bg-white border border-slate-300 hover:border-amber-400 text-slate-700 font-black py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
+                          className="bg-white border border-slate-300 hover:border-amber-400 text-slate-700 font-bold py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
                           title="استعادة من ملف نسخة احتياطية (.json) محفوظ على اللابتوب"
                         >
                           <Upload className="w-4 h-4" />
@@ -7317,7 +7290,7 @@ export default function Dashboard() {
                             window.print();
                             setTimeout(() => document.body.classList.remove('printing-financial'), 1000);
                           }}
-                          className="bg-violet-600 hover:bg-violet-700 text-white font-black py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
+                          className="bg-violet-600 hover:bg-violet-700 text-white font-bold py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
                         >
                           <FileText className="w-4 h-4" />
                           <span>طباعة / PDF</span>
@@ -7329,9 +7302,9 @@ export default function Dashboard() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                       <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center justify-between">
                         <div className="space-y-1">
-                          <span className="text-[10px] text-slate-400 font-black tracking-wider block">السيولة في صندوق الكاش</span>
-                          <span className="text-xl font-black text-slate-900 tracking-tight font-mono">
-                            {walletBalance.toLocaleString()} <span className="text-xs text-slate-500 font-sans font-extrabold">د.ع</span>
+                          <span className="text-sm text-slate-400 font-bold tracking-wider block">السيولة في صندوق الكاش</span>
+                          <span className="text-xl font-bold text-slate-900 tracking-tight font-mono">
+                            {fmtNum(walletBalance)} <span className="text-xs text-slate-500 font-sans font-semibold">د.ع</span>
                           </span>
                         </div>
                         <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
@@ -7340,9 +7313,9 @@ export default function Dashboard() {
                       </div>
                       <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center justify-between">
                         <div className="space-y-1">
-                          <span className="text-[10px] text-slate-400 font-black tracking-wider block">أرباح ومبيعات اليوم</span>
-                          <span className="text-xl font-black text-slate-900 tracking-tight font-mono">
-                            {dailySalesRevenue.toLocaleString()} <span className="text-xs text-slate-500 font-sans font-extrabold">د.ع</span>
+                          <span className="text-sm text-slate-400 font-bold tracking-wider block">أرباح ومبيعات اليوم</span>
+                          <span className="text-xl font-bold text-slate-900 tracking-tight font-mono">
+                            {fmtNum(dailySalesRevenue)} <span className="text-xs text-slate-500 font-sans font-semibold">د.ع</span>
                           </span>
                         </div>
                         <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
@@ -7351,9 +7324,9 @@ export default function Dashboard() {
                       </div>
                       <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center justify-between">
                         <div className="space-y-1">
-                          <span className="text-[10px] text-slate-400 font-black tracking-wider block">ذمم المذاخر المتبقية</span>
-                          <span className="text-xl font-black text-rose-700 tracking-tight font-mono">
-                            {totalDebts.toLocaleString()} <span className="text-xs text-slate-500 font-sans font-extrabold">د.ع</span>
+                          <span className="text-sm text-slate-400 font-bold tracking-wider block">ذمم المذاخر المتبقية</span>
+                          <span className="text-xl font-bold text-rose-700 tracking-tight font-mono">
+                            {fmtNum(totalDebts)} <span className="text-xs text-slate-500 font-sans font-semibold">د.ع</span>
                           </span>
                         </div>
                         <div className="w-10 h-10 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center">
@@ -7362,9 +7335,9 @@ export default function Dashboard() {
                       </div>
                       <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center justify-between">
                         <div className="space-y-1">
-                          <span className="text-[10px] text-slate-400 font-black tracking-wider block">المخزون الدوائي النشط</span>
-                          <span className="text-xl font-black text-slate-900 tracking-tight">
-                            {inventory.reduce((sum, m) => sum + m.availableQuantity, 0)} <span className="text-xs text-slate-500 font-extrabold">علب</span>
+                          <span className="text-sm text-slate-400 font-bold tracking-wider block">المخزون الدوائي النشط</span>
+                          <span className="text-xl font-bold text-slate-900 tracking-tight">
+                            {inventory.reduce((sum, m) => sum + m.availableQuantity, 0)} <span className="text-xs text-slate-500 font-semibold">علب</span>
                           </span>
                         </div>
                         <div className="w-10 h-10 bg-slate-50 text-slate-700 rounded-xl flex items-center justify-center">
@@ -7377,7 +7350,7 @@ export default function Dashboard() {
                     <div>
                       <div className="flex items-center gap-2 mb-3">
                         <BarChart3 className="w-4 h-4 text-emerald-600" />
-                        <span className="text-[11px] text-slate-500 font-black">ملخص الأداء المالي حسب الفترة (مبيعات / أرباح / هامش)</span>
+                        <span className="text-sm text-slate-500 font-bold">ملخص الأداء المالي حسب الفترة (مبيعات / أرباح / هامش)</span>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                         {financialPeriods.map((p) => {
@@ -7385,25 +7358,25 @@ export default function Dashboard() {
                           return (
                             <div key={p.key} className={`bg-white border ${a.ring} rounded-2xl p-4 shadow-sm space-y-3`}>
                               <div className="flex items-center justify-between">
-                                <span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${a.badge}`}>{p.label}</span>
+                                <span className={`text-sm font-bold px-2.5 py-1 rounded-full ${a.badge}`}>{p.label}</span>
                                 <Calendar className={`w-3.5 h-3.5 ${a.icon}`} />
                               </div>
                               <div className="space-y-0.5">
-                                <span className="text-[9px] text-slate-400 font-bold uppercase block">{p.sub}</span>
-                                <h5 className="text-lg font-black text-slate-900 font-serif tracking-tight">
-                                  {p.stats.sales.toLocaleString()} <span className="text-[10px] text-slate-400">د.ع</span>
+                                <span className="text-xs text-slate-400 font-bold uppercase block">{p.sub}</span>
+                                <h5 className="text-lg font-bold text-slate-900 font-serif tracking-tight">
+                                  {fmtNum(p.stats.sales)} <span className="text-sm text-slate-400">د.ع</span>
                                 </h5>
                               </div>
                               <div className="flex items-center justify-between pt-2 border-t border-slate-100">
                                 <div className="space-y-0.5">
-                                  <span className="text-[9px] text-slate-400 font-bold block">الربح الإجمالي</span>
-                                  <strong className={`text-sm font-black font-mono ${a.profit}`}>{p.stats.profit.toLocaleString()}</strong>
+                                  <span className="text-xs text-slate-400 font-bold block">الربح الإجمالي</span>
+                                  <strong className={`text-sm font-bold font-mono ${a.profit}`}>{fmtNum(p.stats.profit)}</strong>
                                 </div>
-                                <span className={`text-[10px] font-black px-2 py-1 rounded-lg ${a.badge}`}>هامش {p.stats.margin}%</span>
+                                <span className={`text-sm font-bold px-2 py-1 rounded-lg ${a.badge}`}>هامش {p.stats.margin}%</span>
                               </div>
-                              <div className="flex items-center justify-between text-[9px] text-slate-400 font-bold pt-1">
+                              <div className="flex items-center justify-between text-xs text-slate-400 font-bold pt-1">
                                 <span>الفواتير: <strong className="text-slate-600 font-mono">{p.stats.count}</strong></span>
-                                <span>م. الفاتورة: <strong className="text-slate-600 font-mono">{p.stats.avg.toLocaleString()}</strong></span>
+                                <span>م. الفاتورة: <strong className="text-slate-600 font-mono">{fmtNum(p.stats.avg)}</strong></span>
                               </div>
                             </div>
                           );
@@ -7416,14 +7389,14 @@ export default function Dashboard() {
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                         <div className="flex items-center gap-2">
                           <TrendingUp className="w-4 h-4 text-emerald-600" />
-                          <span className="text-[11px] text-slate-600 font-black">منحنى المبيعات والأرباح عبر الزمن</span>
+                          <span className="text-sm text-slate-600 font-bold">منحنى المبيعات والأرباح عبر الزمن</span>
                         </div>
                         <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
                           {[7, 30, 90].map(r => (
                             <button
                               key={r}
                               onClick={() => setChartRange(r as 7 | 30 | 90)}
-                              className={`text-[10px] font-black px-3 py-1.5 rounded-lg transition cursor-pointer border-none font-sans ${chartRange === r ? 'bg-white text-emerald-700 shadow-sm' : 'bg-transparent text-slate-500'}`}
+                              className={`text-sm font-bold px-3 py-1.5 rounded-lg transition cursor-pointer border-none font-sans ${chartRange === r ? 'bg-white text-emerald-700 shadow-sm' : 'bg-transparent text-slate-500'}`}
                             >
                               {r} يوم
                             </button>
@@ -7431,7 +7404,7 @@ export default function Dashboard() {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-4 mb-3 text-[9px] font-bold text-slate-500">
+                      <div className="flex items-center gap-4 mb-3 text-xs font-bold text-slate-500">
                         <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-sm inline-block" style={{ backgroundColor: '#a7f3d0' }}></span> المبيعات</span>
                         <span className="flex items-center gap-1"><span className="w-3 h-1.5 rounded-sm inline-block" style={{ backgroundColor: '#059669' }}></span> صافي الربح</span>
                       </div>
@@ -7457,7 +7430,7 @@ export default function Dashboard() {
                           <line x1="0" y1="150" x2={Math.max(chartSeries.length * 42, 320)} y2="150" stroke="#e2e8f0" strokeWidth="1" />
                         </svg>
                       </div>
-                      <p className="text-[9px] text-slate-400 font-bold mt-2 text-center">
+                      <p className="text-xs text-slate-400 font-bold mt-2 text-center">
                         القيم بالدينار العراقي • التجميع {chartRange > 30 ? 'أسبوعي' : 'يومي'} • الأعمدة الفاتحة: المبيعات، الداكنة: صافي الربح
                       </p>
                     </div>
@@ -7466,26 +7439,26 @@ export default function Dashboard() {
                     <div className="space-y-4">
                       <div className="flex items-center gap-2">
                         <BarChart3 className="w-4 h-4 text-emerald-600" />
-                        <span className="text-[11px] text-slate-600 font-black">تحليل أداء المنتجات</span>
+                        <span className="text-sm text-slate-600 font-bold">تحليل أداء المنتجات</span>
                       </div>
 
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                         {/* أعلى المنتجات ربحية */}
                         <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
                           <div className="flex items-center gap-2 mb-3">
-                            <span className="text-base">🏆</span>
-                            <span className="text-[11px] font-black text-slate-700">أعلى المنتجات ربحية</span>
+                            <Trophy className="w-4 h-4 text-amber-500" />
+                            <span className="text-sm font-bold text-slate-700">أعلى المنتجات ربحية</span>
                           </div>
                           <div className="space-y-1.5">
                             {topProfitable.map((p, i) => (
-                              <div key={p.name} className="flex items-center justify-between text-[10px] font-bold bg-slate-50 rounded-lg px-3 py-2">
+                              <div key={p.name} className="flex items-center justify-between text-sm font-bold bg-slate-50 rounded-lg px-3 py-2">
                                 <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                                  <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-black shrink-0">{i + 1}</span>
+                                  <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold shrink-0">{i + 1}</span>
                                   <span className="text-slate-700 truncate">{p.name}</span>
                                 </div>
                                 <div className="text-left shrink-0 mr-2">
-                                  <strong className="text-emerald-700 font-mono">{p.profit.toLocaleString()}</strong>
-                                  <span className="text-slate-400 text-[9px]"> د.ع</span>
+                                  <strong className="text-emerald-700 font-mono">{fmtNum(p.profit)}</strong>
+                                  <span className="text-slate-400 text-xs"> د.ع</span>
                                 </div>
                               </div>
                             ))}
@@ -7496,18 +7469,18 @@ export default function Dashboard() {
                         <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
                           <div className="flex items-center gap-2 mb-3">
                             <TrendingUp className="w-4 h-4 text-blue-600" />
-                            <span className="text-[11px] font-black text-slate-700">الأكثر مبيعاً (بالكمية)</span>
+                            <span className="text-sm font-bold text-slate-700">الأكثر مبيعاً (بالكمية)</span>
                           </div>
                           <div className="space-y-1.5">
                             {topSelling.map((p, i) => (
-                              <div key={p.name} className="flex items-center justify-between text-[10px] font-bold bg-slate-50 rounded-lg px-3 py-2">
+                              <div key={p.name} className="flex items-center justify-between text-sm font-bold bg-slate-50 rounded-lg px-3 py-2">
                                 <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                                  <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-black shrink-0">{i + 1}</span>
+                                  <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold shrink-0">{i + 1}</span>
                                   <span className="text-slate-700 truncate">{p.name}</span>
                                 </div>
                                 <div className="text-left shrink-0 mr-2">
-                                  <strong className="text-blue-700 font-mono">{p.qty.toLocaleString()}</strong>
-                                  <span className="text-slate-400 text-[9px]"> وحدة</span>
+                                  <strong className="text-blue-700 font-mono">{fmtNum(p.qty)}</strong>
+                                  <span className="text-slate-400 text-xs"> وحدة</span>
                                 </div>
                               </div>
                             ))}
@@ -7518,17 +7491,17 @@ export default function Dashboard() {
                       {/* الأبطأ حركةً — مخزون راكد */}
                       <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
                         <div className="flex items-center gap-2 mb-3">
-                          <span className="text-base">🐌</span>
-                          <span className="text-[11px] font-black text-slate-700">الأبطأ حركةً (مخزون راكد — رأس مال مجمّد)</span>
+                          <Snail className="w-4 h-4 text-slate-400" />
+                          <span className="text-sm font-bold text-slate-700">الأبطأ حركةً (مخزون راكد — رأس مال مجمّد)</span>
                         </div>
                         <div className="overflow-x-auto">
-                          <table className="w-full text-[10px] font-bold border-collapse">
+                          <table className="w-full text-sm font-bold border-collapse">
                             <thead>
-                              <tr className="text-slate-400 text-[9px] border-b border-slate-100">
-                                <th className="text-right font-black py-2 px-2">المنتج</th>
-                                <th className="text-center font-black py-2 px-2">المُباع</th>
-                                <th className="text-center font-black py-2 px-2">المخزون الحالي</th>
-                                <th className="text-left font-black py-2 px-2">رأس المال المجمّد</th>
+                              <tr className="text-slate-400 text-xs border-b border-slate-100">
+                                <th className="text-right font-bold py-2 px-2">المنتج</th>
+                                <th className="text-center font-bold py-2 px-2">المُباع</th>
+                                <th className="text-center font-bold py-2 px-2">المخزون الحالي</th>
+                                <th className="text-left font-bold py-2 px-2">رأس المال المجمّد</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -7539,13 +7512,13 @@ export default function Dashboard() {
                                     <span className={`font-mono ${m.sold === 0 ? 'text-rose-600' : 'text-slate-600'}`}>{m.sold}</span>
                                   </td>
                                   <td className="text-center py-2 px-2 font-mono text-slate-600">{m.stock}</td>
-                                  <td className="text-left py-2 px-2 font-mono text-amber-700">{m.value.toLocaleString()} د.ع</td>
+                                  <td className="text-left py-2 px-2 font-mono text-amber-700">{fmtNum(m.value)} د.ع</td>
                                 </tr>
                               ))}
                             </tbody>
                           </table>
                         </div>
-                        <p className="text-[9px] text-slate-400 font-bold mt-2">* المنتجات قليلة/معدومة المبيعات مع رأس مال مجمّد عالٍ مرشّحة لإعادة التسعير أو العروض الترويجية.</p>
+                        <p className="text-xs text-slate-400 font-bold mt-2">* المنتجات قليلة/معدومة المبيعات مع رأس مال مجمّد عالٍ مرشّحة لإعادة التسعير أو العروض الترويجية.</p>
                       </div>
                     </div>
 
@@ -7553,31 +7526,31 @@ export default function Dashboard() {
                     <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
                       <div className="flex items-center gap-2">
                         <Wallet className="w-4 h-4 text-emerald-600" />
-                        <span className="text-[11px] text-slate-600 font-black">دفتر المصاريف والربح الصافي (هذا الشهر)</span>
+                        <span className="text-sm text-slate-600 font-bold">دفتر المصاريف والربح الصافي (هذا الشهر)</span>
                       </div>
 
                       {/* ملخص صافي الربح للشهر */}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3">
-                          <span className="text-[9px] text-emerald-700 font-black block mb-1">الربح الإجمالي (الشهر)</span>
-                          <strong className="text-base font-black text-emerald-800 font-mono">{statsMonth.profit.toLocaleString()} <span className="text-[9px] font-bold">د.ع</span></strong>
+                          <span className="text-xs text-emerald-700 font-bold block mb-1">الربح الإجمالي (الشهر)</span>
+                          <strong className="text-base font-bold text-emerald-800 font-mono">{fmtNum(statsMonth.profit)} <span className="text-xs font-bold">د.ع</span></strong>
                         </div>
                         <div className="bg-rose-50 border border-rose-100 rounded-xl p-3">
-                          <span className="text-[9px] text-rose-700 font-black block mb-1">− إجمالي المصاريف (الشهر)</span>
-                          <strong className="text-base font-black text-rose-700 font-mono">{expMonth.toLocaleString()} <span className="text-[9px] font-bold">د.ع</span></strong>
+                          <span className="text-xs text-rose-700 font-bold block mb-1">− إجمالي المصاريف (الشهر)</span>
+                          <strong className="text-base font-bold text-rose-700 font-mono">{fmtNum(expMonth)} <span className="text-xs font-bold">د.ع</span></strong>
                         </div>
                         <div className={`${netProfitMonth >= 0 ? 'bg-emerald-600' : 'bg-rose-600'} rounded-xl p-3`}>
-                          <span className="text-[9px] text-white/80 font-black block mb-1">= صافي الربح (الشهر)</span>
-                          <strong className="text-base font-black text-white font-mono">{netProfitMonth.toLocaleString()} <span className="text-[9px] font-bold">د.ع</span></strong>
+                          <span className="text-xs text-white/80 font-bold block mb-1">= صافي الربح (الشهر)</span>
+                          <strong className="text-base font-bold text-white font-mono">{fmtNum(netProfitMonth)} <span className="text-xs font-bold">د.ع</span></strong>
                         </div>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
                         {/* نموذج تسجيل مصروف */}
                         <form onSubmit={handleAddExpense} className="md:col-span-5 bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-3 text-xs font-semibold">
-                          <span className="text-[10px] text-slate-400 font-black block">تسجيل مصروف جديد</span>
+                          <span className="text-sm text-slate-400 font-bold block">تسجيل مصروف جديد</span>
                           <div className="space-y-1">
-                            <label className="block text-slate-500 text-[10px]">نوع المصروف</label>
+                            <label className="block text-slate-500 text-sm">نوع المصروف</label>
                             <select value={newExpCategory} onChange={(e) => setNewExpCategory(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700">
                               <option value="إيجار المحل">إيجار المحل</option>
                               <option value="رواتب الموظفين">رواتب الموظفين</option>
@@ -7589,42 +7562,42 @@ export default function Dashboard() {
                             </select>
                           </div>
                           <div className="space-y-1">
-                            <label className="block text-slate-500 text-[10px]">المبلغ (د.ع)</label>
+                            <label className="block text-slate-500 text-sm">المبلغ (د.ع)</label>
                             <input type="number" min="0" required value={newExpAmount} onChange={(e) => setNewExpAmount(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-mono text-center font-bold" />
                           </div>
                           <div className="space-y-1">
-                            <label className="block text-slate-500 text-[10px]">وصف (اختياري)</label>
+                            <label className="block text-slate-500 text-sm">وصف (اختياري)</label>
                             <input type="text" value={newExpDesc} onChange={(e) => setNewExpDesc(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2" placeholder="مثال: فاتورة كهرباء شهر أيار" />
                           </div>
                           <div className="space-y-1">
-                            <label className="block text-slate-500 text-[10px]">طريقة الدفع</label>
+                            <label className="block text-slate-500 text-sm">طريقة الدفع</label>
                             <select value={newExpPaidBy} onChange={(e) => setNewExpPaidBy(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700">
                               <option value="نقد">نقد</option>
                               <option value="تحويل">تحويل</option>
                               <option value="بطاقة">بطاقة</option>
                             </select>
                           </div>
-                          <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2.5 rounded-xl cursor-pointer transition shadow-sm border-none font-sans text-xs">
+                          <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl cursor-pointer transition shadow-sm border-none font-sans text-xs">
                             إضافة المصروف وخصمه من الصندوق
                           </button>
-                          {expenseSuccess && <p className="text-[10px] text-emerald-700 font-black text-center">✓ تم تسجيل المصروف وخصمه من السيولة</p>}
+                          {expenseSuccess && <p className="text-sm text-emerald-700 font-bold text-center">✓ تم تسجيل المصروف وخصمه من السيولة</p>}
                         </form>
 
                         {/* قائمة المصاريف */}
                         <div className="md:col-span-7 space-y-2">
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] text-slate-400 font-black">آخر المصاريف المسجّلة</span>
-                            <span className="text-[9px] text-slate-400 font-bold">العدد: {expenses.length}</span>
+                            <span className="text-sm text-slate-400 font-bold">آخر المصاريف المسجّلة</span>
+                            <span className="text-xs text-slate-400 font-bold">العدد: {expenses.length}</span>
                           </div>
                           <div className="space-y-2 max-h-72 overflow-y-auto pl-1">
-                            {expenses.length === 0 && <p className="text-[10px] text-slate-400 font-bold text-center py-6">لا توجد مصاريف مسجّلة بعد.</p>}
+                            {expenses.length === 0 && <p className="text-sm text-slate-400 font-bold text-center py-6">لا توجد مصاريف مسجّلة بعد.</p>}
                             {expenses.map((exp) => (
-                              <div key={exp.id} className="flex items-center justify-between bg-white border border-slate-100 rounded-xl px-3 py-2.5 text-[10px] font-bold">
+                              <div key={exp.id} className="flex items-center justify-between bg-white border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-bold">
                                 <div className="min-w-0">
                                   <strong className="text-slate-800 block">{exp.category}</strong>
-                                  <span className="text-slate-400 text-[9px] font-semibold">{exp.date} • {exp.paidBy}{exp.description ? ` • ${exp.description}` : ''}</span>
+                                  <span className="text-slate-400 text-xs font-semibold">{exp.date} • {exp.paidBy}{exp.description ? ` • ${exp.description}` : ''}</span>
                                 </div>
-                                <strong className="text-rose-700 font-mono shrink-0 mr-2">−{exp.amount.toLocaleString()} د.ع</strong>
+                                <strong className="text-rose-700 font-mono shrink-0 mr-2">−{fmtNum(exp.amount)} د.ع</strong>
                               </div>
                             ))}
                           </div>
@@ -7637,14 +7610,14 @@ export default function Dashboard() {
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div className="flex items-center gap-2">
                           <FileText className="w-4 h-4 text-violet-600" />
-                          <span className="text-[11px] text-slate-600 font-black">قائمة الأرباح والخسائر (الدخل)</span>
+                          <span className="text-sm text-slate-600 font-bold">قائمة الأرباح والخسائر (الدخل)</span>
                         </div>
                         <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
                           {([['month', 'هذا الشهر'], ['year', 'هذا العام']] as const).map(([k, lbl]) => (
                             <button
                               key={k}
                               onClick={() => setPlPeriod(k)}
-                              className={`text-[10px] font-black px-3 py-1.5 rounded-lg transition cursor-pointer border-none font-sans ${plPeriod === k ? 'bg-white text-violet-700 shadow-sm' : 'bg-transparent text-slate-500'}`}
+                              className={`text-sm font-bold px-3 py-1.5 rounded-lg transition cursor-pointer border-none font-sans ${plPeriod === k ? 'bg-white text-violet-700 shadow-sm' : 'bg-transparent text-slate-500'}`}
                             >
                               {lbl}
                             </button>
@@ -7652,50 +7625,50 @@ export default function Dashboard() {
                         </div>
                       </div>
 
-                      <div className="border border-slate-100 rounded-2xl overflow-hidden text-[11px] font-bold">
+                      <div className="border border-slate-100 rounded-2xl overflow-hidden text-sm font-bold">
                         {/* الإيراد */}
                         <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50">
                           <span className="text-slate-700">إجمالي المبيعات (الإيراد)</span>
-                          <span className="font-mono text-slate-800">{plGrossSales.toLocaleString()} د.ع</span>
+                          <span className="font-mono text-slate-800">{fmtNum(plGrossSales)} د.ع</span>
                         </div>
                         <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100">
                           <span className="text-slate-500">(−) مرتجعات المبيعات{plReturns.count > 0 ? ` (${plReturns.count})` : ''}</span>
-                          <span className="font-mono text-rose-600">−{plReturns.value.toLocaleString()} د.ع</span>
+                          <span className="font-mono text-rose-600">−{fmtNum(plReturns.value)} د.ع</span>
                         </div>
                         <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100 bg-slate-50/60">
-                          <span className="text-slate-700 font-black">= صافي المبيعات</span>
-                          <span className="font-mono text-slate-800 font-black">{plNetSales.toLocaleString()} د.ع</span>
+                          <span className="text-slate-700 font-bold">= صافي المبيعات</span>
+                          <span className="font-mono text-slate-800 font-bold">{fmtNum(plNetSales)} د.ع</span>
                         </div>
                         {/* التكلفة */}
                         <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100">
                           <span className="text-slate-500">(−) تكلفة البضاعة المباعة (COGS)</span>
-                          <span className="font-mono text-rose-600">−{plNetCogs.toLocaleString()} د.ع</span>
+                          <span className="font-mono text-rose-600">−{fmtNum(plNetCogs)} د.ع</span>
                         </div>
                         {/* مجمل الربح */}
                         <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 bg-emerald-50">
-                          <span className="text-emerald-800 font-black">= مجمل الربح <span className="text-[9px] text-emerald-600 font-bold">(هامش {plGrossMargin}%)</span></span>
-                          <span className="font-mono text-emerald-800 font-black">{plGrossProfit.toLocaleString()} د.ع</span>
+                          <span className="text-emerald-800 font-bold">= مجمل الربح <span className="text-xs text-emerald-600 font-bold">(هامش {plGrossMargin}%)</span></span>
+                          <span className="font-mono text-emerald-800 font-bold">{fmtNum(plGrossProfit)} د.ع</span>
                         </div>
                         {/* المصاريف التشغيلية مفصّلة */}
                         <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100">
-                          <span className="text-slate-700 font-black">(−) المصاريف التشغيلية</span>
-                          <span className="font-mono text-rose-600">−{plTotalExpenses.toLocaleString()} د.ع</span>
+                          <span className="text-slate-700 font-bold">(−) المصاريف التشغيلية</span>
+                          <span className="font-mono text-rose-600">−{fmtNum(plTotalExpenses)} د.ع</span>
                         </div>
                         {plExpenseRows.length === 0 ? (
-                          <div className="px-6 py-2 border-t border-slate-50 text-[10px] text-slate-400 font-bold">لا مصاريف مسجّلة في هذه الفترة</div>
+                          <div className="px-6 py-2 border-t border-slate-50 text-sm text-slate-400 font-bold">لا مصاريف مسجّلة في هذه الفترة</div>
                         ) : plExpenseRows.map(row => (
-                          <div key={row.category} className="flex items-center justify-between px-6 py-1.5 border-t border-slate-50 text-[10px]">
+                          <div key={row.category} className="flex items-center justify-between px-6 py-1.5 border-t border-slate-50 text-sm">
                             <span className="text-slate-500">• {row.category}</span>
-                            <span className="font-mono text-slate-500">−{row.amount.toLocaleString()} د.ع</span>
+                            <span className="font-mono text-slate-500">−{fmtNum(row.amount)} د.ع</span>
                           </div>
                         ))}
                         {/* صافي الربح */}
                         <div className={`flex items-center justify-between px-4 py-3.5 border-t-2 ${plNetProfit >= 0 ? 'bg-emerald-600 border-emerald-700' : 'bg-rose-600 border-rose-700'}`}>
-                          <span className="text-white font-black">= صافي الربح <span className="text-[9px] text-white/75 font-bold">(هامش {plNetMargin}%)</span></span>
-                          <span className="font-mono text-white font-black text-sm">{plNetProfit.toLocaleString()} د.ع</span>
+                          <span className="text-white font-bold">= صافي الربح <span className="text-xs text-white/75 font-bold">(هامش {plNetMargin}%)</span></span>
+                          <span className="font-mono text-white font-bold text-sm">{fmtNum(plNetProfit)} د.ع</span>
                         </div>
                       </div>
-                      <p className="text-[9px] text-slate-400 font-bold">* تُحتسب القائمة آلياً من سجل المبيعات (الإيراد والتكلفة) ومرتجعات المبيعات والمصاريف التشغيلية ضمن {plIsMonth ? 'الشهر الحالي' : 'السنة المالية الحالية'}. صافي الربح = مجمل الربح − المصاريف التشغيلية.</p>
+                      <p className="text-xs text-slate-400 font-bold">* تُحتسب القائمة آلياً من سجل المبيعات (الإيراد والتكلفة) ومرتجعات المبيعات والمصاريف التشغيلية ضمن {plIsMonth ? 'الشهر الحالي' : 'السنة المالية الحالية'}. صافي الربح = مجمل الربح − المصاريف التشغيلية.</p>
                     </div>
 
                     {/* ======================================================= */}
@@ -7705,12 +7678,12 @@ export default function Dashboard() {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <Truck className="w-4 h-4 text-indigo-600" />
-                          <span className="text-[11px] text-slate-600 font-black">قائمة الموردين ومصادر التجهيز</span>
+                          <span className="text-sm text-slate-600 font-bold">قائمة الموردين ومصادر التجهيز</span>
                         </div>
                         <button
                           type="button"
                           onClick={() => { setSupplierFormVisible(v => !v); setSelectedSupplierId(null); }}
-                          className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black px-3 py-1.5 rounded-xl transition cursor-pointer border-none"
+                          className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold px-3 py-1.5 rounded-xl transition cursor-pointer border-none"
                         >
                           <Plus className="w-3.5 h-3.5" />
                           إضافة مورد جديد
@@ -7748,42 +7721,42 @@ export default function Dashboard() {
                             className="overflow-hidden"
                           >
                             <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 space-y-3 text-xs font-semibold">
-                              <span className="text-[10px] text-indigo-700 font-black block">بيانات المورد الجديد</span>
+                              <span className="text-sm text-indigo-700 font-bold block">بيانات المورد الجديد</span>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div className="space-y-1 sm:col-span-2">
-                                  <label className="block text-slate-500 text-[10px]">اسم المورد / المذخر *</label>
+                                  <label className="block text-slate-500 text-sm">اسم المورد / المذخر *</label>
                                   <input required type="text" value={newSupName} onChange={e => setNewSupName(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" placeholder="مذخر / شركة / مكتب علمي..." />
                                 </div>
                                 <div className="space-y-1">
-                                  <label className="block text-slate-500 text-[10px]">رقم الهاتف</label>
+                                  <label className="block text-slate-500 text-sm">رقم الهاتف</label>
                                   <input type="text" value={newSupPhone} onChange={e => setNewSupPhone(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" placeholder="07XXXXXXXXX" />
                                 </div>
                                 <div className="space-y-1">
-                                  <label className="block text-slate-500 text-[10px]">اسم المسؤول / المندوب</label>
+                                  <label className="block text-slate-500 text-sm">اسم المسؤول / المندوب</label>
                                   <input type="text" value={newSupContact} onChange={e => setNewSupContact(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" placeholder="اسم المسؤول..." />
                                 </div>
                                 <div className="space-y-1 sm:col-span-2">
-                                  <label className="block text-slate-500 text-[10px]">العنوان</label>
+                                  <label className="block text-slate-500 text-sm">العنوان</label>
                                   <input type="text" value={newSupAddress} onChange={e => setNewSupAddress(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" placeholder="المحافظة — الحي..." />
                                 </div>
                                 <div className="space-y-1">
-                                  <label className="block text-slate-500 text-[10px]">سقف الائتمان (د.ع)</label>
+                                  <label className="block text-slate-500 text-sm">سقف الائتمان (د.ع)</label>
                                   <input type="number" min="0" value={newSupCreditLimit} onChange={e => setNewSupCreditLimit(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-mono text-center font-bold text-xs" />
                                 </div>
                                 <div className="space-y-1">
-                                  <label className="block text-slate-500 text-[10px]">مدة الآجل (أيام)</label>
+                                  <label className="block text-slate-500 text-sm">مدة الآجل (أيام)</label>
                                   <input type="number" min="0" value={newSupPaymentTerms} onChange={e => setNewSupPaymentTerms(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-mono text-center font-bold text-xs" />
                                 </div>
                                 <div className="space-y-1 sm:col-span-2">
-                                  <label className="block text-slate-500 text-[10px]">ملاحظات</label>
+                                  <label className="block text-slate-500 text-sm">ملاحظات</label>
                                   <input type="text" value={newSupNotes} onChange={e => setNewSupNotes(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" placeholder="تفاصيل إضافية..." />
                                 </div>
                               </div>
                               <div className="flex gap-2 pt-1">
-                                <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-black py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
+                                <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
                                   حفظ المورد
                                 </button>
-                                <button type="button" onClick={() => setSupplierFormVisible(false)} className="px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
+                                <button type="button" onClick={() => setSupplierFormVisible(false)} className="px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
                                   إلغاء
                                 </button>
                               </div>
@@ -7817,16 +7790,16 @@ export default function Dashboard() {
                                     <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center flex-shrink-0">
                                       <Truck className="w-4 h-4 text-white" />
                                     </div>
-                                    <h4 className="font-black text-sm text-slate-900">{sup.name}</h4>
+                                    <h4 className="font-bold text-sm text-slate-900">{sup.name}</h4>
                                   </div>
-                                  <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-[10px] text-slate-500 font-semibold pr-10">
-                                    {sup.phone && <span>📞 {sup.phone}</span>}
-                                    {sup.contactPerson && <span>👤 {sup.contactPerson}</span>}
-                                    {sup.address && <span>📍 {sup.address}</span>}
-                                    {sup.paymentTerms && <span>🗓 آجل {sup.paymentTerms} يوم</span>}
-                                    {sup.creditLimit && <span>💳 سقف {sup.creditLimit.toLocaleString()} د.ع</span>}
+                                  <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-slate-500 font-semibold pr-10">
+                                    {sup.phone && <span className="inline-flex items-center gap-1"><Phone className="w-3 h-3" />{sup.phone}</span>}
+                                    {sup.contactPerson && <span className="inline-flex items-center gap-1"><UserIcon className="w-3 h-3" />{sup.contactPerson}</span>}
+                                    {sup.address && <span className="inline-flex items-center gap-1"><MapPin className="w-3 h-3" />{sup.address}</span>}
+                                    {sup.paymentTerms && <span className="inline-flex items-center gap-1"><Calendar className="w-3 h-3" />آجل {sup.paymentTerms} يوم</span>}
+                                    {sup.creditLimit && <span className="inline-flex items-center gap-1"><CreditCard className="w-3 h-3" />سقف {fmtNum(sup.creditLimit)} د.ع</span>}
                                   </div>
-                                  {sup.notes && <p className="text-[9px] text-slate-400 font-semibold pr-10">{sup.notes}</p>}
+                                  {sup.notes && <p className="text-xs text-slate-400 font-semibold pr-10">{sup.notes}</p>}
                                 </div>
                                 <div className="flex items-center gap-1 shrink-0">
                                   <button
@@ -7890,42 +7863,42 @@ export default function Dashboard() {
                                   }}
                                   className="bg-white border border-indigo-200 rounded-2xl p-4 space-y-3 text-xs font-semibold"
                                 >
-                                  <span className="text-[10px] text-indigo-700 font-black block">تعديل بيانات المورد</span>
+                                  <span className="text-sm text-indigo-700 font-bold block">تعديل بيانات المورد</span>
                                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div className="space-y-1 sm:col-span-2">
-                                      <label className="block text-slate-500 text-[10px]">اسم المورد / المذخر *</label>
+                                      <label className="block text-slate-500 text-sm">اسم المورد / المذخر *</label>
                                       <input required type="text" value={newSupName} onChange={e => setNewSupName(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" />
                                     </div>
                                     <div className="space-y-1">
-                                      <label className="block text-slate-500 text-[10px]">رقم الهاتف</label>
+                                      <label className="block text-slate-500 text-sm">رقم الهاتف</label>
                                       <input type="text" value={newSupPhone} onChange={e => setNewSupPhone(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" placeholder="07XXXXXXXXX" />
                                     </div>
                                     <div className="space-y-1">
-                                      <label className="block text-slate-500 text-[10px]">اسم المسؤول / المندوب</label>
+                                      <label className="block text-slate-500 text-sm">اسم المسؤول / المندوب</label>
                                       <input type="text" value={newSupContact} onChange={e => setNewSupContact(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" />
                                     </div>
                                     <div className="space-y-1 sm:col-span-2">
-                                      <label className="block text-slate-500 text-[10px]">العنوان</label>
+                                      <label className="block text-slate-500 text-sm">العنوان</label>
                                       <input type="text" value={newSupAddress} onChange={e => setNewSupAddress(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" />
                                     </div>
                                     <div className="space-y-1">
-                                      <label className="block text-slate-500 text-[10px]">سقف الائتمان (د.ع)</label>
+                                      <label className="block text-slate-500 text-sm">سقف الائتمان (د.ع)</label>
                                       <input type="number" min="0" value={newSupCreditLimit} onChange={e => setNewSupCreditLimit(Number(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-mono text-center font-bold text-xs" />
                                     </div>
                                     <div className="space-y-1">
-                                      <label className="block text-slate-500 text-[10px]">مدة الآجل (أيام)</label>
+                                      <label className="block text-slate-500 text-sm">مدة الآجل (أيام)</label>
                                       <input type="number" min="0" value={newSupPaymentTerms} onChange={e => setNewSupPaymentTerms(Number(e.target.value))} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-mono text-center font-bold text-xs" />
                                     </div>
                                     <div className="space-y-1 sm:col-span-2">
-                                      <label className="block text-slate-500 text-[10px]">ملاحظات</label>
+                                      <label className="block text-slate-500 text-sm">ملاحظات</label>
                                       <input type="text" value={newSupNotes} onChange={e => setNewSupNotes(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-bold text-slate-700 text-xs" />
                                     </div>
                                   </div>
                                   <div className="flex gap-2 pt-1">
-                                    <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-black py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
+                                    <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
                                       حفظ التعديلات
                                     </button>
-                                    <button type="button" onClick={() => setEditingSupplierId(null)} className="px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
+                                    <button type="button" onClick={() => setEditingSupplierId(null)} className="px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
                                       إلغاء
                                     </button>
                                   </div>
@@ -7935,26 +7908,26 @@ export default function Dashboard() {
                               {/* ملخص الحساب */}
                               <div className="grid grid-cols-3 gap-2">
                                 <div className="bg-rose-50 border border-rose-100 rounded-xl p-3 text-center">
-                                  <span className="text-[9px] text-rose-600 font-black block mb-0.5">المتبقي للمورد</span>
-                                  <strong className="text-sm font-black text-rose-700 font-mono">{totalOwed.toLocaleString()}</strong>
-                                  <span className="text-[8px] text-rose-500 font-bold block">د.ع</span>
+                                  <span className="text-xs text-rose-600 font-bold block mb-0.5">المتبقي للمورد</span>
+                                  <strong className="text-sm font-bold text-rose-700 font-mono">{fmtNum(totalOwed)}</strong>
+                                  <span className="text-xs text-rose-500 font-bold block">د.ع</span>
                                 </div>
                                 <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center">
-                                  <span className="text-[9px] text-emerald-600 font-black block mb-0.5">إجمالي المسدَّد</span>
-                                  <strong className="text-sm font-black text-emerald-700 font-mono">{totalPaid.toLocaleString()}</strong>
-                                  <span className="text-[8px] text-emerald-500 font-bold block">د.ع</span>
+                                  <span className="text-xs text-emerald-600 font-bold block mb-0.5">إجمالي المسدَّد</span>
+                                  <strong className="text-sm font-bold text-emerald-700 font-mono">{fmtNum(totalPaid)}</strong>
+                                  <span className="text-xs text-emerald-500 font-bold block">د.ع</span>
                                 </div>
                                 <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center">
-                                  <span className="text-[9px] text-blue-600 font-black block mb-0.5">إجمالي الفواتير</span>
-                                  <strong className="text-sm font-black text-blue-700 font-mono">{totalInvoiced.toLocaleString()}</strong>
-                                  <span className="text-[8px] text-blue-500 font-bold block">د.ع</span>
+                                  <span className="text-xs text-blue-600 font-bold block mb-0.5">إجمالي الفواتير</span>
+                                  <strong className="text-sm font-bold text-blue-700 font-mono">{fmtNum(totalInvoiced)}</strong>
+                                  <span className="text-xs text-blue-500 font-bold block">د.ع</span>
                                 </div>
                               </div>
 
                               {/* تسديد دفعة */}
                               {totalOwed > 0 && (
                                 <div className="bg-white border border-slate-100 rounded-xl p-3 space-y-2">
-                                  <span className="text-[10px] text-slate-600 font-black">تسديد دفعة للمورد</span>
+                                  <span className="text-sm text-slate-600 font-bold">تسديد دفعة للمورد</span>
                                   <div className="flex gap-2">
                                     {supPayModalId === sup.id ? (
                                       <>
@@ -7965,7 +7938,7 @@ export default function Dashboard() {
                                           value={supPayAmount || ''}
                                           onChange={e => setSupPayAmount(Number(e.target.value))}
                                           className="flex-1 bg-white border border-slate-200 rounded-lg p-2 font-mono text-center text-xs font-bold focus:outline-emerald-400"
-                                          placeholder={`أقصى ${totalOwed.toLocaleString()}`}
+                                          placeholder={`أقصى ${fmtNum(totalOwed)}`}
                                         />
                                         <button
                                           type="button"
@@ -7974,7 +7947,7 @@ export default function Dashboard() {
                                             paySupplierDebt(sup, supPayAmount);
                                             setSupPayModalId(null); setSupPayAmount(0);
                                           }}
-                                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-black px-4 py-2 rounded-xl text-xs cursor-pointer transition border-none"
+                                          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-xl text-xs cursor-pointer transition border-none"
                                         >
                                           تأكيد
                                         </button>
@@ -7987,16 +7960,16 @@ export default function Dashboard() {
                                         <button
                                           type="button"
                                           onClick={() => { setSupPayModalId(sup.id); setSupPayAmount(0); }}
-                                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black py-2 rounded-xl text-xs cursor-pointer transition border-none"
+                                          className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-xl text-xs cursor-pointer transition border-none"
                                         >
                                           تسديد جزئي
                                         </button>
                                         <button
                                           type="button"
                                           onClick={() => paySupplierDebt(sup, null)}
-                                          className="flex-1 bg-slate-700 hover:bg-slate-800 text-white font-black py-2 rounded-xl text-xs cursor-pointer transition border-none"
+                                          className="flex-1 bg-slate-700 hover:bg-slate-800 text-white font-bold py-2 rounded-xl text-xs cursor-pointer transition border-none"
                                         >
-                                          تسديد الكل ({totalOwed.toLocaleString()} د.ع)
+                                          تسديد الكل ({fmtNum(totalOwed)} د.ع)
                                         </button>
                                       </>
                                     )}
@@ -8006,25 +7979,25 @@ export default function Dashboard() {
 
                               {/* سجل المعاملات — الذمم */}
                               <div className="space-y-1.5">
-                                <span className="text-[10px] text-slate-500 font-black">سجل الفواتير والذمم</span>
+                                <span className="text-sm text-slate-500 font-bold">سجل الفواتير والذمم</span>
                                 {supPayables.length === 0
-                                  ? <p className="text-[10px] text-slate-400 text-center py-3">لا توجد فواتير مسجّلة لهذا المورد</p>
+                                  ? <p className="text-sm text-slate-400 text-center py-3">لا توجد فواتير مسجّلة لهذا المورد</p>
                                   : supPayables.map(p => {
                                     const rem = Math.max(0, p.amount - p.paidAmount);
                                     const stCls = p.status === 'paid' ? 'text-emerald-700 bg-emerald-50 border-emerald-100' : p.status === 'partial' ? 'text-amber-700 bg-amber-50 border-amber-100' : 'text-rose-700 bg-rose-50 border-rose-100';
                                     const stLabel = p.status === 'paid' ? 'مسدّدة' : p.status === 'partial' ? 'جزئي' : 'مفتوحة';
                                     return (
-                                      <div key={p.id} className="bg-white border border-slate-100 rounded-xl px-3 py-2 text-[10px] font-semibold flex items-center gap-2 justify-between">
+                                      <div key={p.id} className="bg-white border border-slate-100 rounded-xl px-3 py-2 text-sm font-semibold flex items-center gap-2 justify-between">
                                         <div className="min-w-0">
                                           <span className="text-slate-500 font-bold block">{p.id}{p.relatedOrderId ? ` • ${p.relatedOrderId}` : ''}</span>
-                                          <span className="text-slate-400 text-[9px]">{p.date}{p.description ? ` — ${p.description}` : ''}</span>
+                                          <span className="text-slate-400 text-xs">{p.date}{p.description ? ` — ${p.description}` : ''}</span>
                                         </div>
                                         <div className="flex items-center gap-2 shrink-0 text-right">
                                           <div>
-                                            <span className="font-mono text-slate-700 font-black block text-[11px]">{p.amount.toLocaleString()} د.ع</span>
-                                            {rem > 0 && <span className="font-mono text-rose-600 text-[9px] font-bold">متبقّي {rem.toLocaleString()}</span>}
+                                            <span className="font-mono text-slate-700 font-bold block text-sm">{fmtNum(p.amount)} د.ع</span>
+                                            {rem > 0 && <span className="font-mono text-rose-600 text-xs font-bold">متبقّي {fmtNum(rem)}</span>}
                                           </div>
-                                          <span className={`px-2 py-0.5 rounded-full border text-[9px] font-black ${stCls}`}>{stLabel}</span>
+                                          <span className={`px-2 py-0.5 rounded-full border text-xs font-bold ${stCls}`}>{stLabel}</span>
                                         </div>
                                       </div>
                                     );
@@ -8035,16 +8008,16 @@ export default function Dashboard() {
                               {/* قوائم الشراء المرتبطة */}
                               {supOrders.length > 0 && (
                                 <div className="space-y-1.5">
-                                  <span className="text-[10px] text-slate-500 font-black">قوائم الشراء المرتبطة</span>
+                                  <span className="text-sm text-slate-500 font-bold">قوائم الشراء المرتبطة</span>
                                   {supOrders.map(o => (
-                                    <div key={o.id} className="bg-white border border-slate-100 rounded-xl px-3 py-2 text-[10px] font-semibold flex items-center justify-between gap-2">
+                                    <div key={o.id} className="bg-white border border-slate-100 rounded-xl px-3 py-2 text-sm font-semibold flex items-center justify-between gap-2">
                                       <div>
-                                        <span className="text-slate-700 font-black">{o.id}</span>
-                                        <span className="text-slate-400 text-[9px] block">{o.date} • {o.itemsCount} أصناف</span>
+                                        <span className="text-slate-700 font-bold">{o.id}</span>
+                                        <span className="text-slate-400 text-xs block">{o.date} • {o.itemsCount} أصناف</span>
                                       </div>
                                       <div className="text-right">
-                                        <span className="font-mono text-slate-700 font-black block">{o.totalAmount.toLocaleString()} د.ع</span>
-                                        <span className={`text-[9px] font-bold ${o.status === 'delivered' ? 'text-emerald-600' : o.status === 'cancelled' ? 'text-rose-500' : 'text-amber-600'}`}>
+                                        <span className="font-mono text-slate-700 font-bold block">{fmtNum(o.totalAmount)} د.ع</span>
+                                        <span className={`text-xs font-bold ${o.status === 'delivered' ? 'text-emerald-600' : o.status === 'cancelled' ? 'text-rose-500' : 'text-amber-600'}`}>
                                           {o.status === 'delivered' ? 'مستلمة' : o.status === 'on_way' ? 'في الطريق' : o.status === 'preparing' ? 'تحضير' : o.status === 'cancelled' ? 'ملغاة' : 'معلّقة'}
                                         </span>
                                       </div>
@@ -8073,26 +8046,26 @@ export default function Dashboard() {
                               >
                                 <div className="flex items-start justify-between gap-2">
                                   <div className="min-w-0">
-                                    <p className="font-black text-slate-900 text-[11px] leading-snug truncate">{sup.name}</p>
-                                    {sup.contactPerson && <p className="text-[9px] text-slate-400 font-semibold mt-0.5">{sup.contactPerson}</p>}
+                                    <p className="font-bold text-slate-900 text-sm leading-snug truncate">{sup.name}</p>
+                                    {sup.contactPerson && <p className="text-xs text-slate-400 font-semibold mt-0.5">{sup.contactPerson}</p>}
                                   </div>
                                   <div className="shrink-0 text-left">
                                     {totalOwed > 0
-                                      ? <span className="text-[10px] font-black text-rose-600 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full font-mono">{totalOwed.toLocaleString()} د.ع</span>
-                                      : <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">✓ مسوّى</span>
+                                      ? <span className="text-sm font-bold text-rose-600 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full font-mono">{fmtNum(totalOwed)} د.ع</span>
+                                      : <span className="text-sm font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full">✓ مسوّى</span>
                                     }
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-3 text-[9px] text-slate-400 font-bold">
-                                  {sup.phone && <span>📞 {sup.phone}</span>}
-                                  {sup.paymentTerms && <span>🗓 {sup.paymentTerms} يوم آجل</span>}
-                                  {openCount > 0 && <span className="text-amber-600">⚠ {openCount} ذمّة مفتوحة</span>}
+                                <div className="flex items-center gap-3 text-xs text-slate-400 font-bold">
+                                  {sup.phone && <span className="inline-flex items-center gap-1"><Phone className="w-3 h-3" />{sup.phone}</span>}
+                                  {sup.paymentTerms && <span className="inline-flex items-center gap-1"><Calendar className="w-3 h-3" />{sup.paymentTerms} يوم آجل</span>}
+                                  {openCount > 0 && <span className="text-amber-600 inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3" />{openCount} ذمّة مفتوحة</span>}
                                 </div>
                               </button>
                             );
                           })}
                           {suppliers.length === 0 && (
-                            <p className="text-[10px] text-slate-400 font-bold text-center py-6 col-span-2">لم يُضَف أي مورّد بعد — اضغط "إضافة مورد جديد"</p>
+                            <p className="text-sm text-slate-400 font-bold text-center py-6 col-span-2">لم يُضَف أي مورّد بعد — اضغط "إضافة مورد جديد"</p>
                           )}
                         </div>
                       )}
@@ -8102,33 +8075,33 @@ export default function Dashboard() {
                     <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
                       <div className="flex items-center gap-2">
                         <ClipboardList className="w-4 h-4 text-rose-600" />
-                        <span className="text-[11px] text-slate-600 font-black">ديون الموردين والذمم الدائنة (المذاخر والمكاتب العلمية)</span>
+                        <span className="text-sm text-slate-600 font-bold">ديون الموردين والذمم الدائنة (المذاخر والمكاتب العلمية)</span>
                       </div>
 
                       {/* ملخص الذمم الدائنة */}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div className="bg-rose-50 border border-rose-100 rounded-xl p-3">
-                          <span className="text-[9px] text-rose-700 font-black block mb-1">إجمالي الذمم المستحقة</span>
-                          <strong className="text-base font-black text-rose-700 font-mono">{totalDebts.toLocaleString()} <span className="text-[9px] font-bold">د.ع</span></strong>
+                          <span className="text-xs text-rose-700 font-bold block mb-1">إجمالي الذمم المستحقة</span>
+                          <strong className="text-base font-bold text-rose-700 font-mono">{fmtNum(totalDebts)} <span className="text-xs font-bold">د.ع</span></strong>
                         </div>
                         <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
-                          <span className="text-[9px] text-amber-700 font-black block mb-1">عدد الذمم المفتوحة</span>
-                          <strong className="text-base font-black text-amber-700 font-mono">{payables.filter(p => p.status !== 'paid').length} <span className="text-[9px] font-bold">ذمّة</span></strong>
+                          <span className="text-xs text-amber-700 font-bold block mb-1">عدد الذمم المفتوحة</span>
+                          <strong className="text-base font-bold text-amber-700 font-mono">{payables.filter(p => p.status !== 'paid').length} <span className="text-xs font-bold">ذمّة</span></strong>
                         </div>
                         <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3">
-                          <span className="text-[9px] text-emerald-700 font-black block mb-1">إجمالي المسدَّد</span>
-                          <strong className="text-base font-black text-emerald-800 font-mono">{payables.reduce((s, p) => s + (p.paidAmount || 0), 0).toLocaleString()} <span className="text-[9px] font-bold">د.ع</span></strong>
+                          <span className="text-xs text-emerald-700 font-bold block mb-1">إجمالي المسدَّد</span>
+                          <strong className="text-base font-bold text-emerald-800 font-mono">{fmtNum(payables.reduce((s, p) => s + (p.paidAmount || 0), 0))} <span className="text-xs font-bold">د.ع</span></strong>
                         </div>
                       </div>
 
                       {/* قائمة الذمم الدائنة — تُضاف تلقائياً عبر طلبيات الشراء بالآجل */}
                       <div className="space-y-2">
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] text-slate-400 font-black">ذمم الموردين المسجّلة</span>
-                            <span className="text-[9px] text-slate-400 font-bold">العدد: {payables.length}</span>
+                            <span className="text-sm text-slate-400 font-bold">ذمم الموردين المسجّلة</span>
+                            <span className="text-xs text-slate-400 font-bold">العدد: {payables.length}</span>
                           </div>
                           <div className="space-y-2 max-h-72 overflow-y-auto pl-1">
-                            {payables.length === 0 && <p className="text-[10px] text-slate-400 font-bold text-center py-6">لا توجد ذمم مستحقة.</p>}
+                            {payables.length === 0 && <p className="text-sm text-slate-400 font-bold text-center py-6">لا توجد ذمم مستحقة.</p>}
                             {payables.map((p) => {
                               const remaining = Math.max(0, p.amount - p.paidAmount);
                               const statusLabel = p.status === 'paid' ? 'مسدّدة' : p.status === 'partial' ? 'مسدّدة جزئياً' : 'مفتوحة';
@@ -8138,18 +8111,18 @@ export default function Dashboard() {
                                   ? 'bg-amber-50 text-amber-700 border-amber-100'
                                   : 'bg-rose-50 text-rose-700 border-rose-100';
                               return (
-                                <div key={p.id} className="bg-white border border-slate-100 rounded-xl px-3 py-2.5 text-[10px] font-bold space-y-2">
+                                <div key={p.id} className="bg-white border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-bold space-y-2">
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="min-w-0">
                                       <strong className="text-slate-800 block">{p.supplierName}</strong>
-                                      <span className="text-slate-400 text-[9px] font-semibold">{p.date}{p.dueDate ? ` • استحقاق ${p.dueDate}` : ''}{p.description ? ` • ${p.description}` : ''}</span>
+                                      <span className="text-slate-400 text-xs font-semibold">{p.date}{p.dueDate ? ` • استحقاق ${p.dueDate}` : ''}{p.description ? ` • ${p.description}` : ''}</span>
                                     </div>
-                                    <span className={`shrink-0 px-2 py-0.5 rounded-full border text-[9px] font-black ${statusCls}`}>{statusLabel}</span>
+                                    <span className={`shrink-0 px-2 py-0.5 rounded-full border text-xs font-bold ${statusCls}`}>{statusLabel}</span>
                                   </div>
-                                  <div className="flex items-center justify-between gap-2 text-[9px] text-slate-500 font-bold">
-                                    <span>الأصل: <span className="font-mono text-slate-700">{p.amount.toLocaleString()}</span></span>
-                                    <span>المسدَّد: <span className="font-mono text-emerald-700">{p.paidAmount.toLocaleString()}</span></span>
-                                    <span>المتبقّي: <span className="font-mono text-rose-700">{remaining.toLocaleString()} د.ع</span></span>
+                                  <div className="flex items-center justify-between gap-2 text-xs text-slate-500 font-bold">
+                                    <span>الأصل: <span className="font-mono text-slate-700">{fmtNum(p.amount)}</span></span>
+                                    <span>المسدَّد: <span className="font-mono text-emerald-700">{fmtNum(p.paidAmount)}</span></span>
+                                    <span>المتبقّي: <span className="font-mono text-rose-700">{fmtNum(remaining)} د.ع</span></span>
                                   </div>
                                   {p.status !== 'paid' && (
                                     <div className="flex items-center gap-1.5 pt-1">
@@ -8159,20 +8132,20 @@ export default function Dashboard() {
                                         max={remaining}
                                         value={settleInputs[p.id] ?? ''}
                                         onChange={(e) => setSettleInputs(prev => ({ ...prev, [p.id]: Number(e.target.value) }))}
-                                        className="w-24 bg-white border border-slate-200 rounded-lg p-1.5 font-mono text-center text-[10px] font-bold"
+                                        className="w-24 bg-white border border-slate-200 rounded-lg p-1.5 font-mono text-center text-sm font-bold"
                                         placeholder="مبلغ"
                                       />
                                       <button
                                         type="button"
                                         onClick={() => handleSettlePayable(p, settleInputs[p.id] ?? 0)}
-                                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-black py-1.5 px-3 rounded-lg cursor-pointer transition border-none font-sans text-[10px]"
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 px-3 rounded-lg cursor-pointer transition border-none font-sans text-sm"
                                       >
                                         تسديد
                                       </button>
                                       <button
                                         type="button"
                                         onClick={() => handleSettlePayable(p, remaining)}
-                                        className="bg-slate-700 hover:bg-slate-800 text-white font-black py-1.5 px-3 rounded-lg cursor-pointer transition border-none font-sans text-[10px]"
+                                        className="bg-slate-700 hover:bg-slate-800 text-white font-bold py-1.5 px-3 rounded-lg cursor-pointer transition border-none font-sans text-sm"
                                       >
                                         تسديد الكل
                                       </button>
@@ -8189,59 +8162,59 @@ export default function Dashboard() {
                     <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
                       <div className="flex items-center gap-2">
                         <ClipboardList className="w-4 h-4 text-amber-600" />
-                        <span className="text-[11px] text-slate-600 font-black">ذمم الزبائن والبيع بالآجل (الذمم المدينة المستحقة لنا)</span>
+                        <span className="text-sm text-slate-600 font-bold">ذمم الزبائن والبيع بالآجل (الذمم المدينة المستحقة لنا)</span>
                       </div>
 
                       {/* ملخص الذمم المدينة */}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
-                          <span className="text-[9px] text-amber-700 font-black block mb-1">إجمالي الذمم المستحقة لنا</span>
-                          <strong className="text-base font-black text-amber-700 font-mono">{totalReceivables.toLocaleString()} <span className="text-[9px] font-bold">د.ع</span></strong>
+                          <span className="text-xs text-amber-700 font-bold block mb-1">إجمالي الذمم المستحقة لنا</span>
+                          <strong className="text-base font-bold text-amber-700 font-mono">{fmtNum(totalReceivables)} <span className="text-xs font-bold">د.ع</span></strong>
                         </div>
                         <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
-                          <span className="text-[9px] text-blue-700 font-black block mb-1">عدد الذمم المفتوحة</span>
-                          <strong className="text-base font-black text-blue-700 font-mono">{receivables.filter(r => r.status !== 'paid').length} <span className="text-[9px] font-bold">ذمّة</span></strong>
+                          <span className="text-xs text-blue-700 font-bold block mb-1">عدد الذمم المفتوحة</span>
+                          <strong className="text-base font-bold text-blue-700 font-mono">{receivables.filter(r => r.status !== 'paid').length} <span className="text-xs font-bold">ذمّة</span></strong>
                         </div>
                         <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3">
-                          <span className="text-[9px] text-emerald-700 font-black block mb-1">إجمالي المُحصَّل</span>
-                          <strong className="text-base font-black text-emerald-800 font-mono">{receivables.reduce((s, r) => s + (r.paidAmount || 0), 0).toLocaleString()} <span className="text-[9px] font-bold">د.ع</span></strong>
+                          <span className="text-xs text-emerald-700 font-bold block mb-1">إجمالي المُحصَّل</span>
+                          <strong className="text-base font-bold text-emerald-800 font-mono">{fmtNum(receivables.reduce((s, r) => s + (r.paidAmount || 0), 0))} <span className="text-xs font-bold">د.ع</span></strong>
                         </div>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
                         {/* نموذج تسجيل ذمّة على زبون */}
                         <form onSubmit={handleAddReceivable} className="md:col-span-5 bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-3 text-xs font-semibold">
-                          <span className="text-[10px] text-slate-400 font-black block">تسجيل ذمّة مستحقة على زبون</span>
+                          <span className="text-sm text-slate-400 font-bold block">تسجيل ذمّة مستحقة على زبون</span>
                           <div className="space-y-1">
-                            <label className="block text-slate-500 text-[10px]">اسم الزبون / العيادة</label>
+                            <label className="block text-slate-500 text-sm">اسم الزبون / العيادة</label>
                             <input type="text" required value={newRecCustomer} onChange={(e) => setNewRecCustomer(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700" placeholder="مثال: عيادة د. سرمد للأطفال" />
                           </div>
                           <div className="space-y-1">
-                            <label className="block text-slate-500 text-[10px]">مبلغ الدين (د.ع)</label>
+                            <label className="block text-slate-500 text-sm">مبلغ الدين (د.ع)</label>
                             <input type="number" min="0" required value={newRecAmount} onChange={(e) => setNewRecAmount(Number(e.target.value))} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-mono text-center font-bold" />
                           </div>
                           <div className="space-y-1">
-                            <label className="block text-slate-500 text-[10px]">تاريخ الاستحقاق (اختياري)</label>
+                            <label className="block text-slate-500 text-sm">تاريخ الاستحقاق (اختياري)</label>
                             <input type="date" value={newRecDueDate} onChange={(e) => setNewRecDueDate(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2 font-bold text-slate-700" />
                           </div>
                           <div className="space-y-1">
-                            <label className="block text-slate-500 text-[10px]">وصف (اختياري)</label>
+                            <label className="block text-slate-500 text-sm">وصف (اختياري)</label>
                             <input type="text" value={newRecDesc} onChange={(e) => setNewRecDesc(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2" placeholder="مثال: أدوية ومستلزمات شهرية للعيادة" />
                           </div>
-                          <button type="submit" className="w-full bg-amber-600 hover:bg-amber-700 text-white font-black py-2.5 rounded-xl cursor-pointer transition shadow-sm border-none font-sans text-xs">
+                          <button type="submit" className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 rounded-xl cursor-pointer transition shadow-sm border-none font-sans text-xs">
                             تسجيل ذمّة على زبون
                           </button>
-                          {receivableSuccess && <p className="text-[10px] text-emerald-700 font-black text-center">✓ تم تسجيل الذمّة في دفتر ذمم الزبائن</p>}
+                          {receivableSuccess && <p className="text-sm text-emerald-700 font-bold text-center">✓ تم تسجيل الذمّة في دفتر ذمم الزبائن</p>}
                         </form>
 
                         {/* قائمة الذمم المدينة */}
                         <div className="md:col-span-7 space-y-2">
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] text-slate-400 font-black">ذمم الزبائن المسجّلة</span>
-                            <span className="text-[9px] text-slate-400 font-bold">العدد: {receivables.length}</span>
+                            <span className="text-sm text-slate-400 font-bold">ذمم الزبائن المسجّلة</span>
+                            <span className="text-xs text-slate-400 font-bold">العدد: {receivables.length}</span>
                           </div>
                           <div className="space-y-2 max-h-72 overflow-y-auto pl-1">
-                            {receivables.length === 0 && <p className="text-[10px] text-slate-400 font-bold text-center py-6">لا توجد ذمم على الزبائن.</p>}
+                            {receivables.length === 0 && <p className="text-sm text-slate-400 font-bold text-center py-6">لا توجد ذمم على الزبائن.</p>}
                             {receivables.map((r) => {
                               const remaining = Math.max(0, r.amount - r.paidAmount);
                               const statusLabel = r.status === 'paid' ? 'محصّلة بالكامل' : r.status === 'partial' ? 'محصّلة جزئياً' : 'مفتوحة';
@@ -8251,18 +8224,18 @@ export default function Dashboard() {
                                   ? 'bg-blue-50 text-blue-700 border-blue-100'
                                   : 'bg-amber-50 text-amber-700 border-amber-100';
                               return (
-                                <div key={r.id} className="bg-white border border-slate-100 rounded-xl px-3 py-2.5 text-[10px] font-bold space-y-2">
+                                <div key={r.id} className="bg-white border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-bold space-y-2">
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="min-w-0">
                                       <strong className="text-slate-800 block">{r.customerName}</strong>
-                                      <span className="text-slate-400 text-[9px] font-semibold">{r.date}{r.dueDate ? ` • استحقاق ${r.dueDate}` : ''}{r.description ? ` • ${r.description}` : ''}</span>
+                                      <span className="text-slate-400 text-xs font-semibold">{r.date}{r.dueDate ? ` • استحقاق ${r.dueDate}` : ''}{r.description ? ` • ${r.description}` : ''}</span>
                                     </div>
-                                    <span className={`shrink-0 px-2 py-0.5 rounded-full border text-[9px] font-black ${statusCls}`}>{statusLabel}</span>
+                                    <span className={`shrink-0 px-2 py-0.5 rounded-full border text-xs font-bold ${statusCls}`}>{statusLabel}</span>
                                   </div>
-                                  <div className="flex items-center justify-between gap-2 text-[9px] text-slate-500 font-bold">
-                                    <span>الأصل: <span className="font-mono text-slate-700">{r.amount.toLocaleString()}</span></span>
-                                    <span>المُحصَّل: <span className="font-mono text-emerald-700">{r.paidAmount.toLocaleString()}</span></span>
-                                    <span>المتبقّي: <span className="font-mono text-amber-700">{remaining.toLocaleString()} د.ع</span></span>
+                                  <div className="flex items-center justify-between gap-2 text-xs text-slate-500 font-bold">
+                                    <span>الأصل: <span className="font-mono text-slate-700">{fmtNum(r.amount)}</span></span>
+                                    <span>المُحصَّل: <span className="font-mono text-emerald-700">{fmtNum(r.paidAmount)}</span></span>
+                                    <span>المتبقّي: <span className="font-mono text-amber-700">{fmtNum(remaining)} د.ع</span></span>
                                   </div>
                                   {r.status !== 'paid' && (
                                     <div className="flex items-center gap-1.5 pt-1">
@@ -8272,20 +8245,20 @@ export default function Dashboard() {
                                         max={remaining}
                                         value={collectInputs[r.id] ?? ''}
                                         onChange={(e) => setCollectInputs(prev => ({ ...prev, [r.id]: Number(e.target.value) }))}
-                                        className="w-24 bg-white border border-slate-200 rounded-lg p-1.5 font-mono text-center text-[10px] font-bold"
+                                        className="w-24 bg-white border border-slate-200 rounded-lg p-1.5 font-mono text-center text-sm font-bold"
                                         placeholder="مبلغ"
                                       />
                                       <button
                                         type="button"
                                         onClick={() => handleCollectReceivable(r, collectInputs[r.id] ?? 0)}
-                                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-black py-1.5 px-3 rounded-lg cursor-pointer transition border-none font-sans text-[10px]"
+                                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 px-3 rounded-lg cursor-pointer transition border-none font-sans text-sm"
                                       >
                                         تحصيل
                                       </button>
                                       <button
                                         type="button"
                                         onClick={() => handleCollectReceivable(r, remaining)}
-                                        className="bg-slate-700 hover:bg-slate-800 text-white font-black py-1.5 px-3 rounded-lg cursor-pointer transition border-none font-sans text-[10px]"
+                                        className="bg-slate-700 hover:bg-slate-800 text-white font-bold py-1.5 px-3 rounded-lg cursor-pointer transition border-none font-sans text-sm"
                                       >
                                         تحصيل الكل
                                       </button>
@@ -8303,16 +8276,16 @@ export default function Dashboard() {
 
                       {/* Left: Supp debts breakdown & settle per supplier */}
                       <div className="bg-slate-50 p-5 rounded-2xl border border-slate-150 text-xs space-y-4 font-semibold text-slate-705">
-                        <h4 className="font-extrabold text-slate-900 text-xs">سداد الديون وتسوية ذمم المذاخر والتقاص الطبية</h4>
+                        <h4 className="font-semibold text-slate-900 text-xs">سداد الديون وتسوية ذمم المذاخر والتقاص الطبية</h4>
 
                         <div className="space-y-2">
                           <p className="flex justify-between">
                             <span>إجمالي الذمم المستحقة للموردين:</span>
-                            <strong className="text-rose-700 font-mono text-sm">{totalDebts.toLocaleString()} د.ع</strong>
+                            <strong className="text-rose-700 font-mono text-sm">{fmtNum(totalDebts)} د.ع</strong>
                           </p>
                           <p className="flex justify-between text-slate-500">
                             <span>الرصيد المتاح بالصندوق:</span>
-                            <span className="font-mono">{walletBalance.toLocaleString()} د.ع</span>
+                            <span className="font-mono">{fmtNum(walletBalance)} د.ع</span>
                           </p>
                         </div>
 
@@ -8331,7 +8304,7 @@ export default function Dashboard() {
 
                           if (debtSuppliers.length === 0) {
                             return (
-                              <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 text-center text-emerald-700 font-bold text-[11px]">
+                              <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 text-center text-emerald-700 font-bold text-sm">
                                 ✓ لا توجد ذمم مستحقة — جميع الموردين مسوَّون
                               </div>
                             );
@@ -8350,8 +8323,8 @@ export default function Dashboard() {
                                   <div key={sup.name} className="bg-white border border-slate-100 rounded-xl p-3 space-y-2.5">
                                     {/* اسم المورد والمبلغ المستحق */}
                                     <div className="flex items-center justify-between">
-                                      <span className="font-black text-slate-800 text-[11px]">{sup.name}</span>
-                                      <span className="font-mono text-rose-600 font-black text-[11px]">{sup.remaining.toLocaleString()} د.ع</span>
+                                      <span className="font-bold text-slate-800 text-sm">{sup.name}</span>
+                                      <span className="font-mono text-rose-600 font-bold text-sm">{fmtNum(sup.remaining)} د.ع</span>
                                     </div>
                                     {/* حقل المبلغ + أزرار التسديد */}
                                     <div className="flex gap-1.5 items-center">
@@ -8362,7 +8335,7 @@ export default function Dashboard() {
                                         placeholder="مبلغ الدفعة"
                                         value={payAmt || ''}
                                         onChange={e => setDebtPayAmounts(prev => ({ ...prev, [sup.name]: Number(e.target.value) }))}
-                                        className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 font-mono text-center text-[10px] font-bold min-w-0"
+                                        className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 font-mono text-center text-sm font-bold min-w-0"
                                       />
                                       <button
                                         type="button"
@@ -8371,7 +8344,7 @@ export default function Dashboard() {
                                           paySupplierDebt(supplierObj, payAmt);
                                           setDebtPayAmounts(prev => ({ ...prev, [sup.name]: 0 }));
                                         }}
-                                        className="shrink-0 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-black px-3 py-1.5 rounded-lg text-[10px] cursor-pointer transition border-none"
+                                        className="shrink-0 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-bold px-3 py-1.5 rounded-lg text-sm cursor-pointer transition border-none"
                                       >
                                         دفعة
                                       </button>
@@ -8379,7 +8352,7 @@ export default function Dashboard() {
                                         type="button"
                                         disabled={!canPayAll}
                                         onClick={() => paySupplierDebt(supplierObj, null)}
-                                        className="shrink-0 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-black px-3 py-1.5 rounded-lg text-[10px] cursor-pointer transition border-none"
+                                        className="shrink-0 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-bold px-3 py-1.5 rounded-lg text-sm cursor-pointer transition border-none"
                                       >
                                         سدّد الكل
                                       </button>
@@ -8394,20 +8367,20 @@ export default function Dashboard() {
 
                       {/* Right: Dynamic capital and markup calculator logic */}
                       <div className="space-y-4">
-                        <span className="text-[10px] text-slate-400 font-black block">إحصاءات جرد القيمة السوقية الكلية</span>
+                        <span className="text-sm text-slate-400 font-bold block">إحصاءات جرد القيمة السوقية الكلية</span>
                         
                         <div className="p-5 bg-white border border-slate-200 rounded-2xl flex flex-col justify-between h-minus">
                           <div className="space-y-1.5">
-                            <span className="text-[10px] text-slate-400 font-extrabold uppercase">تقدير إجمالي البضاعة المخزنة بالصيدلية</span>
-                            <h5 className="text-2xl font-black text-slate-900 tracking-tight font-serif">
-                              {inventory.reduce((sum, item) => sum + (item.price * item.availableQuantity), 0).toLocaleString()} د.ع
+                            <span className="text-sm text-slate-400 font-semibold uppercase">تقدير إجمالي البضاعة المخزنة بالصيدلية</span>
+                            <h5 className="text-2xl font-bold text-slate-900 tracking-tight font-serif">
+                              {fmtNum(inventory.reduce((sum, item) => sum + (item.price * item.availableQuantity), 0))} د.ع
                             </h5>
-                            <p className="text-[10px] text-slate-500 font-semibold leading-relaxed">
+                            <p className="text-sm text-slate-500 font-semibold leading-relaxed">
                               التقدير التراكمي المحتسب للعلب الدوائية الحاضرة بالأرفف مضافاً إليها رأس المال بالصندوق.
                             </p>
                           </div>
 
-                          <div className="pt-4 border-t border-slate-100 mt-4 text-[10px] text-slate-400 space-y-1 font-mono font-bold text-left block">
+                          <div className="pt-4 border-t border-slate-100 mt-4 text-sm text-slate-400 space-y-1 font-mono font-bold text-left block">
                             <div>سعر صرف الجرد على الموازي: ${(inventory.reduce((sum, item) => sum + (item.price * item.availableQuantity), 0) / 1500).toFixed(0)} USD</div>
                             <div>الربح المقدر السنوي: 24%</div>
                           </div>
@@ -8421,34 +8394,34 @@ export default function Dashboard() {
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <RefreshCw className="w-4 h-4 text-rose-500" />
-                          <span className="text-[11px] text-slate-600 font-black">مرتجعات المبيعات</span>
+                          <span className="text-sm text-slate-600 font-bold">مرتجعات المبيعات</span>
                         </div>
-                        <span className="text-[9px] bg-rose-50 text-rose-700 font-black px-2.5 py-1 rounded-full border border-rose-100">
-                          {salesReturns.length} مرتجع • {salesReturns.reduce((s, r) => s + r.total, 0).toLocaleString()} د.ع
+                        <span className="text-xs bg-rose-50 text-rose-700 font-bold px-2.5 py-1 rounded-full border border-rose-100">
+                          {salesReturns.length} مرتجع • {fmtNum(salesReturns.reduce((s, r) => s + r.total, 0))} د.ع
                         </span>
                       </div>
 
                       {salesReturns.length === 0 ? (
-                        <p className="text-[10px] text-slate-400 font-bold text-center py-6">لا توجد مرتجعات مسجّلة بعد.</p>
+                        <p className="text-sm text-slate-400 font-bold text-center py-6">لا توجد مرتجعات مسجّلة بعد.</p>
                       ) : (
                         <div className="space-y-2 max-h-64 overflow-y-auto pl-1">
                           {salesReturns.map(r => (
-                            <div key={r.returnId} className="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-[10px] font-bold space-y-1">
+                            <div key={r.returnId} className="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-bold space-y-1">
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                  <span className="font-mono text-rose-700 font-black">{r.returnId}</span>
+                                  <span className="font-mono text-rose-700 font-bold">{r.returnId}</span>
                                   <span className="text-slate-400">←</span>
                                   <span className="font-mono text-slate-500">{r.originalInvoiceId}</span>
                                 </div>
-                                <strong className="text-rose-700 font-mono">−{r.total.toLocaleString()} د.ع</strong>
+                                <strong className="text-rose-700 font-mono">−{fmtNum(r.total)} د.ع</strong>
                               </div>
-                              <div className="flex items-center justify-between text-slate-500 text-[9px]">
+                              <div className="flex items-center justify-between text-slate-500 text-xs">
                                 <span>{r.timestamp} • {r.customerName} • {r.reason}</span>
-                                <span className={`px-1.5 py-0.5 rounded font-black ${r.refundMethod === 'cash' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'}`}>
+                                <span className={`px-1.5 py-0.5 rounded font-bold ${r.refundMethod === 'cash' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'}`}>
                                   {r.refundMethod === 'cash' ? 'استرداد نقدي' : 'تصحيح فقط'}
                                 </span>
                               </div>
-                              <div className="text-[9px] text-slate-400 font-semibold">
+                              <div className="text-xs text-slate-400 font-semibold">
                                 {r.items.map((it, i) => <span key={i}>{it.name} ×{it.quantity}{i < r.items.length - 1 ? ' | ' : ''}</span>)}
                               </div>
                             </div>
@@ -8463,20 +8436,20 @@ export default function Dashboard() {
                     <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-5">
                       <div className="flex items-center gap-2 border-b border-slate-100 pb-4">
                         <FileText className="w-4 h-4 text-emerald-600" />
-                        <span className="text-[11px] text-slate-600 font-black">كشف الحساب — الموردين والزبائن</span>
+                        <span className="text-sm text-slate-600 font-bold">كشف الحساب — الموردين والزبائن</span>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
                         {/* ---- كشف حساب المورد ---- */}
                         <div className="space-y-3">
-                          <span className="text-[10px] font-black text-rose-600 flex items-center gap-1.5">
+                          <span className="text-sm font-bold text-rose-600 flex items-center gap-1.5">
                             <Truck className="w-3.5 h-3.5" /> كشف حساب المورد / المذخر
                           </span>
                           <select
                             value={stmtSupplier}
                             onChange={e => setStmtSupplier(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-[10px] font-bold focus:outline-emerald-400"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-sm font-bold focus:outline-emerald-400"
                           >
                             <option value="">— اختر المورد —</option>
                             {[...new Set(payables.map(p => p.supplierName))].map(name => (
@@ -8494,20 +8467,20 @@ export default function Dashboard() {
                               <div className="space-y-2">
                                 <div className="grid grid-cols-3 gap-2">
                                   <div className="bg-rose-50 rounded-xl p-2.5 text-center">
-                                    <span className="text-[8px] text-rose-600 font-black block">إجمالي الدين</span>
-                                    <strong className="text-[10px] font-mono text-rose-700">{totalOwed.toLocaleString()}</strong>
+                                    <span className="text-xs text-rose-600 font-bold block">إجمالي الدين</span>
+                                    <strong className="text-sm font-mono text-rose-700">{fmtNum(totalOwed)}</strong>
                                   </div>
                                   <div className="bg-emerald-50 rounded-xl p-2.5 text-center">
-                                    <span className="text-[8px] text-emerald-600 font-black block">المدفوع</span>
-                                    <strong className="text-[10px] font-mono text-emerald-700">{totalPaid.toLocaleString()}</strong>
+                                    <span className="text-xs text-emerald-600 font-bold block">المدفوع</span>
+                                    <strong className="text-sm font-mono text-emerald-700">{fmtNum(totalPaid)}</strong>
                                   </div>
                                   <div className="bg-amber-50 rounded-xl p-2.5 text-center">
-                                    <span className="text-[8px] text-amber-600 font-black block">المتبقي</span>
-                                    <strong className="text-[10px] font-mono text-amber-700">{balance.toLocaleString()}</strong>
+                                    <span className="text-xs text-amber-600 font-bold block">المتبقي</span>
+                                    <strong className="text-sm font-mono text-amber-700">{fmtNum(balance)}</strong>
                                   </div>
                                 </div>
                                 <div className="overflow-x-auto">
-                                  <table className="w-full text-[9px] font-bold border-collapse">
+                                  <table className="w-full text-xs font-bold border-collapse">
                                     <thead>
                                       <tr className="bg-slate-100 text-slate-500">
                                         <th className="text-right p-1.5 rounded-r-lg">التاريخ</th>
@@ -8524,19 +8497,19 @@ export default function Dashboard() {
                                           <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50">
                                             <td className="p-1.5 text-slate-500">{p.date}</td>
                                             <td className="p-1.5 text-slate-700">{p.description || 'فاتورة توريد'}</td>
-                                            <td className="p-1.5 font-mono text-rose-600 text-left">{p.amount.toLocaleString()}</td>
-                                            <td className="p-1.5 font-mono text-emerald-600 text-left">{p.paidAmount > 0 ? p.paidAmount.toLocaleString() : '—'}</td>
-                                            <td className="p-1.5 font-mono text-amber-700 text-left">{running.toLocaleString()}</td>
+                                            <td className="p-1.5 font-mono text-rose-600 text-left">{fmtNum(p.amount)}</td>
+                                            <td className="p-1.5 font-mono text-emerald-600 text-left">{p.paidAmount > 0 ? fmtNum(p.paidAmount) : '—'}</td>
+                                            <td className="p-1.5 font-mono text-amber-700 text-left">{fmtNum(running)}</td>
                                           </tr>
                                         );
                                       })}
                                     </tbody>
                                     <tfoot>
-                                      <tr className="bg-slate-50 font-black">
+                                      <tr className="bg-slate-50 font-bold">
                                         <td colSpan={2} className="p-1.5 text-slate-600">الرصيد النهائي</td>
-                                        <td className="p-1.5 font-mono text-rose-700 text-left">{totalOwed.toLocaleString()}</td>
-                                        <td className="p-1.5 font-mono text-emerald-700 text-left">{totalPaid.toLocaleString()}</td>
-                                        <td className="p-1.5 font-mono text-amber-800 text-left">{balance.toLocaleString()}</td>
+                                        <td className="p-1.5 font-mono text-rose-700 text-left">{fmtNum(totalOwed)}</td>
+                                        <td className="p-1.5 font-mono text-emerald-700 text-left">{fmtNum(totalPaid)}</td>
+                                        <td className="p-1.5 font-mono text-amber-800 text-left">{fmtNum(balance)}</td>
                                       </tr>
                                     </tfoot>
                                   </table>
@@ -8548,13 +8521,13 @@ export default function Dashboard() {
 
                         {/* ---- كشف حساب الزبون ---- */}
                         <div className="space-y-3">
-                          <span className="text-[10px] font-black text-emerald-700 flex items-center gap-1.5">
+                          <span className="text-sm font-bold text-emerald-700 flex items-center gap-1.5">
                             <Users className="w-3.5 h-3.5" /> كشف حساب الزبون / العميل
                           </span>
                           <select
                             value={stmtCustomer}
                             onChange={e => setStmtCustomer(e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-[10px] font-bold focus:outline-emerald-400"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-sm font-bold focus:outline-emerald-400"
                           >
                             <option value="">— اختر الزبون —</option>
                             {[...new Set([
@@ -8581,20 +8554,20 @@ export default function Dashboard() {
                               <div className="space-y-2">
                                 <div className="grid grid-cols-3 gap-2">
                                   <div className="bg-blue-50 rounded-xl p-2.5 text-center">
-                                    <span className="text-[8px] text-blue-600 font-black block">إجمالي المبيعات</span>
-                                    <strong className="text-[10px] font-mono text-blue-700">{(totalSales + totalRec).toLocaleString()}</strong>
+                                    <span className="text-xs text-blue-600 font-bold block">إجمالي المبيعات</span>
+                                    <strong className="text-sm font-mono text-blue-700">{fmtNum((totalSales + totalRec))}</strong>
                                   </div>
                                   <div className="bg-emerald-50 rounded-xl p-2.5 text-center">
-                                    <span className="text-[8px] text-emerald-600 font-black block">المحصَّل</span>
-                                    <strong className="text-[10px] font-mono text-emerald-700">{(totalSales + totalCollected).toLocaleString()}</strong>
+                                    <span className="text-xs text-emerald-600 font-bold block">المحصَّل</span>
+                                    <strong className="text-sm font-mono text-emerald-700">{fmtNum((totalSales + totalCollected))}</strong>
                                   </div>
                                   <div className="bg-amber-50 rounded-xl p-2.5 text-center">
-                                    <span className="text-[8px] text-amber-600 font-black block">المتبقي (ذمّة)</span>
-                                    <strong className="text-[10px] font-mono text-amber-700">{balance.toLocaleString()}</strong>
+                                    <span className="text-xs text-amber-600 font-bold block">المتبقي (ذمّة)</span>
+                                    <strong className="text-sm font-mono text-amber-700">{fmtNum(balance)}</strong>
                                   </div>
                                 </div>
                                 <div className="overflow-x-auto">
-                                  <table className="w-full text-[9px] font-bold border-collapse">
+                                  <table className="w-full text-xs font-bold border-collapse">
                                     <thead>
                                       <tr className="bg-slate-100 text-slate-500">
                                         <th className="text-right p-1.5 rounded-r-lg">التاريخ</th>
@@ -8611,18 +8584,18 @@ export default function Dashboard() {
                                           <tr key={i} className="border-b border-slate-50 hover:bg-slate-50">
                                             <td className="p-1.5 text-slate-500">{row.date}</td>
                                             <td className="p-1.5 text-slate-700">{row.desc}</td>
-                                            <td className="p-1.5 font-mono text-rose-600 text-left">{row.debit > 0 ? row.debit.toLocaleString() : '—'}</td>
-                                            <td className="p-1.5 font-mono text-emerald-600 text-left">{row.credit > 0 ? row.credit.toLocaleString() : '—'}</td>
-                                            <td className="p-1.5 font-mono text-amber-700 text-left">{running.toLocaleString()}</td>
+                                            <td className="p-1.5 font-mono text-rose-600 text-left">{row.debit > 0 ? fmtNum(row.debit) : '—'}</td>
+                                            <td className="p-1.5 font-mono text-emerald-600 text-left">{row.credit > 0 ? fmtNum(row.credit) : '—'}</td>
+                                            <td className="p-1.5 font-mono text-amber-700 text-left">{fmtNum(running)}</td>
                                           </tr>
                                         );
                                       })}
                                     </tbody>
                                     <tfoot>
-                                      <tr className="bg-slate-50 font-black">
+                                      <tr className="bg-slate-50 font-bold">
                                         <td colSpan={2} className="p-1.5 text-slate-600">الرصيد النهائي</td>
-                                        <td colSpan={2} className="p-1.5 text-slate-500 text-left text-[8px]">إجمالي الحركات</td>
-                                        <td className="p-1.5 font-mono text-amber-800 text-left">{balance.toLocaleString()}</td>
+                                        <td colSpan={2} className="p-1.5 text-slate-500 text-left text-xs">إجمالي الحركات</td>
+                                        <td className="p-1.5 font-mono text-amber-800 text-left">{fmtNum(balance)}</td>
                                       </tr>
                                     </tfoot>
                                   </table>
@@ -8678,14 +8651,14 @@ export default function Dashboard() {
                         <div className="flex items-center justify-between flex-wrap gap-3">
                           <div className="flex items-center gap-2">
                             <Clock className="w-4 h-4 text-emerald-700" />
-                            <span className="text-[11px] text-slate-600 font-black">تقرير الإغلاق اليومي (Z-Report)</span>
+                            <span className="text-sm text-slate-600 font-bold">تقرير الإغلاق اليومي (Z-Report)</span>
                           </div>
                           <div className="flex items-center gap-2">
                             <input
                               type="date"
                               value={zReportDate}
                               onChange={e => setZReportDate(e.target.value)}
-                              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-[11px] font-bold focus:outline-none focus:border-emerald-400"
+                              className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-sm font-bold focus:outline-none focus:border-emerald-400"
                             />
                             <button
                               type="button"
@@ -8700,7 +8673,7 @@ export default function Dashboard() {
                                 [],
                                 ['صافي حركة النقد لليوم', netCash],
                               ])}
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-black py-1.5 px-3 rounded-xl text-[10px] cursor-pointer transition border-none flex items-center gap-1.5"
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 px-3 rounded-xl text-sm cursor-pointer transition border-none flex items-center gap-1.5"
                             >
                               <FileText className="w-3.5 h-3.5" />
                               <span>تصدير CSV</span>
@@ -8710,36 +8683,36 @@ export default function Dashboard() {
 
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                           <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center">
-                            <span className="block text-[9px] text-emerald-700 font-black">عدد الفواتير</span>
-                            <span className="block text-lg font-black text-emerald-800 font-mono">{daySales.length}</span>
+                            <span className="block text-xs text-emerald-700 font-bold">عدد الفواتير</span>
+                            <span className="block text-lg font-bold text-emerald-800 font-mono">{daySales.length}</span>
                           </div>
                           <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center">
-                            <span className="block text-[9px] text-emerald-700 font-black">إجمالي المبيعات</span>
-                            <span className="block text-lg font-black text-emerald-800 font-mono">{salesTotal.toLocaleString()}</span>
+                            <span className="block text-xs text-emerald-700 font-bold">إجمالي المبيعات</span>
+                            <span className="block text-lg font-bold text-emerald-800 font-mono">{fmtNum(salesTotal)}</span>
                           </div>
                           <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 text-center">
-                            <span className="block text-[9px] text-violet-700 font-black">ربح المبيعات</span>
-                            <span className="block text-lg font-black text-violet-800 font-mono">{salesProfit.toLocaleString()}</span>
+                            <span className="block text-xs text-violet-700 font-bold">ربح المبيعات</span>
+                            <span className="block text-lg font-bold text-violet-800 font-mono">{fmtNum(salesProfit)}</span>
                           </div>
                         </div>
 
                         <div className="space-y-1.5">
                           {zRows.map(([label, val]) => (
-                            <div key={label} className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-[10px] font-bold">
+                            <div key={label} className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-sm font-bold">
                               <span className="text-slate-600">{label}</span>
-                              <span className={`font-mono font-black ${val < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
-                                {val < 0 ? '−' : '+'}{Math.abs(val).toLocaleString()} د.ع
+                              <span className={`font-mono font-bold ${val < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>
+                                {val < 0 ? '−' : '+'}{fmtNum(Math.abs(val))} د.ع
                               </span>
                             </div>
                           ))}
-                          <div className="flex items-center justify-between bg-slate-900 rounded-xl px-3 py-2.5 text-[11px] font-black">
+                          <div className="flex items-center justify-between bg-slate-900 rounded-xl px-3 py-2.5 text-sm font-bold">
                             <span className="text-white">صافي حركة النقد لليوم</span>
                             <span className={`font-mono ${netCash < 0 ? 'text-rose-300' : 'text-emerald-300'}`}>
-                              {netCash < 0 ? '−' : ''}{Math.abs(netCash).toLocaleString()} د.ع
+                              {netCash < 0 ? '−' : ''}{fmtNum(Math.abs(netCash))} د.ع
                             </span>
                           </div>
                         </div>
-                        <p className="text-[9px] text-slate-400 font-bold">
+                        <p className="text-xs text-slate-400 font-bold">
                           * التحصيلات والتسديدات تُحسب من سجل التدقيق (آخر 300 عملية) — للأيام القديمة جداً قد تكون غير مكتملة.
                         </p>
                       </div>
@@ -8751,9 +8724,9 @@ export default function Dashboard() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <ShieldCheck className="w-4 h-4 text-slate-600" />
-                        <span className="text-[11px] text-slate-600 font-black">سجل التدقيق (آخر 50 عملية)</span>
+                        <span className="text-sm text-slate-600 font-bold">سجل التدقيق (آخر 50 عملية)</span>
                       </div>
-                      <span className="text-[9px] text-slate-400 font-bold">{auditLog.length} إدخال</span>
+                      <span className="text-xs text-slate-400 font-bold">{auditLog.length} إدخال</span>
                     </div>
 
                     <div className="space-y-1.5 max-h-96 overflow-y-auto">
@@ -8774,37 +8747,37 @@ export default function Dashboard() {
                         };
                         const meta = actionMeta[entry.action];
                         return (
-                          <div key={entry.id} className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-[10px] font-bold gap-3">
+                          <div key={entry.id} className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-sm font-bold gap-3">
                             <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                              <span className={`shrink-0 px-1.5 py-0.5 rounded-md font-black text-[9px] ${meta.bg} ${meta.color}`}>{meta.label}</span>
+                              <span className={`shrink-0 px-1.5 py-0.5 rounded-md font-bold text-xs ${meta.bg} ${meta.color}`}>{meta.label}</span>
                               <span className="text-slate-600 truncate">{entry.description}</span>
                             </div>
                             <div className="flex items-center gap-3 shrink-0 text-right">
                               {entry.amount > 0 && (
-                                <span className={`font-mono font-black ${['expense','payable_settle','return'].includes(entry.action) ? 'text-rose-600' : 'text-emerald-700'}`}>
-                                  {['expense','payable_settle','return'].includes(entry.action) ? '−' : '+'}{entry.amount.toLocaleString()} د.ع
+                                <span className={`font-mono font-bold ${['expense','payable_settle','return'].includes(entry.action) ? 'text-rose-600' : 'text-emerald-700'}`}>
+                                  {['expense','payable_settle','return'].includes(entry.action) ? '−' : '+'}{fmtNum(entry.amount)} د.ع
                                 </span>
                               )}
                               <div className="text-slate-400 text-right">
                                 <span className="block font-mono">{entry.timestamp}</span>
-                                <span className="block text-[9px]">{entry.actor}</span>
+                                <span className="block text-xs">{entry.actor}</span>
                               </div>
                             </div>
                           </div>
                         );
                       })}
                       {auditLog.length === 0 && (
-                        <p className="text-[10px] text-slate-400 font-bold text-center py-6">لا توجد سجلات تدقيق بعد.</p>
+                        <p className="text-sm text-slate-400 font-bold text-center py-6">لا توجد سجلات تدقيق بعد.</p>
                       )}
                     </div>
-                    <p className="text-[9px] text-slate-400 font-bold">* يُسجَّل كل بيع، شراء، مصروف، تسديد ذمّة، تحصيل، ومرتجع تلقائياً مع الوقت والمسؤول.</p>
+                    <p className="text-xs text-slate-400 font-bold">* يُسجَّل كل بيع، شراء، مصروف، تسديد ذمّة، تحصيل، ومرتجع تلقائياً مع الوقت والمسؤول.</p>
                   </div>
 
                   {/* --- تغيير كلمة مرور التبويب المالي --- */}
                   <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
                     <div className="flex items-center gap-2">
                       <ShieldCheck className="w-4 h-4 text-violet-600" />
-                      <span className="text-[11px] text-slate-600 font-black">تغيير كلمة مرور الحسابات المالية</span>
+                      <span className="text-sm text-slate-600 font-bold">تغيير كلمة مرور الحسابات المالية</span>
                     </div>
                     <form
                       onSubmit={(e) => {
@@ -8834,7 +8807,7 @@ export default function Dashboard() {
                       className="grid grid-cols-1 sm:grid-cols-3 gap-3"
                     >
                       <div className="space-y-1">
-                        <label className="block text-[10px] text-slate-500 font-black">كلمة المرور الحالية</label>
+                        <label className="block text-sm text-slate-500 font-bold">كلمة المرور الحالية</label>
                         <input
                           type="password"
                           value={changePinOld}
@@ -8844,7 +8817,7 @@ export default function Dashboard() {
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="block text-[10px] text-slate-500 font-black">كلمة المرور الجديدة</label>
+                        <label className="block text-sm text-slate-500 font-bold">كلمة المرور الجديدة</label>
                         <input
                           type="password"
                           value={changePinNew}
@@ -8854,7 +8827,7 @@ export default function Dashboard() {
                         />
                       </div>
                       <div className="space-y-1">
-                        <label className="block text-[10px] text-slate-500 font-black">تأكيد كلمة المرور</label>
+                        <label className="block text-sm text-slate-500 font-bold">تأكيد كلمة المرور</label>
                         <input
                           type="password"
                           value={changePinConfirm}
@@ -8866,12 +8839,12 @@ export default function Dashboard() {
                       <div className="sm:col-span-3 flex items-center gap-3">
                         <button
                           type="submit"
-                          className="bg-violet-600 hover:bg-violet-700 text-white font-black px-6 py-2.5 rounded-xl text-xs cursor-pointer transition border-none font-sans"
+                          className="bg-violet-600 hover:bg-violet-700 text-white font-bold px-6 py-2.5 rounded-xl text-xs cursor-pointer transition border-none font-sans"
                         >
                           حفظ كلمة المرور الجديدة
                         </button>
                         {changePinMsg && (
-                          <span className={`text-[11px] font-black ${changePinMsg.type === 'success' ? 'text-emerald-700' : 'text-rose-600'}`}>
+                          <span className={`text-sm font-bold ${changePinMsg.type === 'success' ? 'text-emerald-700' : 'text-rose-600'}`}>
                             {changePinMsg.text}
                           </span>
                         )}
@@ -8883,9 +8856,9 @@ export default function Dashboard() {
                   <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
                     <div className="flex items-center gap-2">
                       <Info className="w-4 h-4 text-amber-600" />
-                      <span className="text-[11px] text-slate-600 font-black">نسبة تقدير التكلفة الافتراضية</span>
+                      <span className="text-sm text-slate-600 font-bold">نسبة تقدير التكلفة الافتراضية</span>
                     </div>
-                    <p className="text-[10px] text-slate-500 font-semibold leading-relaxed">
+                    <p className="text-sm text-slate-500 font-semibold leading-relaxed">
                       عندما لا يكون للدواء سعر شراء مسجّل، يقدّر التطبيق تكلفته كنسبة من سعر البيع لحساب الأرباح.
                       اضبطها لتطابق هامش صيدليتك الفعلي — الأرباح المبنية على هذا التقدير تقريبية حتى تُسجَّل تكلفة شراء حقيقية.
                     </p>
@@ -8902,7 +8875,7 @@ export default function Dashboard() {
                           }}
                           className="w-20 bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center font-mono text-sm focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-200 transition"
                         />
-                        <span className="text-xs text-slate-500 font-black">% من سعر البيع</span>
+                        <span className="text-xs text-slate-500 font-bold">% من سعر البيع</span>
                       </div>
                       <button
                         type="button"
@@ -8910,7 +8883,7 @@ export default function Dashboard() {
                           saveDefaultCostPercent(defaultCostPercent);
                           alert(`تم الحفظ: ستُقدَّر تكلفة المواد بلا سعر شراء بنسبة ${defaultCostPercent}% من سعر البيع.`);
                         }}
-                        className="bg-amber-500 hover:bg-amber-600 text-white font-black px-5 py-2.5 rounded-xl text-xs cursor-pointer transition border-none font-sans"
+                        className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs cursor-pointer transition border-none font-sans"
                       >
                         حفظ النسبة
                       </button>
@@ -8959,16 +8932,16 @@ export default function Dashboard() {
                   <Check className="w-6 h-6 stroke-[3]" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-slate-950 text-base leading-none">صيدلية انوار الحسن</h3>
-                  <p className="text-[10px] text-slate-400 mt-1">البصرة / شارع القائد</p>
+                  <h3 className="font-semibold text-slate-950 text-base leading-none">صيدلية انوار الحسن</h3>
+                  <p className="text-sm text-slate-400 mt-1">البصرة / شارع القائد</p>
                 </div>
               </div>
 
               {/* Receipt details */}
-              <div className="text-[11px] leading-normal font-semibold space-y-2 text-slate-700">
+              <div className="text-sm leading-normal font-semibold space-y-2 text-slate-700">
                 <div className="flex justify-between font-mono">
                   <span>رقم الفاتورة:</span>
-                  <span className="text-slate-950 font-black">{lastPrintedInvoice.invoiceId}</span>
+                  <span className="text-slate-950 font-bold">{lastPrintedInvoice.invoiceId}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>تاريخ الصرف:</span>
@@ -8980,16 +8953,16 @@ export default function Dashboard() {
                 </div>
                 <div className="flex justify-between border-b border-slate-100 pb-2">
                   <span>نوع العملية الكاش:</span>
-                  <span className="bg-emerald-50 text-emerald-800 px-2.5 py-0.5 rounded text-[9px] font-bold">صرف بيع مباشر</span>
+                  <span className="bg-emerald-50 text-emerald-800 px-2.5 py-0.5 rounded text-xs font-bold">صرف بيع مباشر</span>
                 </div>
 
                 {/* Items sold table list */}
                 <div className="pt-2 space-y-1.5 font-bold">
-                  <span className="text-[9px] text-slate-400 uppercase tracking-widest block">الأدوية المباعة والمقادير:</span>
+                  <span className="text-xs text-slate-400 uppercase tracking-widest block">الأدوية المباعة والمقادير:</span>
                   {lastPrintedInvoice.items.map((item, idx) => (
                     <div key={idx} className="flex justify-between text-xs py-1">
-                      <span>{item.name} <span className="font-mono text-slate-400 text-[10px]">x{item.quantity}</span></span>
-                      <span className="font-mono text-slate-900">{(item.price * item.quantity).toLocaleString()} د.ع</span>
+                      <span>{item.name} <span className="font-mono text-slate-400 text-sm">x{item.quantity}</span></span>
+                      <span className="font-mono text-slate-900">{fmtNum((item.price * item.quantity))} د.ع</span>
                     </div>
                   ))}
                 </div>
@@ -8999,18 +8972,18 @@ export default function Dashboard() {
                   {lastPrintedInvoice.discount > 0 && (
                     <p className="flex justify-between text-rose-700 text-xs py-0.5">
                       <span>الخصم المطبق:</span>
-                      <span className="font-mono">-{(lastPrintedInvoice.discount).toLocaleString()} د.ع</span>
+                      <span className="font-mono">-{fmtNum((lastPrintedInvoice.discount))} د.ع</span>
                     </p>
                   )}
-                  <p className="flex justify-between items-center text-sm font-black text-slate-950 pt-1">
+                  <p className="flex justify-between items-center text-sm font-bold text-slate-950 pt-1">
                     <span>الصافي المقبوض:</span>
-                    <span className="font-mono text-emerald-800 text-base">{lastPrintedInvoice.total.toLocaleString()} د.ع</span>
+                    <span className="font-mono text-emerald-800 text-base">{fmtNum(lastPrintedInvoice.total)} د.ع</span>
                   </p>
                 </div>
               </div>
 
               {/* Legal confirmation */}
-              <div className="bg-slate-50 p-2.5 rounded-xl text-center text-[10px] text-slate-400 font-bold border border-slate-100 leading-normal">
+              <div className="bg-slate-50 p-2.5 rounded-xl text-center text-sm text-slate-400 font-bold border border-slate-100 leading-normal">
                 برمجيات انوار الحسن موثقة سحابياً وفقاً للائحة رقم 42 الصادرة من نقابة صيادلة العراق.
               </div>
 
@@ -9021,7 +8994,7 @@ export default function Dashboard() {
                   window.print();
                   setTimeout(() => document.body.classList.remove('printing-receipt'), 1000);
                 }}
-                className="no-print w-full bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs py-2.5 rounded-xl cursor-pointer transition"
+                className="no-print w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 rounded-xl cursor-pointer transition"
               >
                 طباعة الفاتورة
               </button>
@@ -9029,7 +9002,7 @@ export default function Dashboard() {
               <button
                 type="button"
                 onClick={() => setShowReceiptModal(false)}
-                className="no-print w-full bg-slate-950 hover:bg-slate-900 text-white font-extrabold text-xs py-2.5 rounded-xl cursor-pointer transition shadow text-center block"
+                className="no-print w-full bg-slate-950 hover:bg-slate-900 text-white font-semibold text-xs py-2.5 rounded-xl cursor-pointer transition shadow text-center block"
               >
                 الموافقة وإغلاق الفاتورة صيدلي
               </button>
@@ -9056,9 +9029,9 @@ export default function Dashboard() {
               {/* Header */}
               <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                 <div>
-                  <span className="text-[10px] font-black text-rose-600 bg-rose-50 px-2.5 py-1 rounded-full uppercase">مرتجع مبيعات</span>
-                  <h3 className="font-extrabold text-slate-900 text-sm mt-2">إرجاع فاتورة {returnTarget.invoiceId}</h3>
-                  <p className="text-[10px] text-slate-400 font-bold mt-0.5">الزبون: {returnTarget.customerName} • المبلغ الأصلي: {returnTarget.total.toLocaleString()} د.ع</p>
+                  <span className="text-sm font-bold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-full uppercase">مرتجع مبيعات</span>
+                  <h3 className="font-semibold text-slate-900 text-sm mt-2">إرجاع فاتورة {returnTarget.invoiceId}</h3>
+                  <p className="text-sm text-slate-400 font-bold mt-0.5">الزبون: {returnTarget.customerName} • المبلغ الأصلي: {fmtNum(returnTarget.total)} د.ع</p>
                 </div>
                 <button onClick={() => setShowReturnModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                   <X className="w-5 h-5" />
@@ -9068,20 +9041,20 @@ export default function Dashboard() {
               <form onSubmit={handleProcessReturn} className="space-y-4">
                 {/* Items with qty inputs */}
                 <div className="space-y-2">
-                  <span className="text-[10px] font-black text-slate-600 block">الأصناف المُرادة للإرجاع:</span>
+                  <span className="text-sm font-bold text-slate-600 block">الأصناف المُرادة للإرجاع:</span>
                   {returnTarget.items.map((it, idx) => (
-                    <div key={idx} className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2.5 text-[10px] font-bold gap-3">
+                    <div key={idx} className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2.5 text-sm font-bold gap-3">
                       <div className="min-w-0 flex-1">
                         <span className="text-slate-800 block truncate">{it.name}</span>
-                        <span className="text-slate-400 text-[9px]">الكمية المباعة: {it.quantity} • السعر: {it.price.toLocaleString()} د.ع</span>
+                        <span className="text-slate-400 text-xs">الكمية المباعة: {it.quantity} • السعر: {fmtNum(it.price)} د.ع</span>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
-                        <label className="text-slate-500 text-[9px]">كمية الإرجاع:</label>
+                        <label className="text-slate-500 text-xs">كمية الإرجاع:</label>
                         <input
                           type="number" min={0} max={it.quantity}
                           value={returnQtys[idx] ?? 0}
                           onChange={e => setReturnQtys(prev => ({ ...prev, [idx]: Math.min(it.quantity, Math.max(0, Number(e.target.value))) }))}
-                          className="w-14 bg-white border border-slate-200 rounded-lg p-1.5 text-center focus:outline-emerald-400 text-[10px]"
+                          className="w-14 bg-white border border-slate-200 rounded-lg p-1.5 text-center focus:outline-emerald-400 text-sm"
                         />
                       </div>
                     </div>
@@ -9090,30 +9063,30 @@ export default function Dashboard() {
 
                 {/* Running total */}
                 {Object.values(returnQtys).some(q => q > 0) && (
-                  <div className="bg-rose-50 border border-rose-100 rounded-xl px-3 py-2 text-[10px] font-black text-rose-700 flex justify-between">
+                  <div className="bg-rose-50 border border-rose-100 rounded-xl px-3 py-2 text-sm font-bold text-rose-700 flex justify-between">
                     <span>إجمالي مبلغ الاسترداد:</span>
                     <span className="font-mono">
-                      {returnTarget.items.reduce((s, it, idx) => s + it.price * (returnQtys[idx] ?? 0), 0).toLocaleString()} د.ع
+                      {fmtNum(returnTarget.items.reduce((s, it, idx) => s + it.price * (returnQtys[idx] ?? 0), 0))} د.ع
                     </span>
                   </div>
                 )}
 
                 {/* Reason */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-600 block">سبب الإرجاع: *</label>
+                  <label className="text-sm font-bold text-slate-600 block">سبب الإرجاع: *</label>
                   <input
                     type="text" required value={returnReason} onChange={e => setReturnReason(e.target.value)}
                     placeholder="دواء منتهي الصلاحية / خطأ في الصرف / طلب الزبون..."
-                    className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-[10px] font-bold focus:outline-emerald-400"
+                    className="w-full bg-white border border-slate-200 rounded-xl p-2.5 text-sm font-bold focus:outline-emerald-400"
                   />
                 </div>
 
                 {/* Refund method */}
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-600 block">طريقة الاسترداد:</label>
+                  <label className="text-sm font-bold text-slate-600 block">طريقة الاسترداد:</label>
                   <div className="flex gap-3">
                     {(['cash', 'none'] as const).map(m => (
-                      <label key={m} className="flex items-center gap-1.5 cursor-pointer text-[10px] font-bold">
+                      <label key={m} className="flex items-center gap-1.5 cursor-pointer text-sm font-bold">
                         <input type="radio" name="refundMethod" value={m} checked={returnRefundMethod === m} onChange={() => setReturnRefundMethod(m)} className="accent-emerald-600" />
                         {m === 'cash' ? 'استرداد نقدي (يُخصم من الصندوق)' : 'بدون صرف نقدي (تصحيح فقط)'}
                       </label>
@@ -9125,7 +9098,7 @@ export default function Dashboard() {
                 <button
                   type="submit"
                   disabled={!Object.values(returnQtys).some(q => q > 0)}
-                  className="w-full bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white font-black text-xs py-3 rounded-xl cursor-pointer transition shadow-sm"
+                  className="w-full bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white font-bold text-xs py-3 rounded-xl cursor-pointer transition shadow-sm"
                 >
                   تأكيد المرتجع وتحديث المخزون
                 </button>
@@ -9170,8 +9143,8 @@ export default function Dashboard() {
                     <Barcode className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="font-extrabold text-slate-900 text-sm">قارئ الباركود والمنتجات</h3>
-                    <p className="text-[10px] text-slate-400 font-bold mt-0.5">مسح تلقائي للأدوية وبحث مباشر في الصيدلية</p>
+                    <h3 className="font-semibold text-slate-900 text-sm">قارئ الباركود والمنتجات</h3>
+                    <p className="text-sm text-slate-400 font-bold mt-0.5">مسح تلقائي للأدوية وبحث مباشر في الصيدلية</p>
                   </div>
                 </div>
                 
@@ -9219,7 +9192,7 @@ export default function Dashboard() {
                     )}
 
                     {/* Status Indicator inside viewport */}
-                    <span className="absolute bottom-3 text-[9px] bg-slate-950/70 text-slate-300 font-mono tracking-widest px-2.5 py-1 rounded-full border border-slate-800 backdrop-blur-xs font-bold">
+                    <span className="absolute bottom-3 text-xs bg-slate-950/70 text-slate-300 font-mono tracking-widest px-2.5 py-1 rounded-full border border-slate-800 backdrop-blur-xs font-bold">
                       {scanSuccessFeedback ? "SUCCESS DECODING" : "LIVE CAMERA FEED"}
                     </span>
                   </div>
@@ -9237,7 +9210,7 @@ export default function Dashboard() {
 
                   {/* Scanning Auto Detection status overlay */}
                   {!scanSuccessFeedback && !scanError && (
-                    <div className="absolute top-3 right-3 bg-emerald-600/90 text-white font-extrabold text-[9px] px-2.5 py-1 rounded-full flex items-center gap-1.5 animate-pulse shadow-sm h-6">
+                    <div className="absolute top-3 right-3 bg-emerald-600/90 text-white font-semibold text-xs px-2.5 py-1 rounded-full flex items-center gap-1.5 animate-pulse shadow-sm h-6">
                       <span className="w-1.5 h-1.5 bg-white rounded-full animate-ping" />
                       <span>تتبع تلقائي نشط...</span>
                     </div>
@@ -9249,8 +9222,8 @@ export default function Dashboard() {
                       <div className="w-14 h-14 bg-emerald-500 text-white rounded-full flex items-center justify-center mb-3 shadow-[0_0_20px_#10b981] animate-bounce">
                         <Check className="w-7 h-7" strokeWidth={3} />
                       </div>
-                      <p className="text-white font-black text-sm leading-relaxed">{scanSuccessFeedback}</p>
-                      <p className="text-emerald-300 text-[10px] font-bold mt-1">جاري مطابقة الرمز مدخل ومزاجنة المعلومات المطلوبة...</p>
+                      <p className="text-white font-bold text-sm leading-relaxed">{scanSuccessFeedback}</p>
+                      <p className="text-emerald-300 text-sm font-bold mt-1">جاري مطابقة الرمز مدخل ومزاجنة المعلومات المطلوبة...</p>
                     </div>
                   )}
 
@@ -9260,11 +9233,11 @@ export default function Dashboard() {
                       <div className="w-14 h-14 bg-rose-500 text-white rounded-full flex items-center justify-center mb-3 shadow-[0_0_20px_#ef4444]">
                         <X className="w-7 h-7" strokeWidth={3} />
                       </div>
-                      <p className="text-white font-black text-xs leading-relaxed max-w-xs">{scanError}</p>
+                      <p className="text-white font-bold text-xs leading-relaxed max-w-xs">{scanError}</p>
                       <button
                         type="button"
                         onClick={() => startScanning(scanTarget)}
-                        className="mt-3 bg-white hover:bg-slate-100 text-rose-950 font-black text-[10px] px-4 py-2 rounded-lg transition"
+                        className="mt-3 bg-white hover:bg-slate-100 text-rose-950 font-bold text-sm px-4 py-2 rounded-lg transition"
                       >
                         إعادة محاولة الاتصال
                       </button>
@@ -9274,8 +9247,8 @@ export default function Dashboard() {
                 </div>
 
                 <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl space-y-2">
-                  <span className="font-extrabold text-xs text-slate-800 block">تعليمات استخدام قارئ الباركود السريع:</span>
-                  <ul className="text-[10px] text-slate-500 space-y-1.5 font-bold list-disc pr-4 leading-relaxed">
+                  <span className="font-semibold text-xs text-slate-800 block">تعليمات استخدام قارئ الباركود السريع:</span>
+                  <ul className="text-sm text-slate-500 space-y-1.5 font-bold list-disc pr-4 leading-relaxed">
                     <li>ثبّت علبة الدواء أمام الكاميرا مباشرة بوضوح لتمرير شريط الباركود عبر الليزر الأخضر.</li>
                     <li>تأكد من توافر إضاءة كافية في مكان العمل ومسح أي غبار أو لمعان غير مرغوب فيه.</li>
                     <li>في حال عدم وجود كاميرا، سيعمل نظام محادثة الصيدلية التلقائي (Simulator) على توليد باركود تلقائي مطابق للأدوية الحاضرة بعد 4 ثوانٍ تيسيراً للتجربة.</li>
@@ -9308,16 +9281,16 @@ export default function Dashboard() {
                   <Download className="w-5 h-5 text-slate-700" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-sm text-slate-900">استيراد المخزون الكامل</h3>
-                  <p className="text-[10px] text-slate-400 font-bold">من ملف على هذا الجهاز</p>
+                  <h3 className="font-semibold text-sm text-slate-900">استيراد المخزون الكامل</h3>
+                  <p className="text-sm text-slate-400 font-bold">من ملف على هذا الجهاز</p>
                 </div>
               </div>
               <p className="text-xs text-slate-600 font-medium leading-relaxed">
                 اختر ملف المخزون <strong className="text-slate-900">(JSON)</strong> من جهازك — مثل ملف تصدير ES-PRO — وسيُستبدل مخزونك بالكامل بأصنافه، مع الباركود والأسعار (شراء وبيع) والكميات.
                 الكميات السالبة ستُحوَّل إلى صفر. {currentUser ? 'ستُرفع إلى حسابك السحابي.' : 'ستُحفظ محلياً (غير مسجّل الدخول).'}
               </p>
-              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-[10px] text-rose-800 font-bold">
-                ⚠️ تنبيه: سيتم <strong>حذف كل المواد الحالية</strong> (بما فيها التجريبية) واستبدالها بمواد الملف. لن تتأثّر الفواتير أو المبيعات السابقة. قد تستغرق العملية دقيقة — لا تغلق الصفحة.
+              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-sm text-rose-800 font-bold">
+                <AlertTriangle className="inline w-4 h-4 -mt-0.5 ml-1" />تنبيه: سيتم <strong>حذف كل المواد الحالية</strong> (بما فيها التجريبية) واستبدالها بمواد الملف. لن تتأثّر الفواتير أو المبيعات السابقة. قد تستغرق العملية دقيقة — لا تغلق الصفحة.
               </div>
               <div className="flex gap-2">
                 <button onClick={() => setShowBulkImportConfirm(false)}
@@ -9325,7 +9298,7 @@ export default function Dashboard() {
                   إلغاء
                 </button>
                 <button onClick={() => bulkImportFileRef.current?.click()}
-                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white rounded-xl py-2.5 text-xs font-extrabold transition cursor-pointer">
+                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white rounded-xl py-2.5 text-xs font-semibold transition cursor-pointer">
                   اختر الملف واستبدل المخزون
                 </button>
               </div>
@@ -9362,8 +9335,8 @@ export default function Dashboard() {
                   <Trash2 className="w-5 h-5 text-rose-600" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-sm text-slate-900">حذف مادة من المخزون</h3>
-                  <p className="text-[10px] text-slate-400 font-bold">هذا الإجراء لا يمكن التراجع عنه</p>
+                  <h3 className="font-semibold text-sm text-slate-900">حذف مادة من المخزون</h3>
+                  <p className="text-sm text-slate-400 font-bold">هذا الإجراء لا يمكن التراجع عنه</p>
                 </div>
               </div>
               <p className="text-xs text-slate-600 font-medium leading-relaxed">
@@ -9373,8 +9346,8 @@ export default function Dashboard() {
                 )}
                 {' '}{currentUser ? 'سيُحذف من حسابك السحابي أيضاً.' : 'سيُحذف محلياً (غير مسجّل الدخول).'}
               </p>
-              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-[10px] text-rose-800 font-bold">
-                ⚠️ لن تتأثّر الفواتير أو المبيعات السابقة المسجّلة لهذه المادة.
+              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-sm text-rose-800 font-bold">
+                <AlertTriangle className="inline w-4 h-4 -mt-0.5 ml-1" />لن تتأثّر الفواتير أو المبيعات السابقة المسجّلة لهذه المادة.
               </div>
               <div className="flex gap-2">
                 <button onClick={() => setDeleteMedTarget(null)}
@@ -9382,7 +9355,7 @@ export default function Dashboard() {
                   إلغاء
                 </button>
                 <button onClick={confirmDeleteMedicine}
-                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white rounded-xl py-2.5 text-xs font-extrabold transition cursor-pointer">
+                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white rounded-xl py-2.5 text-xs font-semibold transition cursor-pointer">
                   نعم، احذف المادة
                 </button>
               </div>
@@ -9466,13 +9439,13 @@ export default function Dashboard() {
 
       {/* Hidden financial print div */}
       <div className='print-financial p-8 text-right' dir='rtl'>
-        <h1 className='text-xl font-black mb-2'>صيدلية انوار الحسن — التقرير المالي</h1>
-        <p className='text-sm mb-4'>تاريخ التصدير: {new Date().toLocaleDateString('ar-IQ')}</p>
+        <h1 className='text-xl font-bold mb-2'>صيدلية انوار الحسن — التقرير المالي</h1>
+        <p className='text-sm mb-4'>تاريخ التصدير: {fmtDate(new Date())}</p>
         <table className='w-full border-collapse text-xs mb-4'><tbody>
-          <tr><td className='border p-2 font-bold'>السيولة في الصندوق</td><td className='border p-2 font-mono'>{walletBalance.toLocaleString()} د.ع</td></tr>
-          <tr><td className='border p-2 font-bold'>مبيعات هذا الشهر</td><td className='border p-2 font-mono'>{statsMonth.sales.toLocaleString()} د.ع</td></tr>
-          <tr><td className='border p-2 font-bold'>الربح الإجمالي (الشهر)</td><td className='border p-2 font-mono'>{statsMonth.profit.toLocaleString()} د.ع</td></tr>
-          <tr><td className='border p-2 font-bold'>إجمالي الذمم للموردين</td><td className='border p-2 font-mono'>{totalDebts.toLocaleString()} د.ع</td></tr>
+          <tr><td className='border p-2 font-bold'>السيولة في الصندوق</td><td className='border p-2 font-mono'>{fmtNum(walletBalance)} د.ع</td></tr>
+          <tr><td className='border p-2 font-bold'>مبيعات هذا الشهر</td><td className='border p-2 font-mono'>{fmtNum(statsMonth.sales)} د.ع</td></tr>
+          <tr><td className='border p-2 font-bold'>الربح الإجمالي (الشهر)</td><td className='border p-2 font-mono'>{fmtNum(statsMonth.profit)} د.ع</td></tr>
+          <tr><td className='border p-2 font-bold'>إجمالي الذمم للموردين</td><td className='border p-2 font-mono'>{fmtNum(totalDebts)} د.ع</td></tr>
         </tbody></table>
         <p className='text-xs text-slate-500'>صيدلية انوار الحسن — نظام إدارة صيدليات المتكامل</p>
       </div>
@@ -9485,7 +9458,6 @@ export default function Dashboard() {
       <footer className="bg-slate-950 text-slate-500 py-8 border-t border-slate-900 text-center text-xs font-semibold mt-16">
         <div className="max-w-7xl mx-auto px-4 space-y-2">
           <p>© 2026 ANWAR AL-HASSAN. جميع الحقوق معتمدة ومحفوظة لنقابة صيادلة العراق ومستودعات الأدوية.</p>
-          <p className="text-[10px] text-slate-600 font-mono">Platform Integration Applet ID: {`e3fe30f5-c41f-4ed7`}</p>
         </div>
       </footer>
 

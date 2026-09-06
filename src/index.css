@@ -120,91 +120,21 @@ body::before {
    on <html> so no Dashboard logic needs rewiring)
    ══════════════════════════════════════════════════════════ */
 
-/* ── Floating blob animations ── */
-@keyframes lux-float-a {
-  0%,100% { transform: translate(0,0)    scale(1);    border-radius: 46% 54% 52% 48% / 50% 46% 54% 50%; }
-  38%     { transform: translate(2%,4%)  scale(1.06); border-radius: 58% 42% 44% 56% / 60% 52% 48% 40%; }
-  72%     { transform: translate(-2%,2%) scale(0.96); border-radius: 62% 38% 60% 40% / 40% 62% 38% 62%; }
-}
-@keyframes lux-float-b {
-  0%,100% { transform: translate(0,0)    scale(1);    border-radius: 52% 48% 46% 54% / 54% 50% 50% 46%; }
-  42%     { transform: translate(-3%,3%) scale(1.08); border-radius: 44% 56% 58% 42% / 42% 58% 42% 58%; }
-  78%     { transform: translate(2%,-1%) scale(0.95); border-radius: 60% 40% 44% 56% / 56% 44% 60% 40%; }
-}
 @keyframes lux-shimmer {
   0%   { background-position: -200% center; }
   100% { background-position:  200% center; }
 }
 
-/* ── Body — warm peach gradient + Greek-pharmacy watermarks ── */
+/* ── Body — خلفية كريمية هادئة ──
+   أُزيلت العلامات المائية الأربع والتدرجات الثماني والكرتان المتحركتان (blob) التي كانت
+   تُرسم بـ background-attachment: fixed على كل إطار؛ كانت تستنزف معالج هواتف أندرويد
+   وتقطّع التمرير، ولا تُقرأ أصلاً تحت إضاءة الصيدلية. */
 .pastel body {
   background-color: #FDF6EE;
-  background-image:
-    url('/wm-hygieia.svg'),
-    url('/wm-asclepius.svg'),
-    url('/wm-temple.svg'),
-    url('/wm-texture.svg'),
-    radial-gradient(ellipse 60% 48% at 90%  8%,  rgba(255,185,120,0.32) 0%, transparent 60%),
-    radial-gradient(ellipse 52% 44% at  8% 88%,  rgba(225,152, 80,0.22) 0%, transparent 60%),
-    radial-gradient(ellipse 38% 30% at 50% 48%,  rgba(255,210,160,0.14) 0%, transparent 65%),
-    linear-gradient(155deg, #FDF6EE 0%, #FFE8D4 35%, #FFD4B0 65%, #F5C090 100%);
-  background-position:
-    top 92px right 20px,
-    bottom 84px left 24px,
-    bottom -6px center,
-    top left,
-    0 0, 0 0, 0 0, 0 0;
-  background-size:
-    150px auto,
-    118px auto,
-    340px auto,
-    260px 260px,
-    auto, auto, auto, auto;
-  background-repeat:
-    no-repeat,
-    no-repeat,
-    no-repeat,
-    repeat,
-    no-repeat, no-repeat, no-repeat, no-repeat;
-  background-attachment:
-    fixed, fixed, fixed, fixed,
-    fixed, fixed, fixed, fixed;
   color: var(--lux-warm-dark);
   min-height: 100vh;
   position: relative;
   overflow-x: hidden;
-}
-
-/* Floating warm glow blob — top-right (peach) */
-.pastel body::before {
-  content: '';
-  position: fixed;
-  top: -28vh; right: -20vw;
-  width: 66vw; height: 76vh;
-  background: radial-gradient(ellipse at 45% 45%,
-    rgba(255, 185, 100, 0.22) 0%,
-    rgba(240, 150,  70, 0.12) 42%,
-    transparent 68%);
-  border-radius: 46% 54% 52% 48% / 50% 46% 54% 50%;
-  animation: lux-float-a 24s ease-in-out infinite;
-  pointer-events: none;
-  z-index: -1;
-}
-
-/* Floating warm glow blob — bottom-left (deep peach) */
-.pastel body::after {
-  content: '';
-  position: fixed;
-  bottom: -22vh; left: -16vw;
-  width: 56vw; height: 66vh;
-  background: radial-gradient(ellipse at 50% 50%,
-    rgba(220, 140,  60, 0.18) 0%,
-    rgba(200, 110,  40, 0.09) 42%,
-    transparent 68%);
-  border-radius: 52% 48% 46% 54% / 54% 50% 50% 46%;
-  animation: lux-float-b 30s ease-in-out infinite reverse;
-  pointer-events: none;
-  z-index: -1;
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -412,12 +342,13 @@ body::before {
 
 /* Emerald buttons get a warmer green */
 .pastel .bg-emerald-600 {
-  background: linear-gradient(135deg, #22A060, #1A8048) !important;
+  /* درجات أغمق: النص الأبيض عليها يحقق تباين AA (كان #22A060 يعطي 3.3:1 فقط) */
+  background: linear-gradient(135deg, #047857, #065F46) !important;
   box-shadow: 0 4px 16px rgba(34, 160, 96, 0.30), 0 1px 4px rgba(34, 160, 96, 0.20) !important;
 }
 .pastel .hover\:bg-emerald-700:hover,
 .pastel .bg-emerald-700 {
-  background: linear-gradient(135deg, #1A9055, #157840) !important;
+  background: linear-gradient(135deg, #065F46, #064E3B) !important;
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -504,15 +435,7 @@ body::before {
   overflow: hidden;
 }
 
-/* Luxury card hover lift */
-.pastel .bg-white:hover {
-  transform: translateY(-1px);
-  box-shadow:
-    0 32px 80px rgba(120, 68, 12, 0.22),
-    0  6px 28px rgba(120, 68, 12, 0.14),
-    inset 0 1px 0 rgba(255, 255, 255, 0.98) !important;
-  transition: transform 0.25s ease, box-shadow 0.25s ease;
-}
+/* أُزيل «رفع البطاقة عند المرور» — كان يرفع الجداول والنماذج غير التفاعلية أيضاً فيوحي بأنها أزرار */
 
 /* ══════════════════════════════════════════════════════════
    CUSTOM UTILITIES
