@@ -46,7 +46,7 @@ export default function SupplierPicker({ suppliers, value, onChange, selectClass
           autoFocus
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className={inputClassName || 'w-full bg-white border border-emerald-300 rounded-lg p-2 text-xs font-bold text-slate-700'}
+          className={inputClassName || 'w-full bg-white border border-primary-300 rounded-lg p-2 text-xs font-bold text-slate-700'}
           placeholder="اكتب اسم المورد الجديد — سيُحفظ في قائمة الموردين"
         />
       )}

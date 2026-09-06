@@ -136,7 +136,7 @@ function matchBadge(score: number, isMatched: boolean, byAlias?: boolean, byAI?:
   if (!isMatched) return { label: 'جديد', cls: 'bg-amber-100 text-amber-700 border-amber-200' };
   if (byAlias) return { label: 'محفوظ ✓', cls: 'bg-violet-100 text-violet-700 border-violet-200' };
   if (byAI) return { label: 'حُسم ذكياً', cls: 'bg-sky-100 text-sky-700 border-sky-200' };
-  if (score >= 0.8) return { label: 'تطابق', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
+  if (score >= 0.8) return { label: 'تطابق', cls: 'bg-primary-100 text-primary-700 border-primary-200' };
   return { label: 'تقريبي', cls: 'bg-blue-100 text-blue-700 border-blue-200' };
 }
 
@@ -615,7 +615,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
           <div className="relative w-full max-w-sm" onClick={e => e.stopPropagation()}>
             <video ref={videoRef} playsInline muted className="w-full rounded-2xl bg-black aspect-[3/4] object-cover" />
             {/* إطار استهداف */}
-            <div className="absolute inset-8 border-2 border-emerald-400/80 rounded-2xl pointer-events-none" />
+            <div className="absolute inset-8 border-2 border-primary-400/80 rounded-2xl pointer-events-none" />
             <p className="text-center text-white text-xs font-bold mt-3">وجّه الكاميرا نحو الباركود…</p>
             {scanError && <p className="text-center text-rose-300 text-sm font-bold mt-2">{scanError}</p>}
             <button
@@ -641,7 +641,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
         <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0">
           <div>
             <h2 className="font-semibold text-sm text-slate-900">استيراد فاتورة من صورة</h2>
-            <p className="text-sm text-slate-400 font-bold mt-0.5">
+            <p className="text-sm text-slate-500 font-bold mt-0.5">
               {step === 'key' && 'أدخل مفتاح Gemini API لتفعيل الميزة'}
               {batchTotal > 1 && step !== 'key' && <span className="text-violet-700">فاتورة {batchPos} من {batchTotal} · </span>}
               {step === 'upload' && 'ارفع صورة الفاتورة أو صوّرها مباشرة لاستخراج البيانات تلقائياً'}
@@ -682,11 +682,11 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                       value={apiKey}
                       onChange={e => setApiKey(e.target.value)}
                       placeholder="AIzaSy... أو AQ...."
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 pr-10 text-xs font-mono text-slate-900 focus:outline-emerald-500 text-left"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 pr-10 text-xs tabular-nums text-slate-900 focus:outline-primary-500 text-left"
                       dir="ltr"
                     />
                     <button type="button" onClick={() => setShowKey(s => !s)}
-                      className="absolute inset-y-0 right-3 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer">
+                      className="absolute inset-y-0 right-3 flex items-center text-slate-500 hover:text-slate-600 cursor-pointer">
                       {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
@@ -694,7 +694,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                 <button
                   disabled={!apiKey.trim()}
                   onClick={() => { saveApiKey(apiKey); setStep('upload'); }}
-                  className="w-full bg-emerald-600 text-white rounded-xl py-3 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-emerald-700 transition cursor-pointer"
+                  className="w-full bg-primary-600 text-white rounded-xl py-3 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary-700 transition cursor-pointer"
                 >
                   حفظ المفتاح والمتابعة
                 </button>
@@ -712,7 +712,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                   onDragOver={e => e.preventDefault()}
                   onClick={() => fileInputRef.current?.click()}
                   className={`border-2 border-dashed rounded-2xl flex flex-col items-center justify-center gap-3 cursor-pointer transition p-3
-                    ${imageFiles.length ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 hover:border-emerald-300 bg-slate-50 hover:bg-emerald-50/50'}`}
+                    ${imageFiles.length ? 'border-primary-400 bg-primary-50' : 'border-slate-200 hover:border-primary-300 bg-slate-50 hover:bg-primary-50/50'}`}
                   style={{ minHeight: 180 }}
                 >
                   {imagePreviews.length ? (
@@ -728,7 +728,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                           </button>
                         </div>
                       ))}
-                      <div className="h-36 w-24 rounded-xl border-2 border-dashed border-emerald-300 flex flex-col items-center justify-center text-emerald-700 text-sm font-semibold gap-1">
+                      <div className="h-36 w-24 rounded-xl border-2 border-dashed border-primary-300 flex flex-col items-center justify-center text-primary-700 text-sm font-semibold gap-1">
                         <FileImage className="w-5 h-5" />
                         + صفحة أخرى
                       </div>
@@ -736,11 +736,11 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                   ) : (
                     <>
                       <div className="w-14 h-14 bg-white rounded-2xl shadow-sm flex items-center justify-center border border-slate-200">
-                        <FileImage className="w-7 h-7 text-slate-400" />
+                        <FileImage className="w-7 h-7 text-slate-500" />
                       </div>
                       <div className="text-center">
                         <p className="text-xs font-semibold text-slate-700">اسحب الصورة هنا أو انقر للاختيار</p>
-                        <p className="text-sm text-slate-400 font-bold mt-1">JPG, PNG, WEBP — يمكن اختيار عدة صور لفاتورة طويلة (تُضغط تلقائياً قبل الإرسال)</p>
+                        <p className="text-sm text-slate-500 font-bold mt-1">JPG, PNG, WEBP — يمكن اختيار عدة صور لفاتورة طويلة (تُضغط تلقائياً قبل الإرسال)</p>
                       </div>
                     </>
                   )}
@@ -749,7 +749,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                 </div>
 
                 {imageFiles.length > 0 && (
-                  <p className="text-sm text-emerald-700 font-bold text-center">
+                  <p className="text-sm text-primary-700 font-bold text-center">
                     ✓ {imageFiles.length === 1 ? imageFiles[0].name : `${imageFiles.length} صور — صفحات متتابعة لفاتورة واحدة`}
                   </p>
                 )}
@@ -764,12 +764,12 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                         إغلاق الكاميرا
                       </button>
                       <button type="button" onClick={capturePhoto}
-                        className="flex-1 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer">
+                        className="flex-1 py-3 rounded-xl bg-primary-500 hover:bg-primary-400 text-white text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer">
                         <Camera className="w-4 h-4" />
                         التقاط {imageFiles.length > 0 ? `صفحة ${imageFiles.length + 1}` : 'الفاتورة'}
                       </button>
                     </div>
-                    <p className="text-sm text-slate-400 font-bold text-center">ثبّت الهاتف فوق الفاتورة كاملةً بإضاءة جيدة، ثم التقط. صفحة ثانية؟ التقط مرة أخرى.</p>
+                    <p className="text-sm text-slate-500 font-bold text-center">ثبّت الهاتف فوق الفاتورة كاملةً بإضاءة جيدة، ثم التقط. صفحة ثانية؟ التقط مرة أخرى.</p>
                   </div>
                 )}
                 {cameraError && (
@@ -777,7 +777,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                 )}
                 {!cameraOpen && (
                   <button type="button" onClick={openCamera}
-                    className="w-full py-3 rounded-xl border-2 border-emerald-300 bg-emerald-50 text-emerald-800 text-xs font-semibold flex items-center justify-center gap-2 hover:bg-emerald-100 transition cursor-pointer">
+                    className="w-full py-3 rounded-xl border-2 border-primary-300 bg-primary-50 text-primary-800 text-xs font-semibold flex items-center justify-center gap-2 hover:bg-primary-100 transition cursor-pointer">
                     <Camera className="w-4 h-4" />
                     تصوير الفاتورة بالكاميرا مباشرة
                   </button>
@@ -848,7 +848,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                       setBatchDone(0);
                       startInvoice(batch[0]);
                     }}
-                    className="flex-1 bg-emerald-600 text-white rounded-xl py-3 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-emerald-700 transition flex items-center justify-center gap-2 cursor-pointer"
+                    className="flex-1 bg-primary-600 text-white rounded-xl py-3 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary-700 transition flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <Upload className="w-4 h-4" />
                     {queue.length + (imageFiles.length ? 1 : 0) > 1
@@ -863,8 +863,8 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
             {step === 'processing' && (
               <motion.div key="proc" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                 className="p-10 flex flex-col items-center gap-5 text-center">
-                <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center border-2 border-emerald-200">
-                  <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
+                <div className="w-16 h-16 bg-primary-50 rounded-full flex items-center justify-center border-2 border-primary-200">
+                  <Loader2 className="w-8 h-8 text-primary-600 animate-spin" />
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-slate-900">{progressMsg || 'جارٍ قراءة الفاتورة...'}</p>
@@ -872,7 +872,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                 </div>
                 <div className="flex gap-1.5 mt-2">
                   {[0, 1, 2].map(i => (
-                    <motion.div key={i} className="w-2 h-2 bg-emerald-400 rounded-full"
+                    <motion.div key={i} className="w-2 h-2 bg-primary-400 rounded-full"
                       animate={{ y: [0, -8, 0] }}
                       transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.15 }} />
                   ))}
@@ -889,7 +889,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                     ورقم الفاتورة والتاريخ بيانات ثانوية هادئة */}
                 <div className="mx-4 sm:mx-5 mt-4 mb-2 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 flex flex-wrap items-start gap-x-6 gap-y-1.5 text-right">
                   <div className="flex-1 min-w-[200px]">
-                    <p className="text-sm text-slate-400 font-bold mb-1">المورد / المذخر</p>
+                    <p className="text-sm text-slate-500 font-bold mb-1">المورد / المذخر</p>
                     <SupplierPicker suppliers={suppliers} value={supplierName} onChange={setSupplierName} />
                     {/* تلميح المورد بلا تعبئة تلقائية: الاسم المقروء من الصورة يُقترح بنقرة، لا يُلتقط بصمت */}
                     {!supplierName.trim() && (extractedInvoice?.supplierName || '').trim() && (() => {
@@ -910,14 +910,14 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                   </div>
                   {extractedInvoice?.invoiceNo && (
                     <div className="text-right">
-                      <p className="text-sm text-slate-400 font-bold">رقم الفاتورة</p>
-                      <p className="text-xs font-semibold text-slate-700 font-mono">{extractedInvoice.invoiceNo}</p>
+                      <p className="text-sm text-slate-500 font-bold">رقم الفاتورة</p>
+                      <p className="text-xs font-semibold text-slate-700 tabular-nums">{extractedInvoice.invoiceNo}</p>
                     </div>
                   )}
                   {extractedInvoice?.date && (
                     <div className="text-right">
-                      <p className="text-sm text-slate-400 font-bold">التاريخ</p>
-                      <p className="text-xs font-semibold text-slate-700 font-mono">{extractedInvoice.date}</p>
+                      <p className="text-sm text-slate-500 font-bold">التاريخ</p>
+                      <p className="text-xs font-semibold text-slate-700 tabular-nums">{extractedInvoice.date}</p>
                     </div>
                   )}
                 </div>
@@ -968,9 +968,9 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
 
                 {/* صفّ الإحصاءات — أقراص مدمجة خفيفة بدل ثلاث بطاقات ضخمة + إجراءات جماعية */}
                 <div className="mx-4 sm:mx-5 mb-3 flex items-center gap-2 flex-wrap">
-                  <span className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 bg-emerald-50 border border-emerald-100 rounded-full px-3.5 py-1.5">
-                    <span className="text-xs font-semibold text-emerald-700">{matchedCount}</span>
-                    <span className="text-sm text-emerald-600 font-bold">مطابق</span>
+                  <span className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 bg-primary-50 border border-primary-100 rounded-full px-3.5 py-1.5">
+                    <span className="text-xs font-semibold text-primary-700">{matchedCount}</span>
+                    <span className="text-sm text-primary-600 font-bold">مطابق</span>
                   </span>
                   <span className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 bg-amber-50 border border-amber-100 rounded-full px-3.5 py-1.5">
                     <span className="text-xs font-semibold text-amber-700">{newCount}</span>
@@ -1030,19 +1030,19 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                               <input
                                 value={item.arabicName}
                                 onChange={e => updateItem(item.id, { arabicName: e.target.value })}
-                                className="flex-1 min-w-0 text-sm font-semibold text-slate-900 bg-transparent border-b border-transparent focus:border-emerald-400 focus:outline-none pb-0.5"
+                                className="flex-1 min-w-0 text-sm font-semibold text-slate-900 bg-transparent border-b border-transparent focus:border-primary-400 focus:outline-none pb-0.5"
                                 placeholder="الاسم العربي"
                               />
                               {/* الشركة المصنّعة — بجانب الاسم مباشرة (تُملأ في المخزون عند المطابقة إن كان الحقل فارغاً) */}
                               <input
                                 value={item.company}
                                 onChange={e => updateItem(item.id, { company: e.target.value })}
-                                className="shrink-0 w-24 min-w-0 text-sm font-bold text-slate-500 bg-transparent border-b border-slate-100 focus:border-emerald-400 focus:outline-none pb-0.5"
+                                className="shrink-0 w-24 min-w-0 text-sm font-bold text-slate-500 bg-transparent border-b border-slate-100 focus:border-primary-400 focus:outline-none pb-0.5"
                                 placeholder="الشركة"
                               />
                             </div>
                             {item.rawName !== item.arabicName && (
-                              <p className="text-sm text-slate-400 font-mono truncate mt-0.5">{item.rawName}</p>
+                              <p className="text-sm text-slate-500 tabular-nums truncate mt-0.5">{item.rawName}</p>
                             )}
                           </div>
                           <button onClick={() => removeItem(item.id)}
@@ -1055,12 +1055,12 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                             المخزون إن وُجد (فلا يضيع) أو من اسم الفاتورة، وأي تعديل هنا هو ما يُعتمد
                             في المخزون عند الاعتماد (انظر handleConfirm) بدل القديم المحفوظ صامتاً. */}
                         <div className="flex items-center gap-2 pr-1">
-                          <span className="text-sm font-bold text-slate-400 shrink-0">الاسم الإنكليزي</span>
+                          <span className="text-sm font-bold text-slate-500 shrink-0">الاسم الإنكليزي</span>
                           <input
                             dir="ltr"
                             value={item.nameEnOverride ?? (item.matchedMedicine?.nameEn?.trim() || cleanEnglishName(item.rawName, item.company))}
                             onChange={e => updateItem(item.id, { nameEnOverride: e.target.value })}
-                            className="flex-1 min-w-0 text-left text-sm font-mono font-bold text-slate-700 bg-transparent border-b border-slate-100 focus:border-emerald-400 focus:outline-none pb-0.5"
+                            className="flex-1 min-w-0 text-left text-sm tabular-nums font-bold text-slate-700 bg-transparent border-b border-slate-100 focus:border-primary-400 focus:outline-none pb-0.5"
                             placeholder="English name"
                           />
                         </div>
@@ -1068,13 +1068,13 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                         {/* Row 2: medicine match */}
                         <div className="relative">
                           {item.matchedMedicine ? (
-                            <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                              <span className="flex-1 text-sm font-semibold text-emerald-800 truncate">
+                            <div className="flex items-center gap-2 bg-primary-50 border border-primary-100 rounded-xl px-3 py-2">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-primary-600 shrink-0" />
+                              <span className="flex-1 text-sm font-semibold text-primary-800 truncate">
                                 {item.matchedMedicine.nameAr}
                               </span>
                               <button onClick={() => clearMatch(item.id)}
-                                className="text-slate-400 hover:text-rose-600 transition cursor-pointer">
+                                className="text-slate-500 hover:text-rose-600 transition cursor-pointer">
                                 <X className="w-3 h-3" />
                               </button>
                             </div>
@@ -1107,7 +1107,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                                     value={searchQuery}
                                     onChange={e => setSearchQuery(e.target.value)}
                                     placeholder="ابحث بالاسم..."
-                                    className="w-full text-sm font-bold bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 focus:outline-emerald-400"
+                                    className="w-full text-sm font-bold bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 focus:outline-primary-400"
                                   />
                                 </div>
                                 <div className="max-h-40 overflow-y-auto">
@@ -1125,9 +1125,9 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                                     return topMatches.length ? topMatches : inventory.slice(0, 6);
                                   })()).map(med => (
                                     <button key={med.id} onClick={() => selectMedicine(item.id, med)}
-                                      className="w-full px-3 py-2 hover:bg-emerald-50 text-right transition cursor-pointer">
+                                      className="w-full px-3 py-2 hover:bg-primary-50 text-right transition cursor-pointer">
                                       <p className="text-sm font-semibold text-slate-900">{med.nameAr}</p>
-                                      <p className="text-sm text-slate-400 font-mono">{med.nameEn}</p>
+                                      <p className="text-sm text-slate-500 tabular-nums">{med.nameEn}</p>
                                     </button>
                                   ))}
                                 </div>
@@ -1149,7 +1149,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                             <label className="text-sm font-bold text-slate-500 block text-center">علب</label>
                             <input type="number" min={1} value={item.quantityBoxes}
                               onChange={e => updateItem(item.id, { quantityBoxes: Math.max(1, Number(e.target.value)) })}
-                              className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-900 text-center focus:outline-emerald-400" />
+                              className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-900 text-center focus:outline-primary-400" />
                           </div>
                           {/* البونص: علب مجانية تدخل المخزون وتخفّض التكلفة الفعلية دون أن تدخل في المبلغ المدفوع */}
                           <div className="space-y-1">
@@ -1163,17 +1163,17 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                             <label className="text-sm font-bold text-slate-500 block text-center">شريط/علبة</label>
                             <input type="number" min={1} value={item.stripsPerBox}
                               onChange={e => updateItem(item.id, { stripsPerBox: Math.max(1, Number(e.target.value)) })}
-                              className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-900 text-center focus:outline-emerald-400" />
+                              className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-900 text-center focus:outline-primary-400" />
                           </div>
                           <div className="space-y-1">
                             <label className="text-sm font-bold text-slate-500 block text-center">سعر/علبة</label>
                             <input type="number" min={0} value={item.pricePerBox}
                               onChange={e => updateItem(item.id, { pricePerBox: Math.max(0, Number(e.target.value)) })}
-                              className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-900 text-center focus:outline-emerald-400" />
+                              className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-900 text-center focus:outline-primary-400" />
                           </div>
                           <div className="space-y-1">
-                            <label className={`text-sm font-bold block text-center ${deviates ? 'text-orange-700' : 'text-emerald-700'}`}>س/شريط</label>
-                            <div className={`w-full border rounded-lg px-2 py-1.5 text-xs font-semibold text-center ${deviates ? 'bg-orange-50 border-orange-300 text-orange-800 ring-2 ring-orange-200' : 'bg-emerald-50 border-emerald-100 text-emerald-700'}`}
+                            <label className={`text-sm font-bold block text-center ${deviates ? 'text-orange-700' : 'text-primary-700'}`}>س/شريط</label>
+                            <div className={`w-full border rounded-lg px-2 py-1.5 text-xs font-semibold text-center ${deviates ? 'bg-orange-50 border-orange-300 text-orange-800 ring-2 ring-orange-200' : 'bg-primary-50 border-primary-100 text-primary-700'}`}
                               title={deviates ? `يختلف عن آخر شراء بنسبة ${Math.round(Math.abs(deviation!) * 100)}% — تحقّق من الرقم في الفاتورة` : undefined}>
                               {fmtNum(pricePerStrip)}
                             </div>
@@ -1229,7 +1229,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                                   <button
                                     type="button"
                                     onClick={() => setExpiryPickerId(isOpen ? null : item.id)}
-                                    className="w-full flex items-center justify-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-900 cursor-pointer focus:outline-emerald-400"
+                                    className="w-full flex items-center justify-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-900 cursor-pointer focus:outline-primary-400"
                                     dir="ltr"
                                   >
                                     <span>{curM || '—'}</span>
@@ -1247,7 +1247,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                                             <button key={m} type="button"
                                               onClick={() => setExpiry(m, curY || baseYear)}
                                               className={`w-11 py-1 rounded-md text-xs font-semibold text-center cursor-pointer transition ${
-                                                m === curM ? 'bg-emerald-600 text-white' : 'text-slate-700 hover:bg-emerald-50'
+                                                m === curM ? 'bg-primary-600 text-white' : 'text-slate-700 hover:bg-primary-50'
                                               }`}>
                                               {m}
                                             </button>
@@ -1259,8 +1259,8 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                                           {years.map(y => (
                                             <button key={y} type="button"
                                               onClick={() => { setExpiry(curM || 12, y); setExpiryPickerId(null); }}
-                                              className={`w-14 py-1 rounded-md text-xs font-semibold text-center cursor-pointer transition font-mono ${
-                                                y === curY ? 'bg-emerald-600 text-white' : 'text-slate-700 hover:bg-emerald-50'
+                                              className={`w-14 py-1 rounded-md text-xs font-semibold text-center cursor-pointer transition tabular-nums ${
+                                                y === curY ? 'bg-primary-600 text-white' : 'text-slate-700 hover:bg-primary-50'
                                               }`}>
                                               {y}
                                             </button>
@@ -1275,7 +1275,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                           </div>
                           <div className="space-y-1">
                             <label className="text-sm font-bold text-slate-500 block text-center">إجمالي الأشرطة</label>
-                            <div className="w-full bg-slate-100/70 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-700 text-center font-mono">
+                            <div className="w-full bg-slate-100/70 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-700 text-center tabular-nums">
                               {totalStrips} شريط{bonus > 0 && <span className="text-teal-700 font-bold"> (منها {bonus * item.stripsPerBox} بونص)</span>}
                             </div>
                           </div>
@@ -1300,7 +1300,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                                   setEditingStockId(null);
                                 }}
                                 onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingStockId(null); }}
-                                className="w-24 bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-semibold text-slate-900 text-center focus:outline-emerald-400"
+                                className="w-24 bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-semibold text-slate-900 text-center focus:outline-primary-400"
                               />
                             </div>
                           ) : (
@@ -1327,9 +1327,9 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                                   </button>
                                 )}
                               </span>
-                              <span className={`text-xs font-semibold font-mono ${corrected ? 'text-amber-800' : 'text-slate-700'}`}>
+                              <span className={`text-xs font-semibold tabular-nums ${corrected ? 'text-amber-800' : 'text-slate-700'}`}>
                                 {corrected && (
-                                  <span className="text-sm text-slate-400 line-through ml-1">{fmtNum(item.matchedMedicine.availableQuantity)}</span>
+                                  <span className="text-sm text-slate-500 line-through ml-1">{fmtNum(item.matchedMedicine.availableQuantity)}</span>
                                 )}
                                 {fmtNum(currentStock)} شريط
                               </span>
@@ -1350,14 +1350,14 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                                 value={item.barcode || ''}
                                 onChange={e => applyBarcode(item.id, e.target.value)}
                                 placeholder="امسح بالكاميرا أو اكتب الباركود — يُولَّد تلقائياً إن تُرك فارغاً"
-                                className={`flex-1 min-w-0 bg-white border rounded-lg px-3 py-1.5 text-sm font-mono font-bold text-slate-900 text-center focus:outline-emerald-400 ${dupMed ? 'border-rose-400 bg-rose-50' : 'border-slate-200'}`}
+                                className={`flex-1 min-w-0 bg-white border rounded-lg px-3 py-1.5 text-sm tabular-nums font-bold text-slate-900 text-center focus:outline-primary-400 ${dupMed ? 'border-rose-400 bg-rose-50' : 'border-slate-200'}`}
                                 dir="ltr"
                               />
                               <button
                                 type="button"
                                 onClick={() => startScan(item.id)}
                                 title="قراءة الباركود بالكاميرا"
-                                className="shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-3 py-1.5 flex items-center gap-1.5 text-sm font-bold transition cursor-pointer"
+                                className="shrink-0 bg-primary-600 hover:bg-primary-700 text-white rounded-lg px-3 py-1.5 flex items-center gap-1.5 text-sm font-bold transition cursor-pointer"
                               >
                                 <Barcode className="w-3.5 h-3.5" />
                                 <span className="hidden sm:inline">قارئ باركود</span>
@@ -1393,7 +1393,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
               <button
                 disabled={validCount === 0 || hasDuplicateBarcode}
                 onClick={() => handleConfirm(false)}
-                className="flex-1 bg-emerald-600 text-white rounded-xl py-3 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-emerald-700 transition flex items-center justify-center gap-2 cursor-pointer"
+                className="flex-1 bg-primary-600 text-white rounded-xl py-3 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary-700 transition flex items-center justify-center gap-2 cursor-pointer"
               >
                 <CheckCircle2 className="w-4 h-4" />
                 {queue.length > 0
@@ -1405,7 +1405,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                 <button
                   disabled={hasDuplicateBarcode}
                   onClick={() => handleConfirm(true)}
-                  className="flex-none px-4 py-3 border border-emerald-300 bg-emerald-50 text-emerald-800 rounded-xl text-xs font-semibold hover:bg-emerald-100 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="flex-none px-4 py-3 border border-primary-300 bg-primary-50 text-primary-800 rounded-xl text-xs font-semibold hover:bg-primary-100 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                   title="إضافة الأصناف المطابقة فقط وتجاهل غير المطابقة"
                 >
                   المطابق فقط ({matchedValidCount})
