@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { Fragment, useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X, Upload, Loader2, CheckCircle2, AlertCircle, Search,
@@ -602,7 +602,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
   }).slice(0, 8);
 
   return (
-    <div className="fixed inset-y-0 left-0 z-50 flex max-w-full">
+    <div className="fixed inset-y-0 right-0 z-50 flex max-w-full">
       {/* Backdrop — أخف من نافذة منبثقة عادية ومن دون تشويش، يُبقي صفحة الشراء ظاهرة خلفه
           فتبدو اللوحة امتداداً لنفس الشاشة بدل نافذة منفصلة */}
       <motion.div
@@ -634,28 +634,55 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
       )}
 
       <motion.div
-        initial={{ x: '-100%' }}
+        initial={{ x: '100%' }}
         animate={{ x: 0 }}
-        exit={{ x: '-100%' }}
+        exit={{ x: '100%' }}
         transition={{ type: 'tween', duration: 0.25, ease: 'easeOut' }}
-        className="relative bg-white w-full sm:w-[600px] lg:w-[760px] h-full flex flex-col shadow-2xl rounded-r-3xl"
+        className="relative bg-white w-full sm:w-[600px] lg:w-[760px] h-full flex flex-col shadow-2xl rounded-l-3xl"
         dir="rtl"
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0">
-          <div>
-            <h2 className="font-semibold text-sm text-slate-900">استيراد فاتورة من صورة</h2>
-            <p className="text-sm text-slate-500 font-bold mt-0.5">
-              {step === 'key' && 'أدخل مفتاح Gemini API لتفعيل الميزة'}
-              {batchTotal > 1 && step !== 'key' && <span className="text-special-700">فاتورة {batchPos} من {batchTotal} · </span>}
-              {step === 'upload' && 'ارفع صورة الفاتورة أو صوّرها مباشرة لاستخراج البيانات تلقائياً'}
-              {step === 'processing' && 'جارٍ تحليل الفاتورة بالذكاء الاصطناعي...'}
-              {step === 'review' && `${items.length} صنف مستخرج · ${matchedCount} مطابق · ${newCount} جديد`}
-            </p>
+        <div className="p-5 border-b border-slate-100 shrink-0 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-semibold text-sm text-slate-900">استيراد فاتورة من صورة</h2>
+              <p className="text-sm text-slate-500 font-bold mt-0.5">
+                {step === 'key' && 'أدخل مفتاح Gemini API لتفعيل الميزة'}
+                {batchTotal > 1 && step !== 'key' && <span className="text-special-700">فاتورة {batchPos} من {batchTotal} · </span>}
+                {step === 'upload' && 'ارفع صورة الفاتورة أو صوّرها مباشرة لاستخراج البيانات تلقائياً'}
+                {step === 'processing' && 'جارٍ تحليل الفاتورة بالذكاء الاصطناعي...'}
+                {step === 'review' && `${items.length} صنف مستخرج · ${matchedCount} مطابق · ${newCount} جديد`}
+              </p>
+            </div>
+            <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-xl transition cursor-pointer">
+              <X className="w-4 h-4 text-slate-500" />
+            </button>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-xl transition cursor-pointer">
-            <X className="w-4 h-4 text-slate-500" />
-          </button>
+
+          {/* مؤشر الخطوات: 1 مفتاح · 2 صورة · 3 مراجعة (processing تصنيفها ضمن خطوة الصورة — انتقالية وليست قراراً من المستخدم) */}
+          <div className="flex items-center gap-1.5" aria-label="خطوات استيراد الفاتورة">
+            {(['key', 'upload', 'review'] as const).map((s, idx, arr) => {
+              const stageOf = (st: Step) => st === 'key' ? 0 : (st === 'upload' || st === 'processing') ? 1 : 2;
+              const current = stageOf(step);
+              const done = idx < current;
+              const active = idx === current;
+              return (
+                <Fragment key={s}>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                      done ? 'bg-primary-600 text-white' : active ? 'bg-primary-100 text-primary-700 ring-2 ring-primary-300' : 'bg-slate-100 text-slate-500'
+                    }`}>
+                      {done ? '✓' : idx + 1}
+                    </span>
+                    <span className={`text-sm font-semibold ${active ? 'text-primary-700' : done ? 'text-slate-600' : 'text-slate-500'}`}>
+                      {s === 'key' ? 'مفتاح' : s === 'upload' ? 'صورة' : 'مراجعة'}
+                    </span>
+                  </div>
+                  {idx < arr.length - 1 && <span className={`h-px flex-1 ${done ? 'bg-primary-300' : 'bg-slate-200'}`} />}
+                </Fragment>
+              );
+            })}
+          </div>
         </div>
 
         {/* Content */}
@@ -1014,9 +1041,18 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                     const deviates = deviation !== null && Math.abs(deviation) > PRICE_DEVIATION_LIMIT;
                     const isSearchingThis = searchOpen === item.id;
 
+                    // حدود البطاقة تعكس درجة الثقة بدل حد أسود ثقيل واحد لكل الأصناف:
+                    // أحمر = غير واضح أو انحراف سعري يحتاج مراجعة، أخضر = مطابقة مؤكَّدة، كهرماني = صنف جديد
+                    const needsAttention = item.uncertain || deviates;
+                    const cardBorderCls = needsAttention
+                      ? 'border-2 border-danger-400 ring-2 ring-danger-100'
+                      : item.matchedMedicine
+                        ? 'border border-primary-200'
+                        : 'border border-warn-200';
+
                     return (
                       <div key={item.id}
-                        className={`bg-slate-50 border-2 rounded-2xl p-3.5 space-y-2.5 text-right transition ${item.uncertain ? 'border-danger-400 ring-2 ring-danger-100' : 'border-black'}`}>
+                        className={`bg-slate-50 rounded-2xl p-3.5 space-y-2.5 text-right transition ${cardBorderCls}`}>
 
                         {/* الصف الأول: الشارة، ثم الاسم العربي وبجانبه الشركة، والحذف في الطرف البعيد */}
                         <div className="flex items-start gap-2">
