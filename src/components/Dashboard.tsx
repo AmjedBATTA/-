@@ -213,6 +213,9 @@ export default function Dashboard() {
 
   // --- POS CART STATES ---
   const [currentCart, setCurrentCart] = useState<POSItem[]>([]);
+  // ورقة السلة السفلية على الهاتف: تُغلق وحدها متى فرغت السلة (دُفعت الفاتورة أو مُسحت)
+  const [showMobileCart, setShowMobileCart] = useState(false);
+  useEffect(() => { if (currentCart.length === 0) setShowMobileCart(false); }, [currentCart.length]);
   // حاوية سلة البيع القابلة للتمرير — تُصعَّد لأعلاها كلما دخلت مادة جديدة إلى القمة
   // (بالباركود أو الاسم أو النقر)، حتى لو كان المستخدم مرّر لمنتصف/نهاية القائمة.
   const cartListRef = useRef<HTMLDivElement>(null);
@@ -4348,52 +4351,80 @@ export default function Dashboard() {
               {activeTab === 'pos' && (
                 <motion.div
                   key="pos"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  // بلا y (بخلاف بقية التبويبات): إبقاء الانتقال بلا transform حتى لا يصبح
+                  // هذا العنصر هو الحاوية المرجعية لكل fixed بداخله (ورقة السلة والشريط السفلي
+                  // على الهاتف) بدل نافذة العرض — وهي مشكلة CSS معروفة مع أي أب له transform.
                   className="grid grid-cols-1 lg:grid-cols-12 gap-6"
                 >
                   
-                  {/* Left Column: POS Register — dark theme */}
-                  <div className="lg:col-span-7 order-first lg:order-none bg-slate-900 rounded-3xl p-5 shadow-lg flex flex-col gap-3">
+                  {/* Left Column: POS Register — دائم الظهور على سطح المكتب؛ على الهاتف يبقى
+                      شريط البحث فقط هنا (لاصق أعلى الشاشة) وتنزلق السلة كورقة سفلية عند الحاجة
+                      كي يصل الكاشير للأصناف فوراً بدل أن تحجب السلة الشاشة أولاً. */}
+                  <div className="order-first lg:order-none lg:col-span-7 flex flex-col gap-3 lg:bg-slate-900 lg:rounded-3xl lg:p-5 lg:shadow-lg">
 
-                    {/* Search bar — فوق سلة البيع */}
-                    <POSSearchBar
-                      ref={posSearchRef}
-                      onQueryChange={handlePOSQueryChange}
-                      onEnter={handlePOSEnter}
-                      onScanClick={handlePOSScanClick}
-                    />
-
-                    {/* Header */}
-                    <div className="flex justify-between items-center border-b border-slate-700 pb-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 bg-primary-400 rounded-full animate-pulse" />
-                        <h3 className="font-semibold text-white text-sm">سلة البيع</h3>
-                        <span className="hidden lg:inline text-xs text-slate-500 font-bold mr-1" title="اختصارات لوحة المفاتيح (لا تعمل أثناء الكتابة في حقل، عدا F2 وF9)">
-                          F2 بحث · F4 خصم · F8 رسمي · F9 دفع · Esc مسح · ↑↓ كمية
-                        </span>
-                        {currentCart.length > 0 && (
-                          <span className="bg-primary-500 text-white text-sm font-bold px-2 py-0.5 rounded-full">
-                            {currentCart.length}
-                          </span>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => setCurrentCart([])}
-                        className="text-slate-500 hover:text-danger-400 transition text-sm font-bold flex items-center gap-1 cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>مسح</span>
-                      </button>
+                    {/* شريط البحث لاصق أعلى الشاشة على الهاتف — في صندوق خاص به بخلفية ضبابية،
+                        منفصل عمداً عن الحاوية الخارجية: أي عنصر أب يحمل backdrop-blur أو transform
+                        يصبح هو المرجع لأبنائه من نوع fixed بدل نافذة العرض (مشكلة CSS قياسية)،
+                        وورقة السلة والشريط السفلي بالأسفل كلاهما fixed ويجب أن يبقيا نسبيين للشاشة. */}
+                    <div className="sticky top-14 z-20 -mx-4 px-4 py-2.5 bg-page/95 backdrop-blur lg:static lg:mx-0 lg:px-0 lg:py-0 lg:bg-transparent lg:backdrop-blur-none">
+                      <POSSearchBar
+                        ref={posSearchRef}
+                        onQueryChange={handlePOSQueryChange}
+                        onEnter={handlePOSEnter}
+                        onScanClick={handlePOSScanClick}
+                      />
                     </div>
 
-                    {currentCart.length === 0 ? (
-                      <div className="text-center py-14 space-y-3 flex-1 flex flex-col items-center justify-center">
-                        <ShoppingBag className="w-10 h-10 text-slate-600 mx-auto" />
-                        <p className="text-xs text-slate-500 font-semibold">السلة فارغة — اختر دواءً من اليمين</p>
+                    {/* خلفية شفافة تُغلق ورقة السلة عند النقر خارجها — على الهاتف فقط */}
+                    {showMobileCart && (
+                      <div className="fixed inset-0 z-30 bg-ink/50 lg:hidden" onClick={() => setShowMobileCart(false)} aria-hidden="true" />
+                    )}
+
+                    {/* محتوى السلة: عمود ثابت على سطح المكتب، ورقة سفلية منزلقة على الهاتف
+                        تُفتح وتُغلق بـ showMobileCart (تُغلق تلقائياً متى فرغت السلة). */}
+                    <div className={`${showMobileCart ? 'flex' : 'hidden'} lg:contents flex-col gap-3 fixed inset-x-0 bottom-0 z-40 max-h-[85vh] bg-slate-900 rounded-t-3xl shadow-2xl p-4 pb-[max(1rem,env(safe-area-inset-bottom))] overflow-y-auto`}>
+
+                      {/* مقبض السحب وزر الإغلاق — الهاتف فقط */}
+                      <div className="flex items-center justify-between lg:hidden -mt-1">
+                        <span className="w-10 h-1.5 rounded-full bg-slate-700 mx-auto" />
+                        <button type="button" onClick={() => setShowMobileCart(false)} aria-label="إغلاق السلة"
+                          className="absolute left-3 top-2 p-1.5 text-slate-500 hover:text-white cursor-pointer">
+                          <X className="w-4 h-4" />
+                        </button>
                       </div>
-                    ) : (
+
+                      {/* Header */}
+                      <div className="flex justify-between items-center border-b border-slate-700 pb-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 bg-primary-400 rounded-full animate-pulse" />
+                          <h3 className="font-semibold text-white text-sm">سلة البيع</h3>
+                          <span className="hidden lg:inline text-xs text-slate-500 font-bold mr-1" title="اختصارات لوحة المفاتيح (لا تعمل أثناء الكتابة في حقل، عدا F2 وF9)">
+                            F2 بحث · F4 خصم · F8 رسمي · F9 دفع · Esc مسح · ↑↓ كمية
+                          </span>
+                          {currentCart.length > 0 && (
+                            <span className="bg-primary-500 text-white text-sm font-bold px-2 py-0.5 rounded-full">
+                              {currentCart.length}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => setCurrentCart([])}
+                          className="text-slate-500 hover:text-danger-400 transition text-sm font-bold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>مسح</span>
+                        </button>
+                      </div>
+
+                      {currentCart.length === 0 ? (
+                        <div className="text-center py-14 space-y-3 flex-1 flex flex-col items-center justify-center">
+                          <ShoppingBag className="w-10 h-10 text-slate-600 mx-auto" />
+                          <p className="text-xs text-slate-500 font-semibold">السلة فارغة — اختر دواءً من القائمة</p>
+                        </div>
+                      ) : (
                       <form ref={posFormRef} onSubmit={handleCheckoutPOS} className="flex flex-col gap-4 flex-1">
 
                         {/* Cart Items */}
@@ -4476,6 +4507,23 @@ export default function Dashboard() {
                         </button>
 
                       </form>
+                      )}
+                    </div>
+
+                    {/* شريط ملخّص ثابت أسفل الشاشة على الهاتف — يفتح ورقة السلة عند النقر.
+                        يظهر فقط والسلة مغلقة وفيها أصناف، حتى لا يتكرر مع زر الإتمام داخل الورقة. */}
+                    {!showMobileCart && currentCart.length > 0 && (
+                      <button type="button" onClick={() => setShowMobileCart(true)}
+                        className="lg:hidden fixed inset-x-3 bottom-3 z-30 bg-slate-900 text-white rounded-2xl shadow-2xl px-4 py-3 flex items-center justify-between gap-3 cursor-pointer">
+                        <span className="flex items-center gap-2 text-sm font-bold">
+                          <ShoppingBag className="w-4 h-4 text-primary-400" />
+                          {currentCart.length} صنف
+                        </span>
+                        <span className="flex items-center gap-2">
+                          <span className="text-money-400 font-bold tabular-nums text-base">{fmtNum(posTotal)} د.ع</span>
+                          <span className="bg-primary-600 text-white text-sm font-bold px-3 py-1.5 rounded-xl">إتمام</span>
+                        </span>
+                      </button>
                     )}
                   </div>
 
