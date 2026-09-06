@@ -4623,7 +4623,7 @@ export default function Dashboard() {
     return (
       <div className="bg-gradient-to-br from-primary-50 via-slate-50 to-teal-50 min-h-screen flex items-center justify-center p-4" dir="rtl">
         <div className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-slate-100 p-8 text-center">
-          <div className="w-16 h-16 mx-auto mb-5 rounded-2xl bg-primary-600 flex items-center justify-center text-white text-2xl font-bold">أ</div>
+          <img src="/icon.svg" alt="" className="w-16 h-16 mx-auto mb-5 rounded-2xl shadow-sm" />
           <h1 className="text-xl font-bold text-slate-800 mb-1">صيدلية انوار الحسن</h1>
           <p className="text-sm text-slate-500 mb-6">نظام إدارة الصيدلية — تسجيل الدخول مطلوب</p>
 
