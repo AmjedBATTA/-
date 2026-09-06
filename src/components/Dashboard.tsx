@@ -49,7 +49,7 @@ import { normalizeName } from '../utils/normalizeName';
 // قواعد قائمة نواقص الأدوية: الترتيب بالأحدث أولاً، وتقسيمها على حدّ الـ 5 أيام
 import { compareShortagesNewestFirst, splitShortagesByAge } from '../utils/shortages';
 import type { POSItem, SaleRecord, Expense, Payable, Receivable, SalesReturn, AuditEntry } from './dashboard/shared';
-import { searchNorm, escapeHtml, POS_SHELF_LIMIT, MOVEMENT_DROPDOWN_LIMIT, NOTIF_LIST_LIMIT, EXPIRY_LIST_LIMIT, generateSeedExpenses, generateSeedPayables, generateSeedReceivables, generateSeedReturns, generateSeedAuditLog, generateHistoricalSales, generateSeedSuppliers } from './dashboard/shared';
+import { searchNorm, escapeHtml, POS_SHELF_LIMIT, MOVEMENT_DROPDOWN_LIMIT, EXPIRY_LIST_LIMIT, generateSeedExpenses, generateSeedPayables, generateSeedReceivables, generateSeedReturns, generateSeedAuditLog, generateHistoricalSales, generateSeedSuppliers } from './dashboard/shared';
 import type { POSSearchHandle } from './pos/SearchBars';
 import { POSSearchBar, InventorySearchBar } from './pos/SearchBars';
 import { MedicineCard } from './pos/MedicineCard';
@@ -2653,8 +2653,24 @@ export default function Dashboard() {
   const handlePOSScanClick = useCallback(() => startScanning('pos'), []);
 
   // مُثبّتتان بـ useCallback + functional update — هويتهما مستقرّة فلا تكسران React.memo على CartItemRow
+  // زر «تراجع» في الإشعار يعيد الصنف إلى موضعه الأصلي في السلة — حذف السلة يحدث عشرات المرات يومياً
+  // وأسهل خطأ هو حذف الصنف الخطأ بضغطة سريعة.
   const removeFromCart = useCallback((medId: string) => {
-    setCurrentCart(prev => prev.filter(item => item.medicine.id !== medId));
+    setCurrentCart(prev => {
+      const idx = prev.findIndex(item => item.medicine.id === medId);
+      if (idx === -1) return prev;
+      const removed = prev[idx];
+      toast(`حُذف «${removed.medicine.nameAr}» من السلة`, 'info', undefined, {
+        label: 'تراجع',
+        onClick: () => setCurrentCart(cur => {
+          if (cur.some(item => item.medicine.id === medId)) return cur; // أُعيد فعلاً أو أُضيف من جديد
+          const next = [...cur];
+          next.splice(Math.min(idx, next.length), 0, removed);
+          return next;
+        }),
+      });
+      return prev.filter(item => item.medicine.id !== medId);
+    });
   }, []);
 
   const updateCartQty = useCallback((medId: string, delta: number) => {
@@ -4087,44 +4103,28 @@ export default function Dashboard() {
                     <span className="text-xs font-bold text-slate-800">مركز الإشعارات</span>
                     <button onClick={() => setShowNotifDropdown(false)} className="text-slate-500 hover:text-slate-600 cursor-pointer"><X className="w-4 h-4" /></button>
                   </div>
-                  {/* سقف العرض لكل فئة: مع ~7000 صنف قد تتطابق آلاف المواد فتجمّد فتح القائمة */}
+                  {/* مجموعات بعناوين وعدّاد لكل فئة بدل سرد كل صنف على حدة — أوضح مع ~7000 صنف
+                      وينقل مباشرة للتبويب المعني بدل تكديس القائمة */}
                   {(() => {
-                    const expired = inventory.filter(m => expiryDates[m.id] && new Date(expiryDates[m.id]) < new Date());
-                    const lowStock = inventory.filter(m => m.availableQuantity <= (m.minStock ?? 15) && m.availableQuantity > 0);
-                    return (
-                      <>
-                        {expired.slice(0, NOTIF_LIST_LIMIT).map(m => (
-                          <div key={m.id} className="text-sm text-danger-700 bg-danger-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
-                            <AlertCircle className="w-3 h-3 shrink-0" />
-                            <span>{m.nameAr} — منتهية الصلاحية</span>
-                          </div>
-                        ))}
-                        {expired.length > NOTIF_LIST_LIMIT && (
-                          <p className="text-xs text-danger-400 font-bold text-center">+{fmtNum((expired.length - NOTIF_LIST_LIMIT))} مادة منتهية أخرى — راجع تبويب المخزون</p>
-                        )}
-                        {lowStock.slice(0, NOTIF_LIST_LIMIT).map(m => (
-                          <div key={m.id} className="text-sm text-warn-700 bg-warn-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
-                            <AlertCircle className="w-3 h-3 shrink-0" />
-                            <span>{m.nameAr} — مخزون منخفض ({m.availableQuantity})</span>
-                          </div>
-                        ))}
-                        {lowStock.length > NOTIF_LIST_LIMIT && (
-                          <p className="text-xs text-warn-500 font-bold text-center">+{fmtNum((lowStock.length - NOTIF_LIST_LIMIT))} مادة منخفضة أخرى — راجع تبويب المخزون</p>
-                        )}
-                      </>
-                    );
+                    const expiredCount = inventory.filter(m => expiryDates[m.id] && new Date(expiryDates[m.id]) < new Date()).length;
+                    const lowStockCount = inventory.filter(m => m.availableQuantity <= (m.minStock ?? 15) && m.availableQuantity > 0).length;
+                    const overduePayables = payables.filter(p => p.dueDate && new Date(p.dueDate) < new Date() && p.status !== 'paid');
+                    const groups: { key: string; icon: typeof AlertCircle; label: string; count: number; cls: string; onClick: () => void }[] = [
+                      { key: 'expired', icon: AlertCircle, label: 'أصناف منتهية الصلاحية', count: expiredCount, cls: 'bg-danger-50 text-danger-700 hover:bg-danger-100', onClick: () => { setActiveTab('inventory'); setShowNotifDropdown(false); } },
+                      { key: 'low', icon: AlertCircle, label: 'أصناف بمخزون منخفض', count: lowStockCount, cls: 'bg-warn-50 text-warn-700 hover:bg-warn-100', onClick: () => { setActiveTab('inventory'); setShowNotifDropdown(false); } },
+                      { key: 'due', icon: Clock, label: 'ذمم متأخرة على المذاخر', count: overduePayables.length, cls: 'bg-slate-50 text-slate-700 hover:bg-slate-100', onClick: () => { setActiveTab('financial'); setShowNotifDropdown(false); } },
+                    ].filter(g => g.count > 0);
+                    if (groups.length === 0) return <p className="text-sm text-slate-500 text-center">لا توجد تنبيهات جديدة</p>;
+                    return groups.map(g => (
+                      <button key={g.key} type="button" onClick={g.onClick}
+                        className={`w-full text-sm font-bold rounded-lg px-3 py-2.5 flex items-center gap-2 transition cursor-pointer ${g.cls}`}>
+                        <g.icon className="w-3.5 h-3.5 shrink-0" />
+                        <span className="flex-1 text-right">{g.label}</span>
+                        <span className="text-xs font-black px-2 py-0.5 rounded-full bg-white/70 tabular-nums">{fmtNum(g.count)}</span>
+                        <ChevronDown className="w-3.5 h-3.5 shrink-0 -rotate-90" />
+                      </button>
+                    ));
                   })()}
-                  {payables.filter(p => p.dueDate && new Date(p.dueDate) < new Date() && p.status !== 'paid').map(p => (
-                    <div key={p.id} className="text-sm text-slate-700 bg-slate-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
-                      <Clock className="w-3 h-3 shrink-0" />
-                      <span>{p.supplierName} — دين متأخر</span>
-                    </div>
-                  ))}
-                  {!inventory.some(m => expiryDates[m.id] && new Date(expiryDates[m.id]) < new Date()) &&
-                   !inventory.some(m => m.availableQuantity <= (m.minStock ?? 15)) &&
-                   !payables.some(p => p.dueDate && new Date(p.dueDate) < new Date() && p.status !== 'paid') && (
-                    <p className="text-sm text-slate-500 text-center">لا توجد تنبيهات جديدة</p>
-                  )}
                 </div>
               )}
             </div>
@@ -5663,6 +5663,37 @@ export default function Dashboard() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                          {filteredInventory.length === 0 && (
+                            <tr>
+                              <td colSpan={8} className="px-4 py-14 text-center">
+                                {inventory.length === 0 ? (
+                                  <div className="flex flex-col items-center gap-3">
+                                    <Pill className="w-9 h-9 text-slate-300" />
+                                    <p className="text-sm font-bold text-slate-600">المخزون فارغ تماماً — لا مادة مسجَّلة بعد</p>
+                                    <div className="flex flex-wrap items-center justify-center gap-2">
+                                      <button type="button" onClick={() => setIsAddingDrug(true)}
+                                        className="bg-primary-600 hover:bg-primary-700 text-white font-bold text-sm px-4 py-2 rounded-xl cursor-pointer transition flex items-center gap-1.5">
+                                        <Plus className="w-4 h-4" /><span>إضافة أول مادة</span>
+                                      </button>
+                                      <button type="button" onClick={handleSeedTestData}
+                                        className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm px-4 py-2 rounded-xl cursor-pointer transition flex items-center gap-1.5">
+                                        <FlaskConical className="w-4 h-4" /><span>بيانات تجريبية</span>
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex flex-col items-center gap-3">
+                                    <Search className="w-9 h-9 text-slate-300" />
+                                    <p className="text-sm font-bold text-slate-600">لا نتائج مطابقة لـ«{searchInInventoryQuery}»</p>
+                                    <button type="button" onClick={() => setSearchInInventoryQuery('')}
+                                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-sm px-4 py-2 rounded-xl cursor-pointer transition">
+                                      مسح البحث
+                                    </button>
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          )}
                           {filteredInventory.slice(0, invRenderCap).map((med, idx) => {
                               const expDate = expiryDates[med.id] || '2028-01-01';
                               const daysRemaining = getDaysUntilExpiry(med.id);
