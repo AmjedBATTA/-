@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X, Upload, Loader2, CheckCircle2, AlertCircle, Search,
-  ChevronDown, Trash2, FileImage, KeyRound, Eye, EyeOff, Barcode,
+  ChevronDown, Trash2, FileImage, KeyRound, Eye, EyeOff, Barcode, Camera, Layers,
 } from 'lucide-react';
 import type { Medicine, ExtractedInvoiceItem, ExtractedInvoice, InvoiceImportDraft, Supplier, SupplierMemory, Order } from '../types';
 import SupplierPicker from './SupplierPicker';
@@ -52,6 +52,35 @@ export interface ConfirmMeta {
   invoiceNo?: string;
   examples: { raw: string; ar: string }[];
   companies: string[];
+  hasMoreQueued: boolean; // طابور الفواتير: بقيت فواتير أخرى — الأب لا يغلق النافذة
+}
+
+// تلميح المورد (بلا تعبئة تلقائية): مطابقة ضبابية بين اسم المورد المقروء من الصورة والموردين المحفوظين.
+// كلمات عامة مثل «مذخر/شركة/للأدوية» لا تُحتسب حتى لا يتطابق كل مذخر مع كل مذخر.
+const supNorm = (v: string) => v.toLowerCase()
+  .replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي')
+  .replace(/[^\w؀-ۿ\s]/g, ' ').replace(/\s+/g, ' ').trim();
+const SUP_STOPWORDS = new Set(['مذخر', 'مذاخر', 'شركه', 'مكتب', 'علمي', 'العلمي', 'للادويه', 'الادويه', 'ادويه', 'company', 'co', 'pharma', 'drug', 'drugs', 'store', 'stores', 'office', 'ltd', 'the', 'for', 'and']);
+function suggestSupplier(ocrName: string, list: Supplier[]): Supplier | undefined {
+  const q = supNorm(ocrName);
+  if (!q) return undefined;
+  const qWords = q.split(' ').filter(w => w.length >= 3 && !SUP_STOPWORDS.has(w));
+  let best: Supplier | undefined;
+  let bestScore = 0;
+  for (const sp of list) {
+    const n = supNorm(sp.name);
+    if (!n) continue;
+    let score = 0;
+    if (n === q) score = 1;
+    else if (n.includes(q) || q.includes(n)) score = 0.85;
+    else {
+      const nWords = n.split(' ').filter(w => w.length >= 3 && !SUP_STOPWORDS.has(w));
+      const hits = qWords.filter(w => nWords.some(x => x.includes(w) || w.includes(x))).length;
+      score = qWords.length ? hits / Math.max(qWords.length, nWords.length || 1) : 0;
+    }
+    if (score > bestScore) { bestScore = score; best = sp; }
+  }
+  return bestScore >= 0.5 ? best : undefined;
 }
 
 // تصغير صورة الفاتورة قبل الإرسال: صور الهاتف (8–12 ميغابايت) تُرسل خاماً فتبطئ الاستخراج وتكلّف
@@ -121,6 +150,14 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [progressMsg, setProgressMsg] = useState('');
   const [sortByConfidence, setSortByConfidence] = useState(false); // الأقل ثقة أولاً في المراجعة
+  // طابور الفواتير: كل عنصر = صور فاتورة واحدة بانتظار التحليل بعد الحالية؛ batchDone = ما اعتُمد منها
+  const [queue, setQueue] = useState<File[][]>([]);
+  const [batchDone, setBatchDone] = useState(0);
+  // كاميرا التصوير المباشر للفاتورة (مستقلة عن ماسح الباركود أدناه)
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const [extractedInvoice, setExtractedInvoice] = useState<ExtractedInvoice | null>(() =>
     initialDraft ? { supplierName: initialDraft.supplierName, invoiceNo: initialDraft.invoiceNo, date: initialDraft.date, items: [], totalAmount: initialDraft.totalAmount } : null
   );
@@ -252,14 +289,75 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
     if (e.dataTransfer.files.length) handleFilesPicked(e.dataTransfer.files);
   }, [handleFilesPicked]);
 
-  const handleAnalyze = async () => {
-    if (!imageFiles.length || !apiKey.trim()) return;
+  // --- تصوير الفاتورة مباشرة بكاميرا الجهاز: معاينة حيّة + زر التقاط، وكل لقطة تُضاف كصفحة ---
+  const openCamera = async () => {
+    setCameraError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 2560 }, height: { ideal: 1920 } },
+        audio: false,
+      });
+      setCameraStream(stream);
+      setCameraOpen(true);
+    } catch {
+      setCameraError('تعذّر فتح الكاميرا — تحقّق من صلاحيات المتصفح، أو ارفع الصورة من المعرض.');
+    }
+  };
+  const closeCamera = useCallback(() => {
+    setCameraStream(prev => { prev?.getTracks().forEach(t => t.stop()); return null; });
+    setCameraOpen(false);
+  }, []);
+  const capturePhoto = () => {
+    const v = cameraVideoRef.current;
+    if (!v || !v.videoWidth) return;
+    const c = document.createElement('canvas');
+    c.width = v.videoWidth;
+    c.height = v.videoHeight;
+    c.getContext('2d')?.drawImage(v, 0, 0);
+    c.toBlob(b => {
+      if (b) handleFilesPicked([new File([b], `camera-${Date.now()}.jpg`, { type: 'image/jpeg' })]);
+    }, 'image/jpeg', 0.92);
+  };
+  useEffect(() => {
+    if (cameraOpen && cameraStream && cameraVideoRef.current) {
+      cameraVideoRef.current.srcObject = cameraStream;
+      cameraVideoRef.current.play().catch(() => setCameraError('فشل تشغيل عرض الكاميرا.'));
+    }
+  }, [cameraOpen, cameraStream]);
+  useEffect(() => () => { cameraStream?.getTracks().forEach(t => t.stop()); }, [cameraStream]);
+
+  // --- طابور الفواتير ---
+  // «فاتورة أخرى»: الصور الحالية تُحفظ كفاتورة في الطابور وتُفرَّغ الساحة لفاتورة جديدة
+  const pushCurrentToQueue = () => {
+    if (!imageFiles.length) return;
+    setQueue(q => [...q, imageFiles]);
+    setImageFiles([]);
+    setImagePreviews([]);
+  };
+  // بدء فاتورة (من الطابور): تُعرض صورها ويبدأ تحليلها فوراً
+  const startInvoice = (files: File[]) => {
+    setImageFiles(files);
+    setImagePreviews([]);
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (e) => setImagePreviews(prev => [...prev, e.target?.result as string]);
+      reader.readAsDataURL(file);
+    });
+    void handleAnalyze(files);
+  };
+  const batchTotal = batchDone + queue.length + (imageFiles.length ? 1 : 0);
+  const batchPos = batchDone + 1;
+
+  const handleAnalyze = async (filesOverride?: File[]) => {
+    const files = filesOverride ?? imageFiles;
+    if (!files.length || !apiKey.trim()) return;
+    closeCamera();
     setStep('processing');
     setError('');
     try {
-      setProgressMsg(imageFiles.length > 1 ? `جارٍ ضغط ${imageFiles.length} صور…` : 'جارٍ ضغط الصورة…');
+      setProgressMsg(files.length > 1 ? `جارٍ ضغط ${files.length} صور…` : 'جارٍ ضغط الصورة…');
       const imgs: InvoiceImage[] = [];
-      for (const f of imageFiles) imgs.push(await downscaleImage(f));
+      for (const f of files) imgs.push(await downscaleImage(f));
       // ذاكرة المورد المختار مسبقاً (إن اختير في خطوة الرفع) تُلحَق بالطلب كأمثلة مؤكَّدة
       const chosenSupplier = suppliers.find(sp => sp.name === supplierName.trim());
       const mem = chosenSupplier ? supplierMemory[chosenSupplier.id] : null;
@@ -281,6 +379,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
         };
       });
       setItems(prepared);
+      setSortByConfidence(false);
       setStep('review');
     } catch (err: unknown) {
       const msg = getErrorMessage(err);
@@ -415,7 +514,17 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
       .filter(it => it.matchedMedicine && it.rawName.trim())
       .map(it => ({ raw: it.rawName.trim(), ar: it.matchedMedicine!.nameAr }));
     const companies = Array.from(new Set(items.map(it => (it.company || '').trim()).filter(Boolean)));
-    onConfirm(draftItems, supplierName.trim(), { invoiceNo: extractedInvoice?.invoiceNo, examples, companies });
+    const hasMore = queue.length > 0;
+    onConfirm(draftItems, supplierName.trim(), { invoiceNo: extractedInvoice?.invoiceNo, examples, companies, hasMoreQueued: hasMore });
+    if (hasMore) {
+      // الفاتورة التالية من الطابور: تُحلَّل فوراً وتبقى النافذة مفتوحة (المورد المختار يبقى — غالباً الدفعة من مورد واحد)
+      const [next, ...rest] = queue;
+      setQueue(rest);
+      setBatchDone(d => d + 1);
+      setItems([]);
+      setExtractedInvoice(null);
+      startInvoice(next);
+    }
   };
 
   const matchedCount = items.filter(it => it.matchedMedicine).length;
@@ -443,9 +552,22 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
     return d !== null && Math.abs(d) > PRICE_DEVIATION_LIMIT;
   }).length;
 
-  // ترتيب المراجعة: الأقل ثقة أولاً (جديد ← ضبابي ← حُسم ذكياً ← تطابق ← محفوظ) — الترتيب الأصلي عند الإيقاف
+  // التكلفة الفعلية للشريط (بعد البونص) — نفس معادلة الاعتماد
+  const effectiveCostPerStrip = (it: ExtractedInvoiceItem) => {
+    const total = (it.quantityBoxes + (it.bonusBoxes || 0)) * it.stripsPerBox;
+    return total > 0 ? Math.round((it.pricePerBox * it.quantityBoxes) / total) : 0;
+  };
+  // بيع بخسارة: سعر البيع للجمهور (شريط) أقل من التكلفة الفعلية للشريط
+  const isSellingAtLoss = (it: ExtractedInvoiceItem) => {
+    const cost = effectiveCostPerStrip(it);
+    return cost > 0 && it.retailPrice > 0 && it.retailPrice < cost;
+  };
+  const lossCount = items.filter(isSellingAtLoss).length;
+  const uncertainCount = items.filter(it => it.uncertain).length;
+
+  // ترتيب المراجعة: الأقل ثقة أولاً (غير واضح ← جديد ← ضبابي ← حُسم ذكياً ← تطابق ← محفوظ) — الترتيب الأصلي عند الإيقاف
   const confidenceRank = (it: ExtractedInvoiceItem) =>
-    !it.matchedMedicine ? 0 : it.matchedByAlias ? 4 : it.matchedByAI ? 2 : it.matchScore >= 0.8 ? 3 : 1;
+    it.uncertain ? -1 : !it.matchedMedicine ? 0 : it.matchedByAlias ? 4 : it.matchedByAI ? 2 : it.matchScore >= 0.8 ? 3 : 1;
   const visibleItems = sortByConfidence ? [...items].sort((a, b) => confidenceRank(a) - confidenceRank(b)) : items;
   const removeUnmatched = () => {
     if (!newCount) return;
@@ -520,7 +642,8 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
             <h2 className="font-extrabold text-sm text-slate-900">استيراد فاتورة من صورة</h2>
             <p className="text-[10px] text-slate-400 font-bold mt-0.5">
               {step === 'key' && 'أدخل مفتاح Gemini API لتفعيل الميزة'}
-              {step === 'upload' && 'ارفع صورة الفاتورة لاستخراج البيانات تلقائياً'}
+              {batchTotal > 1 && step !== 'key' && <span className="text-violet-700">فاتورة {batchPos} من {batchTotal} · </span>}
+              {step === 'upload' && 'ارفع صورة الفاتورة أو صوّرها مباشرة لاستخراج البيانات تلقائياً'}
               {step === 'processing' && 'جارٍ تحليل الفاتورة بالذكاء الاصطناعي...'}
               {step === 'review' && `${items.length} صنف مستخرج · ${matchedCount} مطابق · ${newCount} جديد`}
             </p>
@@ -630,6 +753,64 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                   </p>
                 )}
 
+                {/* الكاميرا المباشرة: معاينة حيّة داخل النافذة، كل التقاط يُضاف كصفحة للفاتورة الحالية */}
+                {cameraOpen && (
+                  <div className="bg-slate-900 rounded-2xl p-3 space-y-2">
+                    <video ref={cameraVideoRef} playsInline muted className="w-full max-h-72 rounded-xl object-contain bg-black" />
+                    <div className="flex items-center justify-between gap-2">
+                      <button type="button" onClick={closeCamera}
+                        className="px-3 py-2 rounded-xl bg-slate-700 text-slate-200 text-[11px] font-extrabold hover:bg-slate-600 transition cursor-pointer">
+                        إغلاق الكاميرا
+                      </button>
+                      <button type="button" onClick={capturePhoto}
+                        className="flex-1 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-extrabold flex items-center justify-center gap-2 transition cursor-pointer">
+                        <Camera className="w-4 h-4" />
+                        التقاط {imageFiles.length > 0 ? `صفحة ${imageFiles.length + 1}` : 'الفاتورة'}
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-bold text-center">ثبّت الهاتف فوق الفاتورة كاملةً بإضاءة جيدة، ثم التقط. صفحة ثانية؟ التقط مرة أخرى.</p>
+                  </div>
+                )}
+                {cameraError && (
+                  <p className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-right">{cameraError}</p>
+                )}
+                {!cameraOpen && (
+                  <button type="button" onClick={openCamera}
+                    className="w-full py-3 rounded-xl border-2 border-emerald-300 bg-emerald-50 text-emerald-800 text-xs font-extrabold flex items-center justify-center gap-2 hover:bg-emerald-100 transition cursor-pointer">
+                    <Camera className="w-4 h-4" />
+                    تصوير الفاتورة بالكاميرا مباشرة
+                  </button>
+                )}
+
+                {/* طابور الفواتير: فواتير محفوظة بانتظار التحليل واحدة تلو الأخرى، كل واحدة بمراجعتها */}
+                {(queue.length > 0 || imageFiles.length > 0) && (
+                  <div className={`rounded-xl p-3 space-y-1.5 border ${queue.length ? 'bg-violet-50 border-violet-200' : 'bg-slate-50 border-slate-200'}`}>
+                    {queue.length > 0 && (
+                      <>
+                        <p className="text-[10px] font-extrabold text-violet-800 flex items-center gap-1.5"><Layers className="w-3.5 h-3.5" /> طابور الفواتير: {queue.length} فاتورة محفوظة{imageFiles.length ? ' + الحالية' : ''}</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {queue.map((files, i) => (
+                            <span key={i} className="inline-flex items-center gap-1 bg-white border border-violet-200 rounded-full px-2 py-0.5 text-[10px] font-bold text-violet-700">
+                              فاتورة {batchDone + i + 1}: {files.length} {files.length === 1 ? 'صورة' : 'صور'}
+                              <button type="button" title="إزالة من الطابور" onClick={() => setQueue(q => q.filter((_, j) => j !== i))}
+                                className="text-violet-400 hover:text-rose-600 cursor-pointer"><X className="w-3 h-3" /></button>
+                            </span>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    {imageFiles.length > 0 && (
+                      <button type="button" onClick={pushCurrentToQueue}
+                        className="w-full py-2 rounded-lg border border-violet-300 bg-white text-violet-800 text-[11px] font-extrabold hover:bg-violet-100 transition cursor-pointer">
+                        + حفظ هذه الفاتورة في الطابور وتصوير فاتورة أخرى
+                      </button>
+                    )}
+                    {queue.length > 0 && (
+                      <p className="text-[9px] text-violet-600 font-bold">تُحلَّل بالتتابع وتُراجَع كل واحدة على حدة، وتُضاف كلها إلى مسودة الشراء نفسها.</p>
+                    )}
+                  </div>
+                )}
+
                 {/* اختيار المورد قبل التحليل (اختياري): يُلحق أمثلته المؤكَّدة من فواتيره السابقة بالطلب
                     فترتفع دقة الترجمة والشركات، ويُملأ حقل المورد في المراجعة تلقائياً */}
                 <div className="space-y-1">
@@ -657,12 +838,21 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                     تغيير المفتاح
                   </button>
                   <button
-                    disabled={!imageFiles.length}
-                    onClick={handleAnalyze}
+                    disabled={!imageFiles.length && !queue.length}
+                    onClick={() => {
+                      // الطابور أولاً بترتيب الحفظ، ثم الفاتورة الحالية — كل فاتورة تُحلَّل ثم تُراجَع ثم التالية
+                      const batch = [...queue, ...(imageFiles.length ? [imageFiles] : [])];
+                      if (!batch.length) return;
+                      setQueue(batch.slice(1));
+                      setBatchDone(0);
+                      startInvoice(batch[0]);
+                    }}
                     className="flex-1 bg-emerald-600 text-white rounded-xl py-3 text-xs font-extrabold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-emerald-700 transition flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <Upload className="w-4 h-4" />
-                    تحليل الفاتورة بالذكاء الاصطناعي
+                    {queue.length + (imageFiles.length ? 1 : 0) > 1
+                      ? `تحليل ${queue.length + (imageFiles.length ? 1 : 0)} فواتير بالتتابع`
+                      : 'تحليل الفاتورة بالذكاء الاصطناعي'}
                   </button>
                 </div>
               </motion.div>
@@ -700,6 +890,22 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                   <div className="flex-1 min-w-[200px]">
                     <p className="text-[10px] text-slate-400 font-bold mb-1">المورد / المذخر</p>
                     <SupplierPicker suppliers={suppliers} value={supplierName} onChange={setSupplierName} />
+                    {/* تلميح المورد بلا تعبئة تلقائية: الاسم المقروء من الصورة يُقترح بنقرة، لا يُلتقط بصمت */}
+                    {!supplierName.trim() && (extractedInvoice?.supplierName || '').trim() && (() => {
+                      const ocr = (extractedInvoice?.supplierName || '').trim();
+                      const sug = suggestSupplier(ocr, suppliers);
+                      return sug ? (
+                        <button type="button" onClick={() => setSupplierName(sug.name)}
+                          className="mt-1.5 text-[10px] font-extrabold text-violet-700 bg-violet-50 border border-violet-200 rounded-lg px-2 py-1 hover:bg-violet-100 transition cursor-pointer text-right">
+                          يبدو أن الفاتورة من «{sug.name}» — اختره بنقرة
+                        </button>
+                      ) : (
+                        <button type="button" onClick={() => setSupplierName(ocr)}
+                          className="mt-1.5 text-[10px] font-extrabold text-slate-600 bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 hover:bg-slate-200 transition cursor-pointer text-right">
+                          المورد المكتوب في الفاتورة: «{ocr}» — غير محفوظ، إضافته كمورد جديد؟
+                        </button>
+                      );
+                    })()}
                   </div>
                   {extractedInvoice?.invoiceNo && (
                     <div className="text-right">
@@ -731,6 +937,22 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                     <p className="text-[11px] font-extrabold text-rose-700 leading-snug">
                       مجموع الأسطر {linesTotal.toLocaleString()} ≠ إجمالي الفاتورة {invoiceTotal.toLocaleString()} د.ع
                       (فرق {totalDiff > 0 ? '+' : ''}{totalDiff.toLocaleString()}) — قد يكون سطر ضائع أو رقم مقروء خطأً.
+                    </p>
+                  </div>
+                )}
+                {lossCount > 0 && (
+                  <div className="mx-4 sm:mx-5 mb-2 bg-rose-50 border border-rose-300 rounded-2xl px-4 py-2.5 flex items-start gap-2 text-right">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <p className="text-[11px] font-extrabold text-rose-800 leading-snug">
+                      بيع بخسارة: {lossCount} سطر سعر بيعه للجمهور أقل من تكلفة الشريط الجديدة — راجع الأسعار المعلَّمة بالأحمر.
+                    </p>
+                  </div>
+                )}
+                {uncertainCount > 0 && (
+                  <div className="mx-4 sm:mx-5 mb-2 bg-rose-50 border border-rose-200 rounded-2xl px-4 py-2 flex items-start gap-2 text-right">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <p className="text-[11px] font-extrabold text-rose-700 leading-snug">
+                      {uncertainCount} سطر علّمه النموذج «غير واضح» (رقم أو اسم قُرئ بصعوبة) — قارنه بالصورة قبل الاعتماد.
                     </p>
                   </div>
                 )}
@@ -781,6 +1003,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                     // التكلفة الفعلية للشريط بعد البونص (المبلغ المدفوع ÷ كل الأشرطة) — تُعرض حين يوجد بونص
                     const effectivePerStrip = totalStrips > 0 ? Math.round((item.pricePerBox * item.quantityBoxes) / totalStrips) : pricePerStrip;
                     const zeroPriceLine = item.pricePerBox === 0 && item.quantityBoxes > 0;
+                    const sellLoss = isSellingAtLoss(item);
                     const badge = matchBadge(item.matchScore, !!item.matchedMedicine, item.matchedByAlias, item.matchedByAI);
                     const deviation = priceDeviation(pricePerStrip, item.matchedMedicine);
                     const deviates = deviation !== null && Math.abs(deviation) > PRICE_DEVIATION_LIMIT;
@@ -788,13 +1011,19 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
 
                     return (
                       <div key={item.id}
-                        className="bg-slate-50 border-2 border-black rounded-2xl p-3.5 space-y-2.5 text-right transition">
+                        className={`bg-slate-50 border-2 rounded-2xl p-3.5 space-y-2.5 text-right transition ${item.uncertain ? 'border-rose-400 ring-2 ring-rose-100' : 'border-black'}`}>
 
                         {/* الصف الأول: الشارة، ثم الاسم العربي وبجانبه الشركة، والحذف في الطرف البعيد */}
                         <div className="flex items-start gap-2">
                           <span className={`shrink-0 mt-0.5 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full border ${badge.cls}`}>
                             {badge.label}
                           </span>
+                          {item.uncertain && (
+                            <span className="shrink-0 mt-0.5 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full border bg-rose-100 text-rose-700 border-rose-300"
+                              title="النموذج قرأ رقماً أو اسماً في هذا السطر بصعوبة — قارنه بالصورة">
+                              غير واضح ⚠
+                            </span>
+                          )}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-baseline gap-2">
                               <input
@@ -966,10 +1195,13 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                             لمسة لونية خفيفة تميّز سعر الجمهور (أزرق) عن الرسمي (بنفسجي) دون صراخ */}
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                           <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-slate-500 block text-center">سعر البيع للجمهور (شريط)</label>
+                            <label className={`text-[10px] font-bold block text-center ${sellLoss ? 'text-rose-700' : 'text-slate-500'}`}>سعر البيع للجمهور (شريط)</label>
                             <input type="number" min={0} value={item.retailPrice}
                               onChange={e => updateItem(item.id, { retailPrice: Math.max(0, Number(e.target.value)) })}
-                              className="w-full bg-blue-50/50 border border-blue-100 rounded-lg px-2 py-1.5 text-xs font-extrabold text-blue-700 text-center focus:outline-blue-400" />
+                              className={`w-full border rounded-lg px-2 py-1.5 text-xs font-extrabold text-center ${sellLoss ? 'bg-rose-50 border-rose-400 text-rose-800 ring-2 ring-rose-200 focus:outline-rose-500' : 'bg-blue-50/50 border-blue-100 text-blue-700 focus:outline-blue-400'}`} />
+                            {sellLoss && (
+                              <p className="text-[10px] font-extrabold text-rose-700 text-center">بيع بخسارة — التكلفة {effectiveCostPerStrip(item).toLocaleString()}</p>
+                            )}
                           </div>
                           <div className="space-y-1">
                             <label className="text-[10px] font-bold text-slate-500 block text-center">سعر البيع الرسمي (شريط)</label>
@@ -1163,7 +1395,9 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                 className="flex-1 bg-emerald-600 text-white rounded-xl py-3 text-xs font-extrabold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-emerald-700 transition flex items-center justify-center gap-2 cursor-pointer"
               >
                 <CheckCircle2 className="w-4 h-4" />
-                إضافة {validCount} صنف إلى مسودة الشراء
+                {queue.length > 0
+                  ? `إضافة ${validCount} صنف ثم الفاتورة التالية (${queue.length} متبقية)`
+                  : `إضافة ${validCount} صنف إلى مسودة الشراء`}
               </button>
               {/* اعتماد المطابق فقط: يترك الأصناف الجديدة/غير المطابقة خارج المسودة دون حذفها يدوياً */}
               {newCount > 0 && matchedValidCount > 0 && (

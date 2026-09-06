@@ -9451,9 +9451,12 @@ export default function Dashboard() {
                 if (sup) learnSupplierMemory(sup.id, meta.examples, meta.companies);
               }
               if (meta.invoiceNo) setPurchaseInvoiceNo(meta.invoiceNo);
-              setShowInvoiceImport(false);
-              onInvoiceDraftChange(null);
-              setPurchaseSuccessBanner(`تم استيراد ${draftItems.length} صنف من الفاتورة إلى مسودة الشراء`);
+              // طابور الفواتير: النافذة تبقى مفتوحة وتنتقل للفاتورة التالية ما دام في الطابور بقية
+              if (!meta.hasMoreQueued) {
+                setShowInvoiceImport(false);
+                onInvoiceDraftChange(null);
+              }
+              setPurchaseSuccessBanner(`تم استيراد ${draftItems.length} صنف من الفاتورة إلى مسودة الشراء${meta.hasMoreQueued ? ' — جارٍ تحليل الفاتورة التالية' : ''}`);
               setTimeout(() => setPurchaseSuccessBanner(null), 5000);
             }}
           />

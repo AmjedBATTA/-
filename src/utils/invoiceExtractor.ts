@@ -170,7 +170,8 @@ const EXTRACTION_PROMPT = `أنت نظام استخراج بيانات دقيق 
       "stripsPerBox": 2,
       "unitType": "strip",
       "batchNo": "PA123",
-      "expiry": "YYYY/MM"
+      "expiry": "YYYY/MM",
+      "uncertain": false
     }
   ],
   "totalAmount": 255645
@@ -192,6 +193,8 @@ const EXTRACTION_PROMPT = `أنت نظام استخراج بيانات دقيق 
   - سطر مكرَّر لنفس المادة بكمية ما وبسعر/مبلغ صفر: هذا السطر هو البونص — لا تُخرجه كسطر مستقل،
     بل أضف كميته إلى bonusBoxes في سطر المادة المدفوع نفسه
   - لا بونص → bonusBoxes = 0
+• uncertain: اجعله true إذا كان أي رقم (كمية/سعر) أو اسم في هذا السطر مقروءاً بصعوبة — خط يد، ضبابية،
+  رقم محتمل خطأ، تداخل أسطر — وإلا false. كن صريحاً: علامة «غير واضح» أفضل من رقم خاطئ بثقة.
 • الأرقام: أزل الفاصلة العليا (14'765 → 14765) والنقطة العشرية (14'500.00 → 14500)
 • إذا لم يكن الحقل واضحاً اجعله null
 • إذا أُرفقت أكثر من صورة فهي صفحات متتابعة لفاتورة واحدة: ادمج أسطرها كلها في قائمة واحدة
@@ -234,6 +237,7 @@ const INVOICE_SCHEMA = {
           unitType: { type: Type.STRING, nullable: true },
           batchNo: { type: Type.STRING, nullable: true },
           expiry: { type: Type.STRING, nullable: true },
+          uncertain: { type: Type.BOOLEAN, nullable: true },
         },
         required: ['rawName'],
       },
@@ -272,6 +276,7 @@ export interface RawGeminiItem {
   unitType?: string;
   batchNo?: string;
   expiry?: string;
+  uncertain?: boolean;
 }
 
 export function parseNumber(val: number | string | null | undefined): number {
@@ -462,6 +467,7 @@ export async function extractInvoice(
       officialPrice,
       batchNo: item.batchNo || undefined,
       expiry: item.expiry || undefined,
+      uncertain: item.uncertain === true,
       matchedMedicine: medicine,
       matchScore: score,
       matchedByAlias: byAlias || false,
