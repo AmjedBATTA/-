@@ -195,7 +195,9 @@ const EXTRACTION_PROMPT = `أنت نظام استخراج بيانات دقيق 
   - لا بونص → bonusBoxes = 0
 • uncertain: اجعله true إذا كان أي رقم (كمية/سعر) أو اسم في هذا السطر مقروءاً بصعوبة — خط يد، ضبابية،
   رقم محتمل خطأ، تداخل أسطر — وإلا false. كن صريحاً: علامة «غير واضح» أفضل من رقم خاطئ بثقة.
-• الأرقام: أزل الفاصلة العليا (14'765 → 14765) والنقطة العشرية (14'500.00 → 14500)
+• الأرقام (quantityBoxes/bonusBoxes/pricePerBox/stripsPerBox/totalAmount) نصوص: انسخ الرقم كما هو مكتوب
+  في الخلية حتى لو حمل فاصلة عليا أو فاصلة أو نقطة عشرية (14'765 أو 14,765 أو 14'500.00) — التنظيف يتم لاحقاً.
+  لا تترك السعر فارغاً إن كان موجوداً في الفاتورة ولو بصعوبة؛ اقرأه وعلّم السطر uncertain=true.
 • إذا لم يكن الحقل واضحاً اجعله null
 • إذا أُرفقت أكثر من صورة فهي صفحات متتابعة لفاتورة واحدة: ادمج أسطرها كلها في قائمة واحدة
   بالترتيب، ولا تكرّر سطراً ظهر جزئياً في نهاية صفحة وبداية التالية، وخذ الإجمالي من الصفحة الأخيرة.`;
@@ -221,7 +223,9 @@ const INVOICE_SCHEMA = {
     supplierName: { type: Type.STRING, nullable: true },
     invoiceNo: { type: Type.STRING, nullable: true },
     date: { type: Type.STRING, nullable: true },
-    totalAmount: { type: Type.NUMBER, nullable: true },
+    // الأرقام كنصوص عمداً: تنسخ كما في الفاتورة («14'765» أو «14,500.00») ثم تُنظَّف في parseNumber —
+    // إلزام النموذج بنوع NUMBER جعله يعيد null حين تحمل الخلية فاصلة عليا أو نقطة عشرية.
+    totalAmount: { type: Type.STRING, nullable: true },
     items: {
       type: Type.ARRAY,
       items: {
@@ -230,10 +234,10 @@ const INVOICE_SCHEMA = {
           rawName: { type: Type.STRING },
           arabicName: { type: Type.STRING, nullable: true },
           company: { type: Type.STRING, nullable: true },
-          quantityBoxes: { type: Type.NUMBER, nullable: true },
-          bonusBoxes: { type: Type.NUMBER, nullable: true },
-          pricePerBox: { type: Type.NUMBER, nullable: true },
-          stripsPerBox: { type: Type.NUMBER, nullable: true },
+          quantityBoxes: { type: Type.STRING, nullable: true },
+          bonusBoxes: { type: Type.STRING, nullable: true },
+          pricePerBox: { type: Type.STRING, nullable: true },
+          stripsPerBox: { type: Type.STRING, nullable: true },
           unitType: { type: Type.STRING, nullable: true },
           batchNo: { type: Type.STRING, nullable: true },
           expiry: { type: Type.STRING, nullable: true },
@@ -430,8 +434,21 @@ export async function extractInvoice(
   ];
   const { parsed, modelIdx } = await callStructured(
     ai, parts, INVOICE_SCHEMA,
-    (p) => !!p && typeof p === 'object' && Array.isArray((p as { items?: unknown }).items) && ((p as { items: unknown[] }).items.length > 0),
-  );
+    // شرط القبول: أسطر موجودة وسعر واحد على الأقل مقروء — كل الأسعار صفر/null يعني أن الصورة
+    // لم تُقرأ (ضبابية/صغيرة) لا أن الفاتورة مجانية، فنصعّد لنموذج أقوى بدل عرض أصفار.
+    (p) => {
+      if (!p || typeof p !== 'object') return false;
+      const its = (p as { items?: unknown }).items;
+      if (!Array.isArray(its) || its.length === 0) return false;
+      return (its as RawGeminiItem[]).some(it => parseNumber(it.pricePerBox) > 0);
+    },
+  ).catch((e: unknown) => {
+    const msg = getErrorMessage(e);
+    if (/استخراج البيانات/.test(msg)) {
+      throw new Error('لم تُقرأ أسعار الفاتورة من الصورة — صوّرها أقرب وبإضاءة أوضح بحيث تظهر أرقام الأعمدة بوضوح، ثم أعد المحاولة.');
+    }
+    throw e;
+  });
   const raw = parsed as { supplierName?: string; invoiceNo?: string; date?: string; totalAmount?: number | string; items: RawGeminiItem[] };
   const rawItems: RawGeminiItem[] = mergeBonusLines(Array.isArray(raw.items) ? raw.items : []);
 

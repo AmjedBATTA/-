@@ -83,9 +83,12 @@ function suggestSupplier(ocrName: string, list: Supplier[]): Supplier | undefine
   return bestScore >= 0.5 ? best : undefined;
 }
 
-// تصغير صورة الفاتورة قبل الإرسال: صور الهاتف (8–12 ميغابايت) تُرسل خاماً فتبطئ الاستخراج وتكلّف
-// أكثر بلا فائدة — عرض 1600 بكسل كافٍ تماماً لقراءة النص. نُخرج JPEG بجودة 0.85.
-const MAX_IMAGE_EDGE = 1600;
+// تصغير صورة الفاتورة قبل الإرسال — بحذر: 1600 بكسل (الإعداد السابق) جعل أرقام الأسعار في
+// أعمدة الفاتورة الضيقة غير مقروءة فأعاد النموذج null للأسعار وظهرت كلها صفراً. الحد الآن 3000
+// بكسل (قريب مما يعالجه النموذج داخلياً أصلاً) وجودة 0.92، ولا نعيد ترميز الصورة إن كانت
+// ضمن الحد وحجمها معقولاً — الضغط للصور الضخمة فقط.
+const MAX_IMAGE_EDGE = 3000;
+const MAX_RAW_BYTES = 4 * 1024 * 1024;
 async function downscaleImage(file: File): Promise<InvoiceImage> {
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const r = new FileReader();
@@ -100,7 +103,7 @@ async function downscaleImage(file: File): Promise<InvoiceImage> {
     i.src = dataUrl;
   });
   const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(img.width, img.height));
-  if (scale >= 1 && file.size < 1.5 * 1024 * 1024) {
+  if (scale >= 1 && file.size <= MAX_RAW_BYTES) {
     return { base64: dataUrl.split(',')[1], mimeType: file.type };
   }
   const canvas = document.createElement('canvas');
@@ -109,7 +112,7 @@ async function downscaleImage(file: File): Promise<InvoiceImage> {
   const ctx = canvas.getContext('2d');
   if (!ctx) return { base64: dataUrl.split(',')[1], mimeType: file.type };
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-  const out = canvas.toDataURL('image/jpeg', 0.85);
+  const out = canvas.toDataURL('image/jpeg', 0.92);
   return { base64: out.split(',')[1], mimeType: 'image/jpeg' };
 }
 
