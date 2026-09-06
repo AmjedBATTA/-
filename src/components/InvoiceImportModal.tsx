@@ -22,7 +22,8 @@ interface DraftItem {
   price: number;
   retailPrice: number;
   officialPrice: number;
-  qty: number;
+  qty: number;          // إجمالي الأشرطة الداخلة للمخزون (المدفوع + البونص)
+  bonusQty?: number;    // منها أشرطة البونص المجانية — للتوثيق في لقطة الطلبية
   expiryDate: string;
   barcode: string;
   warehouse: string;
@@ -373,8 +374,12 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
     const draftItems: DraftItem[] = source
       .filter(it => it.quantityBoxes > 0 && it.pricePerBox > 0)
       .map(it => {
-        const totalStrips = it.quantityBoxes * it.stripsPerBox;
-        const pricePerStrip = Math.round(it.pricePerBox / it.stripsPerBox);
+        // البونص يدخل المخزون مجاناً: الأشرطة الكلية = (المدفوع + البونص) × شريط/علبة،
+        // والتكلفة الفعلية للشريط = المبلغ المدفوع ÷ الأشرطة الكلية — فيَنخفض متوسط التكلفة تلقائياً
+        // ويبقى إجمالي الفاتورة (المبلغ المدفوع) كما هو.
+        const bonus = it.bonusBoxes || 0;
+        const totalStrips = (it.quantityBoxes + bonus) * it.stripsPerBox;
+        const pricePerStrip = Math.round((it.pricePerBox * it.quantityBoxes) / totalStrips);
         const med = it.matchedMedicine;
         return {
           id: `draft-inv-${it.id}`,
@@ -397,6 +402,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
           retailPrice: it.retailPrice || Math.round(pricePerStrip * 1.25),
           officialPrice: it.officialPrice || Math.round(pricePerStrip * 1.35),
           qty: totalStrips,
+          bonusQty: bonus > 0 ? bonus * it.stripsPerBox : undefined,
           // it.expiry بصيغة YYYY-MM بعد التهيئة → نُكمّلها إلى أول الشهر YYYY-MM-01
           expiryDate: it.expiry ? `${it.expiry}-01` : `${DEFAULT_EXPIRY_MONTH}-01`,
           // الباركود: باركود المخزون للمطابق، وإلا المُدخَل يدوياً للجديد، وإلا يُولَّد تلقائياً
@@ -770,7 +776,11 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                 <div className="px-4 sm:px-5 pb-3 space-y-2.5">
                   {visibleItems.map(item => {
                     const pricePerStrip = item.stripsPerBox > 0 ? Math.round(item.pricePerBox / item.stripsPerBox) : 0;
-                    const totalStrips = item.quantityBoxes * item.stripsPerBox;
+                    const bonus = item.bonusBoxes || 0;
+                    const totalStrips = (item.quantityBoxes + bonus) * item.stripsPerBox;
+                    // التكلفة الفعلية للشريط بعد البونص (المبلغ المدفوع ÷ كل الأشرطة) — تُعرض حين يوجد بونص
+                    const effectivePerStrip = totalStrips > 0 ? Math.round((item.pricePerBox * item.quantityBoxes) / totalStrips) : pricePerStrip;
+                    const zeroPriceLine = item.pricePerBox === 0 && item.quantityBoxes > 0;
                     const badge = matchBadge(item.matchScore, !!item.matchedMedicine, item.matchedByAlias, item.matchedByAI);
                     const deviation = priceDeviation(pricePerStrip, item.matchedMedicine);
                     const deviates = deviation !== null && Math.abs(deviation) > PRICE_DEVIATION_LIMIT;
@@ -898,12 +908,26 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
 
                         {/* قسم الأرقام: الكمية والتكلفة — فاصل شعري هادئ بدل الصناديق الملوّنة.
                             الحقول البيضاء قابلة للتعديل، والقيمة المشتقّة (س/شريط) مظلَّلة */}
-                        <div className="border-t border-slate-100 pt-2.5 grid grid-cols-4 gap-2">
+                        {/* سطر بسعر صفر بلا توأم مدفوع: غالباً بونص لمادة أخرى أو عرض — لن يُعتمد بلا سعر */}
+                        {zeroPriceLine && (
+                          <p className="text-[10px] font-extrabold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+                            سطر بسعر صفر — إن كان بونصاً لمادة أخرى فاحذفه وأدخل كميته في حقل «بونص» لتلك المادة، وإلا أدخل سعره؛ بلا سعر لن يُضاف للمسودة.
+                          </p>
+                        )}
+                        <div className="border-t border-slate-100 pt-2.5 grid grid-cols-5 gap-2">
                           <div className="space-y-1">
                             <label className="text-[10px] font-bold text-slate-500 block text-center">علب</label>
                             <input type="number" min={1} value={item.quantityBoxes}
                               onChange={e => updateItem(item.id, { quantityBoxes: Math.max(1, Number(e.target.value)) })}
                               className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-extrabold text-slate-900 text-center focus:outline-emerald-400" />
+                          </div>
+                          {/* البونص: علب مجانية تدخل المخزون وتخفّض التكلفة الفعلية دون أن تدخل في المبلغ المدفوع */}
+                          <div className="space-y-1">
+                            <label className={`text-[10px] font-bold block text-center ${bonus > 0 ? 'text-teal-700' : 'text-slate-500'}`}>بونص</label>
+                            <input type="number" min={0} value={bonus}
+                              onChange={e => updateItem(item.id, { bonusBoxes: Math.max(0, Number(e.target.value)) })}
+                              title="علب مجانية من المذخر — تُضاف للمخزون وتُخفّض تكلفة الشريط الفعلية"
+                              className={`w-full border rounded-lg px-2 py-1.5 text-xs font-extrabold text-center focus:outline-teal-400 ${bonus > 0 ? 'bg-teal-50 border-teal-300 text-teal-800' : 'bg-white border-slate-200 text-slate-900'}`} />
                           </div>
                           <div className="space-y-1">
                             <label className="text-[10px] font-bold text-slate-500 block text-center">شريط/علبة</label>
@@ -923,6 +947,11 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                               title={deviates ? `يختلف عن آخر شراء بنسبة ${Math.round(Math.abs(deviation!) * 100)}% — تحقّق من الرقم في الفاتورة` : undefined}>
                               {pricePerStrip.toLocaleString()}
                             </div>
+                            {bonus > 0 && (
+                              <p className="text-[10px] font-extrabold text-teal-700 text-center" title="التكلفة الفعلية للشريط بعد احتساب البونص المجاني">
+                                فعلي {effectivePerStrip.toLocaleString()}
+                              </p>
+                            )}
                             {/* التكلفة السابقة المسجَّلة في المخزن — رقم مجرَّد بالأحمر مباشرة تحت س/شريط، بلا تسمية ولا صندوق */}
                             {item.matchedMedicine && (item.matchedMedicine.costPrice ?? item.matchedMedicine.lastCostPrice) && (
                               <p className={`text-[10px] font-extrabold text-center ${deviates ? 'text-orange-700' : 'text-rose-600'}`}>
@@ -1014,7 +1043,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                           <div className="space-y-1">
                             <label className="text-[10px] font-bold text-slate-500 block text-center">إجمالي الأشرطة</label>
                             <div className="w-full bg-slate-100/70 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-extrabold text-slate-700 text-center font-mono">
-                              {totalStrips} شريط
+                              {totalStrips} شريط{bonus > 0 && <span className="text-teal-700 font-bold"> (منها {bonus * item.stripsPerBox} بونص)</span>}
                             </div>
                           </div>
                         </div>

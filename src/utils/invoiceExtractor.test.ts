@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseNumber, matchToInventory, ampouleVialCount, sanitizeApiKey, normalizeName, resolveStripsPerBox } from './invoiceExtractor';
+import { parseNumber, matchToInventory, ampouleVialCount, sanitizeApiKey, normalizeName, resolveStripsPerBox, mergeBonusLines } from './invoiceExtractor';
 import type { Medicine } from '../types';
 
 describe('parseNumber', () => {
@@ -193,5 +193,48 @@ describe('ampouleVialCount', () => {
   it('ليس أمبولاً/فيالاً = null (تبقى الأقراص بمنطق الأشرطة)', () => {
     expect(ampouleVialCount('Inaprol fort 500 mg * 20 tab')).toBeNull();
     expect(ampouleVialCount('Ribosan cough syrup 100 ml')).toBeNull();
+  });
+});
+
+describe('mergeBonusLines — بونص بسطر مكرَّر بسعر صفر', () => {
+  it('يدمج السطر الصفري اللاحق كبونص في السطر المدفوع ويحذفه', () => {
+    const out = mergeBonusLines([
+      { rawName: 'Panadol Extra * 24 tab', quantityBoxes: 10, pricePerBox: 5000 },
+      { rawName: 'Panadol Extra * 24 tab', quantityBoxes: 1, pricePerBox: 0 },
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].bonusBoxes).toBe(1);
+    expect(out[0].quantityBoxes).toBe(10);
+  });
+  it('يدمج السطر الصفري حتى لو جاء قبل السطر المدفوع', () => {
+    const out = mergeBonusLines([
+      { rawName: 'Augmentin 1g', quantityBoxes: 2, pricePerBox: 0 },
+      { rawName: 'Augmentin 1 g', quantityBoxes: 12, pricePerBox: 14500 },
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].pricePerBox).toBe(14500);
+    expect(out[0].bonusBoxes).toBe(2);
+  });
+  it('يجمع بونص العمود مع بونص السطر المكرَّر', () => {
+    const out = mergeBonusLines([
+      { rawName: 'Brufen 400', quantityBoxes: 10, bonusBoxes: 1, pricePerBox: 3000 },
+      { rawName: 'Brufen 400', quantityBoxes: 1, pricePerBox: 0 },
+    ]);
+    expect(out[0].bonusBoxes).toBe(2);
+  });
+  it('يترك السطر الصفري الذي لا توأم مدفوعاً له كما هو', () => {
+    const out = mergeBonusLines([
+      { rawName: 'Free sample cream', quantityBoxes: 3, pricePerBox: 0 },
+      { rawName: 'Voltaren gel', quantityBoxes: 5, pricePerBox: 4000 },
+    ]);
+    expect(out).toHaveLength(2);
+    expect(out.find(o => o.rawName === 'Voltaren gel')?.bonusBoxes).toBeUndefined();
+  });
+  it('عياران مختلفان لا يُدمجان', () => {
+    const out = mergeBonusLines([
+      { rawName: 'Diovan 160', quantityBoxes: 5, pricePerBox: 12000 },
+      { rawName: 'Diovan 80', quantityBoxes: 1, pricePerBox: 0 },
+    ]);
+    expect(out).toHaveLength(2);
   });
 });

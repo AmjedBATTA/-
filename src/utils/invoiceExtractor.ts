@@ -165,6 +165,7 @@ const EXTRACTION_PROMPT = `أنت نظام استخراج بيانات دقيق 
       "arabicName": "الاسم التجاري العربي الشائع في العراق",
       "company": "اسم الشركة المصنعة",
       "quantityBoxes": 10,
+      "bonusBoxes": 1,
       "pricePerBox": 5000,
       "stripsPerBox": 2,
       "unitType": "strip",
@@ -186,6 +187,11 @@ const EXTRACTION_PROMPT = `أنت نظام استخراج بيانات دقيق 
   - أمبول/فيال (amp/vial): stripsPerBox = عدد الأمبولات/الفيالات في العلبة («* 5 amp» → 5، «10 oral vials» → 10، «* 1 amp» → 1)
   - شراب/قطرة/كريم/جل/مرهم/ساشيت/بودرة/مرش/حقنة سائلة (injection بحجم مل): stripsPerBox = 1
 • unitType: "strip" للأقراص والكبسولات | "unit" لكل الباقي (شراب/كريم/أمبول/فيال...)
+• البونص (العلب المجانية) يظهر بأحد شكلين — افصله دائماً عن الكمية المدفوعة:
+  - عمود مستقل بعنوان «بونص» أو Bonus أو Free أو FOC أو صيغة «10+1»: quantityBoxes = المدفوع (10)، bonusBoxes = المجاني (1)
+  - سطر مكرَّر لنفس المادة بكمية ما وبسعر/مبلغ صفر: هذا السطر هو البونص — لا تُخرجه كسطر مستقل،
+    بل أضف كميته إلى bonusBoxes في سطر المادة المدفوع نفسه
+  - لا بونص → bonusBoxes = 0
 • الأرقام: أزل الفاصلة العليا (14'765 → 14765) والنقطة العشرية (14'500.00 → 14500)
 • إذا لم يكن الحقل واضحاً اجعله null
 • إذا أُرفقت أكثر من صورة فهي صفحات متتابعة لفاتورة واحدة: ادمج أسطرها كلها في قائمة واحدة
@@ -222,6 +228,7 @@ const INVOICE_SCHEMA = {
           arabicName: { type: Type.STRING, nullable: true },
           company: { type: Type.STRING, nullable: true },
           quantityBoxes: { type: Type.NUMBER, nullable: true },
+          bonusBoxes: { type: Type.NUMBER, nullable: true },
           pricePerBox: { type: Type.NUMBER, nullable: true },
           stripsPerBox: { type: Type.NUMBER, nullable: true },
           unitType: { type: Type.STRING, nullable: true },
@@ -254,11 +261,12 @@ const DISAMBIGUATION_SCHEMA = {
   required: ['decisions'],
 };
 
-interface RawGeminiItem {
+export interface RawGeminiItem {
   rawName?: string;
   arabicName?: string;
   company?: string;
   quantityBoxes?: number | string;
+  bonusBoxes?: number | string;
   pricePerBox?: number | string;
   stripsPerBox?: number | string;
   unitType?: string;
@@ -351,6 +359,42 @@ async function callStructured(
   throw lastError ?? new Error('تعذّر الاتصال بنموذج Gemini.');
 }
 
+// شبكة أمان للبونص بالسطر المكرَّر: إن أخرج النموذج سطراً بسعر صفر لمادة لها سطر مدفوع
+// في الفاتورة نفسها (نفس الاسم بعد التطبيع)، نُدمج كميته كبونص في السطر المدفوع ونحذفه —
+// حتى لو تجاهل النموذج قاعدة الدمج في التعليمات. السطر الصفري بلا توأم مدفوع يبقى كما هو.
+export function mergeBonusLines(items: RawGeminiItem[]): RawGeminiItem[] {
+  const keyOf = (it: RawGeminiItem) => normalizeName(it.rawName || '') || normalizeName(it.arabicName || '');
+  const out: RawGeminiItem[] = [];
+  const paidByKey = new Map<string, RawGeminiItem>();
+  const pendingBonus = new Map<string, number>();
+  for (const it of items) {
+    const key = keyOf(it);
+    const price = parseNumber(it.pricePerBox);
+    const qty = parseNumber(it.quantityBoxes);
+    if (key && price === 0 && qty > 0) {
+      const paid = paidByKey.get(key);
+      if (paid) { paid.bonusBoxes = parseNumber(paid.bonusBoxes) + qty; continue; }
+      // السطر المدفوع قد يأتي بعد الصفري — نؤجّل ثم نُلحقه إن ظهر
+      pendingBonus.set(key, (pendingBonus.get(key) || 0) + qty);
+      out.push(it);
+      continue;
+    }
+    if (key && price > 0) {
+      if (!paidByKey.has(key)) paidByKey.set(key, it);
+      const pend = pendingBonus.get(key);
+      if (pend) {
+        it.bonusBoxes = parseNumber(it.bonusBoxes) + pend;
+        pendingBonus.delete(key);
+        // نحذف السطر الصفري المؤجَّل الذي سبق دفعه إلى المخرجات
+        const idx = out.findIndex(o => keyOf(o) === key && parseNumber(o.pricePerBox) === 0);
+        if (idx >= 0) out.splice(idx, 1);
+      }
+    }
+    out.push(it);
+  }
+  return out;
+}
+
 export async function extractInvoice(
   images: InvoiceImage | InvoiceImage[],
   apiKey: string,
@@ -384,7 +428,7 @@ export async function extractInvoice(
     (p) => !!p && typeof p === 'object' && Array.isArray((p as { items?: unknown }).items) && ((p as { items: unknown[] }).items.length > 0),
   );
   const raw = parsed as { supplierName?: string; invoiceNo?: string; date?: string; totalAmount?: number | string; items: RawGeminiItem[] };
-  const rawItems: RawGeminiItem[] = Array.isArray(raw.items) ? raw.items : [];
+  const rawItems: RawGeminiItem[] = mergeBonusLines(Array.isArray(raw.items) ? raw.items : []);
 
   const items: ExtractedInvoiceItem[] = rawItems.map((item, idx) => {
     const arabicName = (item.arabicName || item.rawName || '').trim();
@@ -410,6 +454,7 @@ export async function extractInvoice(
       arabicName,
       company: (item.company || '').trim(),
       quantityBoxes: Math.max(1, parseNumber(item.quantityBoxes) || 1),
+      bonusBoxes: Math.max(0, parseNumber(item.bonusBoxes)),
       pricePerBox: parseNumber(item.pricePerBox),
       stripsPerBox,
       unitType: item.unitType === 'unit' ? 'unit' : 'strip',

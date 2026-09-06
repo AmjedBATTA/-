@@ -77,7 +77,8 @@ export interface ExtractedInvoiceItem {
   rawName: string;
   arabicName: string;
   company: string;
-  quantityBoxes: number;
+  quantityBoxes: number;  // العلب المدفوعة
+  bonusBoxes?: number;    // علب البونص المجانية (عمود «بونص» أو سطر مكرَّر بسعر صفر) — تدخل المخزون وتخفّض التكلفة
   pricePerBox: number;
   stripsPerBox: number;
   unitType: 'strip' | 'unit';
