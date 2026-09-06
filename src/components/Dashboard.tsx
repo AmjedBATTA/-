@@ -620,9 +620,13 @@ function calcReducer(s: CalcState, a: CalcAction): CalcState {
   }
 }
 
-interface CalculatorProps { onClose: () => void }
+interface CalculatorProps {
+  onClose: () => void;
+  // مقبض السحب: يُلصق بصف العنوان فقط (لا بالأزرار) — يُمرَّر من الغلاف المتحرّك DraggableCalculator
+  dragHandleProps?: { onPointerDown: (e: React.PointerEvent) => void; onPointerMove: (e: React.PointerEvent) => void; onPointerUp: (e: React.PointerEvent) => void };
+}
 
-const Calculator = React.memo(forwardRef<CalculatorHandle, CalculatorProps>(({ onClose }, ref) => {
+const Calculator = React.memo(forwardRef<CalculatorHandle, CalculatorProps>(({ onClose, dragHandleProps }, ref) => {
   const [st, dispatch] = useReducer(calcReducer, CALC_INITIAL);
   const [copied, setCopied] = useState(false);
   const isError = st.display === CALC_ERROR;
@@ -680,8 +684,11 @@ const Calculator = React.memo(forwardRef<CalculatorHandle, CalculatorProps>(({ o
 
   return (
     <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-3 space-y-2" role="application" aria-label="حاسبة سريعة">
-      <div className="flex items-center justify-between px-1">
-        <span className="text-[10px] font-black text-slate-400">حاسبة سريعة</span>
+      {/* صف العنوان هو مقبض السحب: اسحبه لتحريك اللوحة، أزرار الأرقام نفسها لا تتأثّر */}
+      <div className="flex items-center justify-between px-1 -m-1 p-1 rounded-lg touch-none"
+        style={{ cursor: dragHandleProps ? 'grab' : undefined }}
+        {...(dragHandleProps || {})}>
+        <span className="text-[10px] font-black text-slate-400 select-none">⠿ حاسبة سريعة</span>
         <button type="button" onClick={onClose} title="إغلاق الحاسبة" aria-label="إغلاق الحاسبة"
           className="text-slate-500 hover:text-rose-400 transition cursor-pointer">
           <X className="w-3.5 h-3.5" />
@@ -720,6 +727,89 @@ const Calculator = React.memo(forwardRef<CalculatorHandle, CalculatorProps>(({ o
         <button type="button" onClick={() => dispatch({ type: 'dot' })} className={digitCls} aria-label="فاصلة عشرية">.</button>
         <button type="button" onClick={op(null)} className={`${base} bg-emerald-500 text-white hover:bg-emerald-400`} aria-label="يساوي" title="يساوي (Enter)">=</button>
       </div>
+    </div>
+  );
+}));
+
+// =========================================================
+// DRAGGABLE CALCULATOR WRAPPER — يحافظ على مكانها الثابت الافتراضي (أعلى يمين الشاشة، حيث
+// كانت مثبَّتة سابقاً بـ top-24 right-3/6) لكن يسمح بسحبها بالماوس أو اللمس لأي مكان، ويتذكّر
+// آخر موضع محلياً (localStorage) بمعزل عن Dashboard — السحب المتكرر (setState لكل حركة فأرة) لا
+// يُعيد تصيير الشجرة العملاقة كلها، بل هذا المكوّن الصغير فقط (مثل عزل POSSearchBar/Calculator).
+// =========================================================
+const CALC_POS_KEY = 'anwar_calc_pos';
+type CalcPos = { top: number; right: number };
+
+function loadCalcPos(): CalcPos {
+  try {
+    const raw = localStorage.getItem(CALC_POS_KEY);
+    if (raw) {
+      const p = JSON.parse(raw);
+      if (typeof p?.top === 'number' && typeof p?.right === 'number') return p;
+    }
+  } catch {}
+  // الموضع الافتراضي الثابت — نفس مكانها القديم (top-24 right-3 على الجوال، right-6 على الشاشات الأوسع)
+  return { top: 96, right: typeof window !== 'undefined' && window.innerWidth >= 640 ? 24 : 12 };
+}
+
+function clampCalcPos(p: CalcPos): CalcPos {
+  const w = typeof window !== 'undefined' ? window.innerWidth : 1280;
+  const h = typeof window !== 'undefined' ? window.innerHeight : 800;
+  return {
+    top: Math.min(Math.max(8, p.top), h - 48),
+    right: Math.min(Math.max(8, p.right), w - 48),
+  };
+}
+
+interface DraggableCalculatorProps { show: boolean; onShowChange: (v: boolean) => void }
+
+const DraggableCalculator = React.memo(forwardRef<CalculatorHandle, DraggableCalculatorProps>(({ show, onShowChange }, ref) => {
+  const [pos, setPos] = useState<CalcPos>(loadCalcPos);
+  const [dragging, setDragging] = useState(false);
+  // إحداثيات بداية السحب — في ref لا حالة، فتتبّع الحركة لا يُعيد التصيير إلا عند فعلاً تغيّر الموضع
+  const dragRef = useRef<{ startX: number; startY: number; origin: CalcPos; moved: boolean } | null>(null);
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    dragRef.current = { startX: e.clientX, startY: e.clientY, origin: pos, moved: false };
+    setDragging(true);
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const dx = e.clientX - d.startX;
+    const dy = e.clientY - d.startY;
+    if (!d.moved && Math.hypot(dx, dy) > 4) d.moved = true;
+    if (!d.moved) return;
+    // dx موجب (سحب يميناً) يُقرِّب العنصر من الحافة اليمنى فيُنقص right، والعكس بالعكس
+    setPos(clampCalcPos({ top: d.origin.top + dy, right: d.origin.right - dx }));
+  };
+  const onPointerUp = () => {
+    const d = dragRef.current;
+    setDragging(false);
+    dragRef.current = null;
+    if (d?.moved) {
+      setPos(p => { try { localStorage.setItem(CALC_POS_KEY, JSON.stringify(p)); } catch {} return p; });
+    } else if (!show) {
+      // نقرة بلا سحب على الأيقونة المصغَّرة = فتح الحاسبة
+      onShowChange(true);
+    }
+  };
+  const dragHandlers = { onPointerDown, onPointerMove, onPointerUp };
+
+  return (
+    <div className="fixed z-40" style={{ top: pos.top, right: pos.right }}>
+      {show ? (
+        <div className="w-60">
+          <Calculator ref={ref} onClose={() => onShowChange(false)} dragHandleProps={dragHandlers} />
+        </div>
+      ) : (
+        <button type="button" title="حاسبة سريعة — اسحبها لتغيير مكانها" aria-label="حاسبة سريعة"
+          className={`w-11 h-11 bg-slate-900 border border-slate-700 rounded-2xl shadow-lg flex items-center justify-center text-slate-300 hover:text-emerald-400 hover:border-emerald-500 transition touch-none select-none ${dragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+          {...dragHandlers}>
+          <CalculatorIcon className="w-5 h-5" />
+        </button>
+      )}
     </div>
   );
 }));
@@ -9253,22 +9343,11 @@ export default function Dashboard() {
         )}
       </AnimatePresence>
 
-      {/* حاسبة سريعة — أيقونة عائمة ثابتة يمين الشاشة (بجانب سلة البيع)، مرفوعة هنا خارج أي عنصر
-          متحرّك (motion.div) لأن أي تحويل (transform) في سلف يُنشئ كتلة احتواء جديدة لـ fixed
-          فيُفسد التموضع الحقيقي بالنسبة للشاشة. تظهر في تبويبَي نقطة البيع وطلبيات المذاخر. */}
+      {/* حاسبة سريعة — عائمة قابلة للسحب بالماوس (أو باللمس)، مرفوعة هنا خارج أي عنصر متحرّك
+          (motion.div) لأن أي تحويل (transform) في سلف يُنشئ كتلة احتواء جديدة لـ fixed فيُفسد
+          التموضع الحقيقي بالنسبة للشاشة. تظهر في تبويبَي نقطة البيع وطلبيات المذاخر. */}
       {(activeTab === 'pos' || activeTab === 'b2b') && (
-        <div className="fixed top-24 right-3 sm:right-6 z-40">
-          {showCalculator ? (
-            <div className="w-60">
-              <Calculator ref={calculatorRef} onClose={() => setShowCalculator(false)} />
-            </div>
-          ) : (
-            <button type="button" onClick={() => setShowCalculator(true)} title="حاسبة سريعة"
-              className="w-11 h-11 bg-slate-900 border border-slate-700 rounded-2xl shadow-lg flex items-center justify-center text-slate-300 hover:text-emerald-400 hover:border-emerald-500 transition cursor-pointer">
-              <CalculatorIcon className="w-5 h-5" />
-            </button>
-          )}
-        </div>
+        <DraggableCalculator ref={calculatorRef} show={showCalculator} onShowChange={setShowCalculator} />
       )}
 
       {/* Invoice Import Modal — محمّل كسولاً، ويُعرض داخل تبويب طلبيات المذاخر حصراً:
