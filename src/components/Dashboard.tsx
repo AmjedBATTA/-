@@ -49,6 +49,7 @@ interface POSItem {
   quantity: number;
   outOfStock?: boolean; // علامة تذكير لمادة نافذة (رصيد صفر): تظهر بالأحمر الباهت، لا تُحتسب في المجموع ولا تُخصم من المخزون
   zeroStock?: boolean;  // بيع فعلي لمادة رصيدها صفر (المسح الثاني للنافذة): يُحتسب ويُسجَّل، والمخزون يبقى صفراً لا سالباً
+  customPrice?: number; // سعر بيع مخصّص لهذا السطر فقط (نقرة على السعر في السلة) — يحلّ محل سعر المخزون في الفاتورة والربح
 }
 
 // تعقيم نص قبل حقنه في قالب HTML يُبنى كسلسلة نصية (مثل صفحات الطباعة عبر document.write) —
@@ -175,7 +176,7 @@ function generateSeedSuppliers(): Supplier[] {
 // مفتاح كانت تُعيد تصيير الشجرة كاملةً = بطء محسوس. بعزله، الكتابة تُحدّث هذا
 // المكوّن الصغير فقط، ويُبلّغ الأب بالقيمة المُلتزَمة بعد debounce (150ms) فقط.
 // =========================================================
-export type POSSearchHandle = { setValue: (v: string) => void };
+export type POSSearchHandle = { setValue: (v: string) => void; focus: () => void };
 
 interface POSSearchBarProps {
   onQueryChange: (q: string) => void;   // تُستدعى بالقيمة المؤجّلة (debounced) لفلترة الرف
@@ -186,6 +187,7 @@ interface POSSearchBarProps {
 const POSSearchBar = forwardRef<POSSearchHandle, POSSearchBarProps>(
   ({ onQueryChange, onEnter, onScanClick }, ref) => {
     const [input, setInput] = useState('');
+    const inputRef = useRef<HTMLInputElement>(null);
 
     // debounce: تأخير الفلترة 150ms بعد آخر ضغطة — يمنع إعادة تصيير الأب لكل حرف
     useEffect(() => {
@@ -196,6 +198,7 @@ const POSSearchBar = forwardRef<POSSearchHandle, POSSearchBarProps>(
     // يسمح لقارئ الباركود (في الأب) بدفع قيمة ممسوحة إلى الحقل مباشرةً
     useImperativeHandle(ref, () => ({
       setValue: (v: string) => { setInput(v); onQueryChange(v); },
+      focus: () => inputRef.current?.focus(),
     }), [onQueryChange]);
 
     return (
@@ -203,6 +206,7 @@ const POSSearchBar = forwardRef<POSSearchHandle, POSSearchBarProps>(
         <div className="relative flex-1 sm:flex-initial">
           <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
           <input
+            ref={inputRef}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -243,17 +247,20 @@ interface InventorySearchBarProps {
 const InventorySearchBar = forwardRef<POSSearchHandle, InventorySearchBarProps>(
   ({ onQueryChange }, ref) => {
     const [input, setInput] = useState('');
+    const inputRef = useRef<HTMLInputElement>(null);
     useEffect(() => {
       const t = setTimeout(() => onQueryChange(input), 150);
       return () => clearTimeout(t);
     }, [input, onQueryChange]);
     useImperativeHandle(ref, () => ({
       setValue: (v: string) => { setInput(v); onQueryChange(v); },
+      focus: () => inputRef.current?.focus(),
     }), [onQueryChange]);
     return (
       <div className="relative flex-1 min-w-[180px]">
         <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
         <input
+          ref={inputRef}
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -383,17 +390,27 @@ interface CartItemRowProps {
   onAddShortage: (med: Medicine) => void; // نقر مزدوج على اسم العنصر = إضافته لقائمة نواقص الأدوية
   onAddToCalculator?: (amount: number) => void; // موجودة فقط والحاسبة مفتوحة — زر إجمالي السطر أعلى يسار الصف
   soldToday: number; // ما بيع من هذه المادة اليوم في سجل المبيعات (يُعرض على صفوف النافذة/بلا رصيد)
+  onSetPrice: (medId: string, price: number | null) => void; // سعر مخصّص للسطر (null = العودة لسعر المخزون)
 }
 
-const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove, onAddShortage, onAddToCalculator, soldToday }: CartItemRowProps) => {
+const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove, onAddShortage, onAddToCalculator, soldToday, onSetPrice }: CartItemRowProps) => {
   // السعر المُحاسَب دائماً هو الجمهوري — «الرسمي» للعرض فقط ولا يدخل في المحاسبة.
   // وضع «السعر الرسمي» مفعّلاً: يُعرض الرسمي وحده (سعراً وإجمالياً) ويُخفى الجمهوري
   // و«الشراء» — شاشة تواجه الزبون، لا تكشف السعر الداخلي ولا الكلفة.
   const unitPrice = item.medicine.price;
   const officialPrice = item.medicine.secondaryPrice || (item.medicine.price + 500);
-  const shownUnit = showVirtualPrice ? officialPrice : unitPrice;
+  // السعر المخصّص للسطر (إن حُدّد بنقرة على السعر) يتقدّم على الجمهوري والرسمي معاً — هو ما سيُباع به فعلاً
+  const shownUnit = item.customPrice ?? (showVirtualPrice ? officialPrice : unitPrice);
   // سعر الشراء للعرض: التكلفة المتوسطة وإلا آخر سعر شراء (لا يُكشف في وضع «الرسمي»)
   const costUnit = item.medicine.costPrice || item.medicine.lastCostPrice || 0;
+  // تعديل السعر داخل الصف: نقرة على السعر تفتح حقلاً صغيراً؛ Enter/الخروج يعتمد، Escape يلغي
+  const [editingPrice, setEditingPrice] = useState<string | null>(null);
+  const commitPrice = () => {
+    if (editingPrice === null) return;
+    const v = Math.round(Number(editingPrice));
+    onSetPrice(item.medicine.id, v > 0 && v !== item.medicine.price ? v : null);
+    setEditingPrice(null);
+  };
 
   // مادة نافذة (رصيد صفر): سطر تذكير أحمر باهت — اسم + سعر بلا شطب، بلا أزرار كمية،
   // غير محتسب في الإجمالي ولا يُخصم من المخزون. زر الحذف فقط. المسح الثاني يحوّله لبيع فعلي.
@@ -444,6 +461,9 @@ const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove
         title="نقرة مزدوجة: إضافة إلى نواقص الأدوية">
         <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
           <span className={`font-semibold text-xs leading-snug line-clamp-2 ${item.zeroStock ? 'text-rose-100' : 'text-white'}`}>{item.medicine.nameAr}</span>
+          {item.customPrice !== undefined && (
+            <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-sky-900/60 text-sky-300 shrink-0" title={`سعر المخزون ${fmtNum(item.medicine.price)} د.ع`}>سعر مخصّص</span>
+          )}
           {/* بيع برصيد صفر: شارة تنبيه + مجموع ما بيع منها اليوم (السجل + هذه السلة) */}
           {item.zeroStock && (
             <>
@@ -456,16 +476,37 @@ const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove
             نظيفة تواجه الزبون. الوضع العادي: سعر الوحدة × العدد + الشراء على سطر واحد، والإجمالي بجانبها. */}
         <div className="flex items-baseline justify-between gap-2 flex-wrap">
           <span className="text-sm text-slate-400 font-mono">
-            {!showVirtualPrice && (
+            {editingPrice !== null ? (
+              // حقل السعر المخصّص — يوقف النقر المزدوج للنواقص كي لا يتداخل مع التحرير
+              <input
+                type="number" min={0} step={250} autoFocus value={editingPrice}
+                onClick={e => e.stopPropagation()}
+                onChange={e => setEditingPrice(e.target.value)}
+                onBlur={commitPrice}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commitPrice(); } else if (e.key === 'Escape') setEditingPrice(null); }}
+                className="w-20 bg-white text-slate-900 font-mono font-bold text-xs rounded-md px-1.5 py-0.5 border border-sky-400 focus:outline-sky-500"
+                title="سعر الوحدة لهذا السطر — Enter للاعتماد، Escape للإلغاء، صفر أو نفس سعر المخزون يعيد الأصل"
+              />
+            ) : !showVirtualPrice ? (
               <>
-                <span className="text-emerald-400 font-bold">{fmtNum(shownUnit)}</span>
+                <button type="button"
+                  onClick={e => { e.stopPropagation(); setEditingPrice(String(shownUnit)); }}
+                  title="انقر لبيع هذا السطر بسعر آخر"
+                  className={`font-bold cursor-pointer border-b border-dashed hover:text-white transition ${item.customPrice !== undefined ? 'text-sky-300 border-sky-500' : 'text-emerald-400 border-emerald-700'}`}>
+                  {fmtNum(shownUnit)}
+                </button>
+                {item.customPrice !== undefined && <span className="line-through opacity-60 mr-1">{' '}{fmtNum(unitPrice)}{' '}</span>}
                 <span> × {item.quantity}</span>
                 {item.medicine.costPrice ? <span> · شراء {fmtNum((item.medicine.costPrice * item.quantity))}</span> : null}
               </>
-            )}
+            ) : null}
           </span>
-          <span className={`text-base font-mono font-bold leading-none ${showVirtualPrice ? 'text-purple-400' : 'text-amber-400'}`}>
-            {fmtNum(shownTotal)}<span className={`text-sm font-bold mr-1 ${showVirtualPrice ? 'text-purple-400' : 'text-amber-500/80'}`}>د.ع</span>
+          {/* في وضع «الرسمي» لا يظهر سعر الوحدة — فالنقر على الإجمالي هو ما يفتح تعديل السعر */}
+          <span
+            onClick={showVirtualPrice ? (e => { e.stopPropagation(); setEditingPrice(String(shownUnit)); }) : undefined}
+            title={showVirtualPrice ? 'انقر لبيع هذا السطر بسعر آخر' : undefined}
+            className={`text-base font-mono font-bold leading-none ${item.customPrice !== undefined ? 'text-sky-300' : showVirtualPrice ? 'text-purple-400' : 'text-amber-400'} ${showVirtualPrice ? 'cursor-pointer' : ''}`}>
+            {fmtNum(shownTotal)}<span className={`text-sm font-bold mr-1 ${item.customPrice !== undefined ? 'text-sky-400/80' : showVirtualPrice ? 'text-purple-400' : 'text-amber-500/80'}`}>د.ع</span>
           </span>
         </div>
       </div>
@@ -993,6 +1034,9 @@ export default function Dashboard() {
   const [showCalculator, setShowCalculator] = useState(() => { try { return localStorage.getItem('anwar_calc_open') === '1'; } catch { return false; } });
   useEffect(() => { try { localStorage.setItem('anwar_calc_open', showCalculator ? '1' : '0'); } catch {} }, [showCalculator]);
   const calculatorRef = useRef<CalculatorHandle>(null);
+  // اختصارات لوحة المفاتيح في نقطة البيع: مراجع لحقل الخصم ونموذج الدفع (F4 / F9)
+  const posDiscountRef = useRef<HTMLSelectElement>(null);
+  const posFormRef = useRef<HTMLFormElement>(null);
   const [lastPrintedInvoice, setLastPrintedInvoice] = useState<SaleRecord | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [showVirtualPriceInPOS, setShowVirtualPriceInPOS] = useState(false);
@@ -1033,6 +1077,10 @@ export default function Dashboard() {
   const inventoryFirstVisit = typeof localStorage !== 'undefined' && !localStorage.getItem('anwar_inventory_visited');
   const [showNearExpiry30, setShowNearExpiry30] = useState(inventoryFirstVisit);
   const [showExpiryHorizon, setShowExpiryHorizon] = useState(inventoryFirstVisit);
+  // المخزون الراكد: مواد برصيد لم تُبَع منذ N يوماً — مرتّبة برأس المال المحبوس فيها
+  const [showDeadStock, setShowDeadStock] = useState(false);
+  const [deadStockDays, setDeadStockDays] = useState<90 | 180 | 365>(90);
+  const [deadStockQuery, setDeadStockQuery] = useState('');
   const [showLowStock, setShowLowStock] = useState(false);
   // تعديل الكمية المباشر من جدول المخزون: الـ id قيد التحرير + القيمة المؤقتة
   const [editingQtyId, setEditingQtyId] = useState<string | null>(null);
@@ -1243,7 +1291,10 @@ export default function Dashboard() {
     
     // Fill the corresponding search query or field depending on scanTarget
     if (scanTarget === 'pos') {
-      posSearchRef.current?.setValue(code); setSearchPOSQuery(code);
+      // إن كان المستخدم قد كتب «3*» قبل فتح الكاميرا نُبقي البادئة أمام الباركود الممسوح
+      const prefix = (searchPOSQuery.match(/^\s*\d{1,3}\s*[*×xX]\s*$/) || [''])[0].trim();
+      const v = prefix + code;
+      posSearchRef.current?.setValue(v); setSearchPOSQuery(v);
     } else if (scanTarget === 'inventory') {
       invSearchRef.current?.setValue(code); setSearchInInventoryQuery(code);
     } else if (scanTarget === 'add-drug') {
@@ -2311,6 +2362,62 @@ export default function Dashboard() {
   // تقسيم النواقص لجزأين: أعلى القائمة ما أُضيف خلال آخر 5 أيام، وأسفلها — خلف خط
   // فاصل — ما تجاوز 5 أيام دون أن يُشترى (شراء الصنف واعتماده يشطبه من القائمة أصلاً).
   // showShortages ضمن التبعيات ليُعاد حساب حدّ الـ 5 أيام عند كل فتح للقائمة.
+  // مبيع كل مادة خلال آخر 60 يوماً (من سجل المبيعات) — بالمعرّف، وبالاسم العربي للسجلات القديمة بلا معرّف
+  const soldLast60 = useMemo(() => {
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 60);
+    const cutoffISO = todayLocalISO(cutoff);
+    const byId = new Map<string, number>();
+    const byName = new Map<string, number>();
+    salesLedger.forEach(rec => {
+      if (rec.timestamp.slice(0, 10) < cutoffISO) return;
+      rec.items.forEach(it => {
+        const q = Number(it.quantity) || 0;
+        if (it.medicineId) byId.set(it.medicineId, (byId.get(it.medicineId) || 0) + q);
+        const nameAr = it.name.split(' (')[0].trim();
+        if (nameAr) byName.set(nameAr, (byName.get(nameAr) || 0) + q);
+      });
+    });
+    return { byId, byName };
+  }, [salesLedger]);
+  // اقتراح كمية الطلب لناقص: مبيع شهرين ÷ 60 يوماً × أسبوعين تغطية (بالشريط، تقريباً للأعلى)
+  const shortageStats = useCallback((s: { id: string; name: string }) => {
+    const sold = soldLast60.byId.get(s.id) ?? soldLast60.byName.get(s.name) ?? 0;
+    const suggested = sold > 0 ? Math.ceil((sold / 60) * 14) : 0;
+    const stock = inventory.find(m => m.id === s.id)?.availableQuantity ?? null;
+    return { sold, suggested, stock };
+  }, [soldLast60, inventory]);
+
+  // آخر بيع لكل مادة (أحدث طابع زمني في سجل المبيعات) — أساس تقرير المخزون الراكد
+  const lastSaleByMed = useMemo(() => {
+    const m = new Map<string, string>();
+    salesLedger.forEach(rec => rec.items.forEach(it => {
+      if (!it.medicineId) return;
+      const prev = m.get(it.medicineId);
+      if (!prev || rec.timestamp > prev) m.set(it.medicineId, rec.timestamp);
+    }));
+    return m;
+  }, [salesLedger]);
+  const deadStock = useMemo(() => {
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - deadStockDays);
+    const cutoffISO = todayLocalISO(cutoff);
+    const rows = inventory
+      .filter(m => m.availableQuantity > 0)
+      .map(m => {
+        const last = lastSaleByMed.get(m.id);
+        const unitCost = m.costPrice || m.lastCostPrice || resolveUnitCost(null, m.price, defaultCostPercent);
+        return { med: m, lastSale: last ? last.slice(0, 10) : null, capital: Math.round(unitCost * m.availableQuantity) };
+      })
+      .filter(r => !r.lastSale || r.lastSale < cutoffISO)
+      .sort((a, b) => b.capital - a.capital);
+    const total = rows.reduce((sum, r) => sum + r.capital, 0);
+    return { rows, total };
+  }, [inventory, lastSaleByMed, deadStockDays, defaultCostPercent]);
+  const deadStockVisible = useMemo(() => {
+    const q = deadStockQuery.trim().toLowerCase();
+    const rows = q ? deadStock.rows.filter(r => r.med.nameAr.toLowerCase().includes(q) || (r.med.nameEn || '').toLowerCase().includes(q)) : deadStock.rows;
+    return rows.slice(0, 60);
+  }, [deadStock, deadStockQuery]);
+
   const { fresh: freshShortages, stale: staleShortages } = useMemo(
     () => splitShortagesByAge(shortages),
     [shortages, showShortages]
@@ -3054,7 +3161,7 @@ export default function Dashboard() {
   // --- POS CART COMPUTE ---
   const { subtotal: posSubtotal, discountAmount: posDiscountAmount, total: posTotal } = computeSaleTotals(
     // المواد النافذة (علامات تذكير) لا تُحتسب في المجموع/الصافي
-    currentCart.filter(i => !i.outOfStock).map(item => ({ price: item.medicine.price, quantity: item.quantity })),
+    currentCart.filter(i => !i.outOfStock).map(item => ({ price: item.customPrice ?? item.medicine.price, quantity: item.quantity })),
     posDiscountPercent
   );
 
@@ -3282,7 +3389,7 @@ export default function Dashboard() {
   }, [inventoryIndex]);
 
   // مُثبّت بـ useCallback + functional update — حتى تبقى هويته مستقرة (يعتمد عليه POSSearchBar)
-  const addToCart = useCallback((med: Medicine) => {
+  const addToCart = useCallback((med: Medicine, qty: number = 1) => {
     setCurrentCart(prev => {
       const idx = prev.findIndex(item => item.medicine.id === med.id);
       // مادة نافذة (رصيد صفر): تُضاف مرّة واحدة كعلامة تذكير حمراء فقط —
@@ -3295,13 +3402,14 @@ export default function Dashboard() {
         const rest = prev.filter(item => item.medicine.id !== med.id);
         return [existing.outOfStock ? { medicine: med, quantity: 1, zeroStock: true } : { ...existing, quantity: existing.quantity + 1 }, ...rest];
       }
+      // qty > 1 يأتي من صيغة «3*باركود» — يُضاف دفعة واحدة بسقف الرصيد المتاح
       if (idx !== -1) {
         const existing = prev[idx];
         if (existing.quantity >= med.availableQuantity) return prev;
         const rest = prev.filter(item => item.medicine.id !== med.id);
-        return [{ ...existing, quantity: existing.quantity + 1 }, ...rest];
+        return [{ ...existing, quantity: Math.min(existing.quantity + qty, med.availableQuantity) }, ...rest];
       }
-      return [{ medicine: med, quantity: 1 }, ...prev];
+      return [{ medicine: med, quantity: Math.min(Math.max(1, qty), med.availableQuantity) }, ...prev];
     });
   }, []);
 
@@ -3319,9 +3427,14 @@ export default function Dashboard() {
 
   // Callbacks مستقرّة تُمرَّر إلى POSSearchBar (حتى لا يُعاد ضبط مؤقّت الـ debounce بلا داعٍ)
   const handlePOSQueryChange = useCallback((q: string) => setSearchPOSQuery(q), []);
+  // صيغة الكمية قبل الباركود: «3*6281100115598» أو «3 × بندول» تضيف ثلاثاً دفعة واحدة
+  const QTY_PREFIX = /^\s*(\d{1,3})\s*[*×xX]\s*(.+)$/;
   const handlePOSEnter = useCallback((value: string) => {
-    const match = findScanMatch(value);
-    if (match) { addToCart(match); return true; }
+    const m = value.match(QTY_PREFIX);
+    const query = m ? m[2] : value;
+    const qty = m ? Math.max(1, parseInt(m[1], 10)) : 1;
+    const match = findScanMatch(query);
+    if (match) { addToCart(match, qty); return true; }
     return false;
   }, [findScanMatch, addToCart]);
   const handlePOSScanClick = useCallback(() => startScanning('pos'), []);
@@ -3357,9 +3470,52 @@ export default function Dashboard() {
     return m;
   }, [salesLedger]);
 
+  // سعر مخصّص لسطر في السلة (null = العودة لسعر المخزون) — هوية ثابتة كي لا تكسر React.memo على الصفوف
+  const setCartPrice = useCallback((medId: string, price: number | null) => {
+    setCurrentCart(prev => prev.map(it => it.medicine.id === medId
+      ? (price === null ? (({ customPrice: _omit, ...rest }) => rest)(it) : { ...it, customPrice: price })
+      : it));
+  }, []);
+
   // مغلّفان لتثبيت الإشارة المُمرَّرة إلى CartItemRow (onInc/onDec لا تقبل delta)
   const incCartQty = useCallback((medId: string) => updateCartQty(medId, 1), [updateCartQty]);
   const decCartQty = useCallback((medId: string) => updateCartQty(medId, -1), [updateCartQty]);
+  // اختصارات لوحة المفاتيح في نقطة البيع (اتُّفق عليها مع المستخدم):
+  // F2 بحث · F4 خصم · F8 تبديل السعر الرسمي · F9 دفع · Esc مسح السلة (بتأكيد) · ↑/↓ كمية آخر مادة أُضيفت.
+  // لا تعمل أثناء الكتابة داخل حقل (عدا F2 وF9)، ولا Esc والحاسبة/الإيصال/الماسح مفتوح كي لا تتعارض.
+  useEffect(() => {
+    if (activeTab !== 'pos') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      const inField = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+      const k = e.key;
+      if (k === 'F2') { e.preventDefault(); posSearchRef.current?.focus(); return; }
+      if (k === 'F9') {
+        e.preventDefault();
+        if (showReceiptModal || isScanning) return;
+        posFormRef.current?.requestSubmit(); // نفس مسار زر «إتمام البيع» (onSubmit) — لا يتجاوز أي تحقق
+        return;
+      }
+      if (inField) return;
+      if (k === 'F4') { e.preventDefault(); posDiscountRef.current?.focus(); return; }
+      if (k === 'F8') { e.preventDefault(); setShowVirtualPriceInPOS(v => !v); return; }
+      if (k === 'Escape') {
+        if (showCalculator || showReceiptModal || isScanning || currentCart.length === 0) return;
+        if (window.confirm('مسح سلة البيع بالكامل؟')) setCurrentCart([]);
+        return;
+      }
+      if (k === 'ArrowUp' || k === 'ArrowDown') {
+        const top = currentCart[0]; // آخر مادة أُضيفت تكون دائماً في رأس السلة
+        if (!top || top.outOfStock) return;
+        e.preventDefault();
+        updateCartQty(top.medicine.id, k === 'ArrowUp' ? 1 : -1);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activeTab, showCalculator, showReceiptModal, isScanning, currentCart, updateCartQty]);
+
   // يدفع قيمة لمرجع الحاسبة مباشرة — هوية ثابتة دائماً (لا تعتمد على حالة) فلا تُعيد تصيير صفوف السلة
   const addToCalculator = useCallback((amount: number) => { calculatorRef.current?.pushValue(amount); }, []);
 
@@ -3382,14 +3538,16 @@ export default function Dashboard() {
     // Cost basis per line (fallback to ~72% of sale price for legacy items without costPrice)
     const itemsWithCost = sellableCart.map(item => {
       const unitCost = resolveUnitCost(item.medicine.costPrice, item.medicine.price, defaultCostPercent);
+      // السعر المخصّص للسطر (إن وُجد) هو المعتمد في الفاتورة والربح، لا سعر المخزون
+      const unitSale = item.customPrice ?? item.medicine.price;
       return {
         // معرّف الدواء يُخزَّن مع الصنف — المطابقة عند الحذف/الإرجاع تتم به لا بالاسم القابل للتغيير
         medicineId: item.medicine.id,
         name: `${item.medicine.nameAr} (${item.medicine.nameEn})`,
         quantity: item.quantity,
-        price: item.medicine.price,
+        price: unitSale,
         costPrice: unitCost,
-        lineProfit: (item.medicine.price - unitCost) * item.quantity // ربح السطر قبل خصم الفاتورة
+        lineProfit: (unitSale - unitCost) * item.quantity // ربح السطر قبل خصم الفاتورة
       };
     });
     const posTotalCost = itemsWithCost.reduce((sum, it) => sum + (it.costPrice * it.quantity), 0);
@@ -5030,6 +5188,9 @@ export default function Dashboard() {
                       <div className="flex items-center gap-2">
                         <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
                         <h3 className="font-semibold text-white text-sm">سلة البيع</h3>
+                        <span className="hidden lg:inline text-xs text-slate-500 font-bold mr-1" title="اختصارات لوحة المفاتيح (لا تعمل أثناء الكتابة في حقل، عدا F2 وF9)">
+                          F2 بحث · F4 خصم · F8 رسمي · F9 دفع · Esc مسح · ↑↓ كمية
+                        </span>
                         {currentCart.length > 0 && (
                           <span className="bg-emerald-500 text-white text-sm font-bold px-2 py-0.5 rounded-full">
                             {currentCart.length}
@@ -5051,7 +5212,7 @@ export default function Dashboard() {
                         <p className="text-xs text-slate-500 font-semibold">السلة فارغة — اختر دواءً من اليمين</p>
                       </div>
                     ) : (
-                      <form onSubmit={handleCheckoutPOS} className="flex flex-col gap-4 flex-1">
+                      <form ref={posFormRef} onSubmit={handleCheckoutPOS} className="flex flex-col gap-4 flex-1">
 
                         {/* Cart Items */}
                         {/* ارتفاع الحاوية يضمن ظهور 5 أصناف على الأقل دفعة واحدة (صف مضغوط ≈ 60px) */}
@@ -5061,6 +5222,7 @@ export default function Dashboard() {
                               key={item.medicine.id}
                               item={item}
                               soldToday={soldTodayByMed.get(item.medicine.id) || 0}
+                              onSetPrice={setCartPrice}
                               showVirtualPrice={showVirtualPriceInPOS}
                               onInc={incCartQty}
                               onDec={decCartQty}
@@ -5081,6 +5243,8 @@ export default function Dashboard() {
                             placeholder="اسم المريض / المشتري"
                           />
                           <select
+                            ref={posDiscountRef}
+                            title="اختصار: F4"
                             value={posDiscountPercent}
                             onChange={(e) => setPosDiscountPercent(Number(e.target.value))}
                             className="w-full bg-slate-800 border border-slate-700 rounded-xl py-2.5 px-3 text-xs font-semibold text-slate-300"
@@ -5122,7 +5286,7 @@ export default function Dashboard() {
                           </div>
                         </div>
 
-                        <button type="submit"
+                        <button type="submit" title="اختصار: F9"
                           className="w-full bg-emerald-700 hover:bg-emerald-600 active:bg-emerald-800 text-white py-3.5 rounded-2xl text-sm font-bold shadow-lg shadow-emerald-900/40 transition cursor-pointer flex items-center justify-center gap-2">
                           <Check className="w-4 h-4" />
                           <span>{posOnCredit ? 'تسجيل البيع كذمّة آجلة' : 'إتمام البيع وصرف الفاتورة'}</span>
@@ -5189,9 +5353,17 @@ export default function Dashboard() {
                               <div className="max-h-[374px] overflow-y-auto">
                                 {/* الجزء العلوي: نواقص آخر 5 أيام (الأحدث أعلاه) */}
                                 <div className="divide-y divide-slate-50">
-                                  {freshShortages.map(s => (
+                                  {freshShortages.map(s => { const st = shortageStats(s); return (
                                     <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-slate-50 group">
-                                      <span className="text-sm font-semibold text-slate-700 truncate">{s.name}</span>
+                                      <div className="min-w-0">
+                                        <span className="text-sm font-semibold text-slate-700 truncate block">{s.name}</span>
+                                        {/* مبيع آخر شهرين + كمية مقترحة للطلب (تغطية أسبوعين) + الرصيد الحالي */}
+                                        <span className="text-xs font-bold text-slate-500 font-mono block">
+                                          مبيع شهرين: <span className={st.sold > 0 ? 'text-emerald-700' : 'text-slate-400'}>{st.sold}</span>
+                                          {st.sold > 0 ? <> · مقترح للطلب: <span className="text-violet-700">{st.suggested} شريط</span></> : ' · لم يُبَع خلال شهرين'}
+                                          {st.stock !== null && <> · بالمخزن: {st.stock}</>}
+                                        </span>
+                                      </div>
                                       <button
                                         type="button"
                                         onClick={() => removeFromShortages(s.id)}
@@ -5201,7 +5373,7 @@ export default function Dashboard() {
                                         <X className="w-3.5 h-3.5" />
                                       </button>
                                     </div>
-                                  ))}
+                                  ); })}
                                 </div>
                                 {/* خط فاصل واضح ثم الجزء السفلي: ما تجاوز 5 أيام */}
                                 {staleShortages.length > 0 && (
@@ -5213,9 +5385,16 @@ export default function Dashboard() {
                                       </span>
                                     </div>
                                     <div className="divide-y divide-slate-50 bg-rose-50/30">
-                                      {staleShortages.map(s => (
+                                      {staleShortages.map(s => { const st = shortageStats(s); return (
                                         <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-rose-50 group">
-                                          <span className="text-sm font-semibold text-rose-900/70 truncate">{s.name}</span>
+                                          <div className="min-w-0">
+                                            <span className="text-sm font-semibold text-rose-900/70 truncate block">{s.name}</span>
+                                            <span className="text-xs font-bold text-rose-800/60 font-mono block">
+                                              مبيع شهرين: {st.sold}
+                                              {st.sold > 0 ? <> · مقترح للطلب: {st.suggested} شريط</> : ' · لم يُبَع خلال شهرين'}
+                                              {st.stock !== null && <> · بالمخزن: {st.stock}</>}
+                                            </span>
+                                          </div>
                                           <button
                                             type="button"
                                             onClick={() => removeFromShortages(s.id)}
@@ -5225,7 +5404,7 @@ export default function Dashboard() {
                                             <X className="w-3.5 h-3.5" />
                                           </button>
                                         </div>
-                                      ))}
+                                      ); })}
                                     </div>
                                   </>
                                 )}
@@ -5693,6 +5872,74 @@ export default function Dashboard() {
                         )}
                       </div>
                     )}
+
+                    {/* المخزون الراكد: رصيد موجود بلا بيع منذ مدة — رأس مال محبوس يُفضَّل إرجاعه للمذخر قبل انتهائه */}
+                    <div className="bg-white border border-slate-200/70 rounded-2xl shadow-sm overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => setShowDeadStock(!showDeadStock)}
+                        className="w-full flex items-center justify-between p-5 text-right hover:bg-slate-50/60 transition cursor-pointer"
+                      >
+                        <div className="flex items-center space-x-reverse space-x-2.5">
+                          <span className="flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 border border-slate-200">
+                            <Clock className="w-4 h-4 text-slate-600" />
+                          </span>
+                          <div>
+                            <h4 className="font-semibold text-xs text-slate-900">المخزون الراكد — لم يُبَع منذ {deadStockDays} يوماً</h4>
+                            <p className="text-xs text-slate-400 font-bold mt-0.5">مواد برصيد موجود بلا أي بيع خلال المدة، مرتّبة برأس المال المحبوس فيها — للإرجاع أو التصفية قبل الانتهاء</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-reverse space-x-2">
+                          <span className="text-sm bg-slate-100 text-slate-700 font-semibold px-3 py-0.5 rounded-full border border-slate-200">
+                            {fmtNum(deadStock.rows.length)} مادة · {fmtNum(deadStock.total)} د.ع
+                          </span>
+                          <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${showDeadStock ? 'rotate-180' : ''}`} />
+                        </div>
+                      </button>
+                      {showDeadStock && (
+                        <div className="px-5 pb-5 space-y-3 border-t border-slate-100 pt-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {([90, 180, 365] as const).map(d => (
+                              <button key={d} type="button" onClick={() => setDeadStockDays(d)}
+                                className={`text-sm font-semibold px-3 py-1 rounded-full border transition cursor-pointer ${deadStockDays === d ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'}`}>
+                                {d} يوماً
+                              </button>
+                            ))}
+                            <input
+                              type="text"
+                              value={deadStockQuery}
+                              onChange={e => setDeadStockQuery(e.target.value)}
+                              placeholder="بحث باسم المادة…"
+                              className="flex-1 min-w-[160px] bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-emerald-500"
+                            />
+                          </div>
+                          <p className="text-xs text-slate-400 font-bold">
+                            «لم يُبَع منذ التسجيل» = لا يوجد أي بيع مسجَّل للمادة في التطبيق. تُعرض أعلى {deadStockVisible.length} مادة قيمةً؛ استخدم البحث للوصول لغيرها.
+                          </p>
+                          {deadStockVisible.length === 0 ? (
+                            <p className="text-xs text-slate-500 font-bold text-center py-6">لا مخزون راكد ضمن هذه المدة 🎉</p>
+                          ) : (
+                            <div className="space-y-1.5 max-h-96 overflow-y-auto pl-1">
+                              {deadStockVisible.map(({ med, lastSale, capital }) => {
+                                const exp = expiryDates[med.id];
+                                return (
+                                  <div key={med.id} className="flex items-center justify-between gap-3 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-sm font-semibold text-slate-800 truncate">{med.nameAr}</p>
+                                      <p className="text-xs font-bold text-slate-500 font-mono">
+                                        بالمخزن: {fmtNum(med.availableQuantity)} · {lastSale ? `آخر بيع: ${lastSale}` : 'لم يُبَع منذ التسجيل'}
+                                        {exp && <> · ينتهي: <span className={exp < todayLocalISO() ? 'text-rose-600' : 'text-amber-700'}>{exp.slice(0, 7)}</span></>}
+                                      </p>
+                                    </div>
+                                    <span className="text-xs font-mono font-bold text-slate-700 shrink-0">{fmtNum(capital)} <span className="text-xs font-bold text-slate-400">د.ع</span></span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
 
                     {/* Expandable Box: Add drug Form */}
                     {isAddingDrug && (
