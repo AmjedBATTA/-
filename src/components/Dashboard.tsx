@@ -395,29 +395,31 @@ const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove
 
   // مادة نافذة (رصيد صفر): سطر تذكير أحمر باهت — اسم + سعر بلا شطب، بلا أزرار كمية،
   // غير محتسب في الإجمالي ولا يُخصم من المخزون. زر الحذف فقط. المسح الثاني يحوّله لبيع فعلي.
+  // صف مضغوط: هدفه إظهار خمسة أصناف على الأقل دفعة واحدة داخل حاوية السلة بلا تمرير —
+  // سطران فقط لكل صنف (اسم+شارات، ثم سعر×عدد+إجمالي)، أزرار أصغر، بلا فراغات زائدة.
   if (item.outOfStock) {
     return (
-      <div className="bg-rose-950/40 border border-rose-900/50 rounded-2xl p-4 flex items-center justify-between gap-3">
-        <div className="flex-1 min-w-0 space-y-1 select-none cursor-pointer"
+      <div className="bg-rose-950/40 border border-rose-900/50 rounded-xl px-3 py-2 flex items-center justify-between gap-2">
+        <div className="flex-1 min-w-0 select-none cursor-pointer"
           onDoubleClick={() => onAddShortage(item.medicine)}
           title="نقرة مزدوجة: إضافة إلى نواقص الأدوية — مسح الباركود مرة ثانية: بيع برصيد صفر">
-          <div className="flex items-center gap-2">
-            <span className="font-extrabold text-rose-200 text-sm truncate">{item.medicine.nameAr}</span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="font-extrabold text-rose-200 text-xs truncate">{item.medicine.nameAr}</span>
             <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-rose-900/60 text-rose-300 shrink-0">نفذ</span>
             {soldToday > 0 && (
               <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-amber-900/50 text-amber-300 shrink-0">مبيع اليوم: {soldToday}</span>
             )}
           </div>
-          <div className="flex items-baseline gap-3 flex-wrap">
-            <span className="text-sm text-rose-300/80 font-mono font-bold">{shownUnit.toLocaleString()} د.ع</span>
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="text-[11px] text-rose-300/80 font-mono font-bold">{shownUnit.toLocaleString()} د.ع</span>
             {!showVirtualPrice && costUnit > 0 && (
-              <span className="text-xs text-rose-300/60 font-mono">الشراء: {costUnit.toLocaleString()} د.ع</span>
+              <span className="text-[10px] text-rose-300/60 font-mono">شراء: {costUnit.toLocaleString()}</span>
             )}
           </div>
         </div>
         <button type="button" onClick={() => onRemove(item.medicine.id)}
-          className="w-9 h-9 text-rose-700 hover:text-rose-300 flex items-center justify-center cursor-pointer transition shrink-0">
-          <Trash2 className="w-4 h-4" />
+          className="w-7 h-7 text-rose-700 hover:text-rose-300 flex items-center justify-center cursor-pointer transition shrink-0">
+          <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
     );
@@ -426,20 +428,20 @@ const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove
   const shownTotal = shownUnit * item.quantity;
 
   return (
-    <div className={`relative border rounded-2xl p-4 flex items-center justify-between gap-3 ${item.zeroStock ? 'bg-rose-950/50 border-rose-800/60' : 'bg-slate-800 border-slate-700'}`}>
+    <div className={`relative border rounded-xl px-3 py-2 flex items-center justify-between gap-2 ${item.zeroStock ? 'bg-rose-950/50 border-rose-800/60' : 'bg-slate-800 border-slate-700'}`}>
       {/* إضافة إجمالي هذا السطر للحاسبة — تظهر فقط والحاسبة مفتوحة */}
       {onAddToCalculator && (
         <button type="button" onClick={() => onAddToCalculator(shownTotal)}
           title="أضف إجمالي هذه المادة للحاسبة"
-          className="absolute top-1.5 left-1.5 w-5 h-5 bg-slate-700 hover:bg-emerald-600 text-slate-300 hover:text-white rounded-md flex items-center justify-center text-xs font-black leading-none cursor-pointer transition z-10">
+          className="absolute top-1 left-1 w-4 h-4 bg-slate-700 hover:bg-emerald-600 text-slate-300 hover:text-white rounded flex items-center justify-center text-[10px] font-black leading-none cursor-pointer transition z-10">
           +
         </button>
       )}
-      <div className="flex-1 min-w-0 space-y-1.5 select-none cursor-pointer"
+      <div className="flex-1 min-w-0 select-none cursor-pointer"
         onDoubleClick={() => onAddShortage(item.medicine)}
         title="نقرة مزدوجة: إضافة إلى نواقص الأدوية">
-        <div className="flex items-center gap-2 min-w-0 flex-wrap">
-          <span className={`font-extrabold text-base truncate ${item.zeroStock ? 'text-rose-100' : 'text-white'}`}>{item.medicine.nameAr}</span>
+        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+          <span className={`font-extrabold text-xs truncate ${item.zeroStock ? 'text-rose-100' : 'text-white'}`}>{item.medicine.nameAr}</span>
           {/* بيع برصيد صفر: شارة تنبيه + مجموع ما بيع منها اليوم (السجل + هذه السلة) */}
           {item.zeroStock && (
             <>
@@ -448,35 +450,32 @@ const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove
             </>
           )}
         </div>
-        {/* وضع «الرسمي»: الإجمالي الرسمي وحده بلا أي تفاصيل (سعر وحدة/عدد/عبارات) — شاشة
-            نظيفة تواجه الزبون. الوضع العادي: سعر الوحدة × العدد ثم الإجمالي الكبير */}
-        <div className="flex items-baseline gap-2 flex-wrap">
-          {!showVirtualPrice && (
-            <>
-              <span className="text-base font-mono font-bold text-emerald-400">{shownUnit.toLocaleString()} د.ع</span>
-              <span className="text-sm text-slate-400 font-mono">× {item.quantity}</span>
-            </>
-          )}
-          <span className={`text-2xl font-mono font-black leading-none ${showVirtualPrice ? 'text-purple-400' : 'text-amber-400'}`}>
-            {shownTotal.toLocaleString()}<span className={`text-sm font-bold mr-1 ${showVirtualPrice ? 'text-purple-400' : 'text-amber-500/80'}`}>د.ع</span>
+        {/* وضع «الرسمي»: الإجمالي الرسمي وحده بلا أي تفاصيل (سعر وحدة/عدد/شراء) — شاشة
+            نظيفة تواجه الزبون. الوضع العادي: سعر الوحدة × العدد + الشراء على سطر واحد، والإجمالي بجانبها. */}
+        <div className="flex items-baseline justify-between gap-2 flex-wrap">
+          <span className="text-[10px] text-slate-400 font-mono">
+            {!showVirtualPrice && (
+              <>
+                <span className="text-emerald-400 font-bold">{shownUnit.toLocaleString()}</span>
+                <span> × {item.quantity}</span>
+                {item.medicine.costPrice ? <span> · شراء {(item.medicine.costPrice * item.quantity).toLocaleString()}</span> : null}
+              </>
+            )}
+          </span>
+          <span className={`text-base font-mono font-black leading-none ${showVirtualPrice ? 'text-purple-400' : 'text-amber-400'}`}>
+            {shownTotal.toLocaleString()}<span className={`text-[10px] font-bold mr-1 ${showVirtualPrice ? 'text-purple-400' : 'text-amber-500/80'}`}>د.ع</span>
           </span>
         </div>
-        {/* «الشراء» في الوضع العادي فقط — لا يُكشف في وضع الرسمي */}
-        {!showVirtualPrice && item.medicine.costPrice && (
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-slate-400 font-mono">الشراء: {(item.medicine.costPrice * item.quantity).toLocaleString()} د.ع</span>
-          </div>
-        )}
       </div>
-      <div className="flex items-center gap-1.5 shrink-0">
+      <div className="flex items-center gap-1 shrink-0">
         <button type="button" onClick={() => onDec(item.medicine.id)}
-          className="w-9 h-9 bg-slate-700 hover:bg-slate-600 text-white rounded-xl flex items-center justify-center font-bold text-lg cursor-pointer transition">−</button>
-        <span className="font-black text-white font-mono w-8 text-center text-base">{item.quantity}</span>
+          className="w-7 h-7 bg-slate-700 hover:bg-slate-600 text-white rounded-lg flex items-center justify-center font-bold text-sm cursor-pointer transition">−</button>
+        <span className="font-black text-white font-mono w-6 text-center text-sm">{item.quantity}</span>
         <button type="button" onClick={() => onInc(item.medicine.id)}
-          className="w-9 h-9 bg-slate-700 hover:bg-emerald-700 text-white rounded-xl flex items-center justify-center font-bold text-lg cursor-pointer transition">+</button>
+          className="w-7 h-7 bg-slate-700 hover:bg-emerald-700 text-white rounded-lg flex items-center justify-center font-bold text-sm cursor-pointer transition">+</button>
         <button type="button" onClick={() => onRemove(item.medicine.id)}
-          className="w-9 h-9 text-slate-600 hover:text-rose-400 flex items-center justify-center cursor-pointer transition mr-1">
-          <Trash2 className="w-4 h-4" />
+          className="w-7 h-7 text-slate-600 hover:text-rose-400 flex items-center justify-center cursor-pointer transition">
+          <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
     </div>
@@ -4909,7 +4908,7 @@ export default function Dashboard() {
                 >
                   
                   {/* Left Column: POS Register — dark theme */}
-                  <div className="lux-dark-panel lg:col-span-7 order-first lg:order-none bg-slate-900 rounded-3xl p-5 shadow-lg flex flex-col gap-4">
+                  <div className="lux-dark-panel lg:col-span-7 order-first lg:order-none bg-slate-900 rounded-3xl p-5 shadow-lg flex flex-col gap-3">
 
                     {/* Search bar — فوق سلة البيع */}
                     <POSSearchBar
@@ -4920,7 +4919,7 @@ export default function Dashboard() {
                     />
 
                     {/* Header */}
-                    <div className="flex justify-between items-center border-b border-slate-700 pb-3">
+                    <div className="flex justify-between items-center border-b border-slate-700 pb-2">
                       <div className="flex items-center gap-2">
                         <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
                         <h3 className="font-extrabold text-white text-sm">سلة البيع</h3>
@@ -4948,7 +4947,8 @@ export default function Dashboard() {
                       <form onSubmit={handleCheckoutPOS} className="flex flex-col gap-4 flex-1">
 
                         {/* Cart Items */}
-                        <div ref={cartListRef} className="space-y-2.5 max-h-[380px] overflow-y-auto pl-1">
+                        {/* ارتفاع الحاوية يضمن ظهور 5 أصناف على الأقل دفعة واحدة (صف مضغوط ≈ 60px) */}
+                        <div ref={cartListRef} className="space-y-1.5 max-h-[460px] overflow-y-auto pl-1">
                           {currentCart.map((item) => (
                             <CartItemRow
                               key={item.medicine.id}
