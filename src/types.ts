@@ -41,6 +41,17 @@ export interface Order {
   draftSnapshot?: any[];
   onCredit?: boolean;            // هل اعتُمدت كشراء آجل (ذمّة) أم نقدي
   creditSupplierName?: string;   // اسم مورد الآجل (عند onCredit)
+  invoiceNo?: string;            // رقم فاتورة المورد (من الاستيراد بالصورة) — لكشف الفاتورة المكرّرة
+  supplierName?: string;         // اسم المورد المعتمَد للطلبية (نقداً أو آجلاً)
+}
+
+// ذاكرة خاصة بكل مورد لاستيراد الفواتير بالصورة: أمثلة مؤكَّدة (اسم الفاتورة → اسم المخزون)
+// وأسماء الشركات التي تظهر في فواتيره — تُمرَّر للنموذج كأمثلة فترتفع دقته مع كل فاتورة.
+export interface SupplierMemory {
+  supplierId: string;
+  examples: { raw: string; ar: string }[];
+  companies: string[];
+  updatedAt?: string;
 }
 
 export interface Supplier {
@@ -80,6 +91,7 @@ export interface ExtractedInvoiceItem {
   matchedMedicine: Medicine | null;
   matchScore: number;
   matchedByAlias?: boolean; // المطابقة جاءت من «ذاكرة المطابقات» المُتعلَّمة (مؤكَّدة سابقاً من المستخدم)
+  matchedByAI?: boolean;    // المطابقة حُسمت في الجولة الثانية (النموذج اختار بين مرشّحي المخزون)
   nameEnOverride?: string;  // تصحيح المستخدم للاسم الإنكليزي قبل حفظه الأول في المخزن (يسري فقط حين لا اسم إنكليزي للمادة)
 }
 

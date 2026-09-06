@@ -8,7 +8,7 @@ import {
   Barcode, X, Volume2, VolumeX, Camera, Download, Upload, Bell, Pencil, ScanLine, ChevronDown, CalendarClock,
   Calculator as CalculatorIcon
 } from 'lucide-react';
-import { Medicine, Order, Supplier, InvoiceImportDraft } from '../types';
+import { Medicine, Order, Supplier, InvoiceImportDraft, SupplierMemory } from '../types';
 import SupplierPicker from './SupplierPicker';
 // تحميل كسول: نافذة استيراد الفاتورة + مكتبة @google/genai (~305kB) لا تُحمَّل إلا عند فتحها
 const InvoiceImportModal = lazy(() => import('./InvoiceImportModal'));
@@ -731,7 +731,8 @@ const Calculator = React.memo(forwardRef<CalculatorHandle, CalculatorProps>(({ o
   );
 }));
 
-// =========================================================
+// =========================================================
+
 // DRAGGABLE CALCULATOR WRAPPER — يحافظ على مكانها الثابت الافتراضي (أعلى يمين الشاشة، حيث
 // كانت مثبَّتة سابقاً بـ top-24 right-3/6) لكن يسمح بسحبها بالماوس أو اللمس لأي مكان، ويتذكّر
 // آخر موضع محلياً (localStorage) بمعزل عن Dashboard — السحب المتكرر (setState لكل حركة فأرة) لا
@@ -853,6 +854,10 @@ export default function Dashboard() {
   // ذاكرة «شريط/علبة» المؤكَّدة: معرّف الدواء → العدد الذي اعتمده المستخدم في مراجعة استيراد سابقة.
   // تتقدّم على تقدير Gemini في الفواتير القادمة وتتزامن عبر Firestore.
   const [stripsMemory, setStripsMemory] = useState<Record<string, number>>({});
+  // ذاكرة كل مورد لاستيراد الفواتير بالصورة (أمثلة مؤكَّدة + شركاته) — تتزامن عبر Firestore
+  const [supplierMemory, setSupplierMemory] = useState<Record<string, SupplierMemory>>({});
+  // رقم فاتورة المورد القادم من الاستيراد بالصورة — يُحفظ مع الطلبية عند الاعتماد لكشف التكرار لاحقاً
+  const [purchaseInvoiceNo, setPurchaseInvoiceNo] = useState<string>('');
 
   // قائمة نواقص الأدوية: أسماء فقط، تُضاف بالنقر المزدوج على عنصر في سلة البيع.
   // معرّف الدواء يمنع التكرار، وتتزامن عبر Firestore بين الأجهزة.
@@ -2000,6 +2005,25 @@ export default function Dashboard() {
     });
 
     // 15. Sync Strips Memory (ذاكرة «شريط/علبة» المؤكَّدة: معرّف الدواء → العدد)
+    // ذاكرة الموردين (أمثلة مؤكَّدة لكل مورد) — استبدال كامل كي تسري تعديلات الأجهزة الأخرى
+    const unsubSupplierMem = onSnapshot(collection(db, 'users', userId, 'supplierMemory'), (snapshot) => {
+      const loaded: Record<string, SupplierMemory> = {};
+      snapshot.forEach(d => {
+        const data = d.data() as Partial<SupplierMemory>;
+        if (typeof data.supplierId === 'string' && data.supplierId) {
+          loaded[data.supplierId] = {
+            supplierId: data.supplierId,
+            examples: Array.isArray(data.examples) ? data.examples.filter(e => e && typeof e.raw === 'string' && typeof e.ar === 'string') : [],
+            companies: Array.isArray(data.companies) ? data.companies.filter(c => typeof c === 'string') : [],
+            updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : undefined,
+          };
+        }
+      });
+      setSupplierMemory(loaded);
+    }, () => {
+      console.warn('[مزامنة] خطأ مؤقت في الاستماع (لن يوقف التطبيق):', `users/${userId}/supplierMemory`);
+    });
+
     const unsubStrips = onSnapshot(collection(db, 'users', userId, 'stripsMemory'), (snapshot) => {
       const loaded: Record<string, number> = {};
       snapshot.forEach(d => {
@@ -2080,6 +2104,7 @@ export default function Dashboard() {
       unsubExpiry();
       unsubAliases();
       unsubStrips();
+      unsubSupplierMem();
       unsubShortages();
       unsubPosCart();
       unsubInvoiceDraft();
@@ -2236,6 +2261,25 @@ export default function Dashboard() {
       });
     }
   }, [stripsMemory, currentUser]);
+
+  // تعلُّم ذاكرة المورد بعد اعتماد فاتورة مستوردة: الأمثلة الجديدة تتقدّم على القديمة (نفس الاسم
+  // الخام يُستبدل)، وتُحدّ الأمثلة بـ 60 والشركات بـ 40 كي لا يتضخم الطلب المرسل للنموذج.
+  const learnSupplierMemory = useCallback((supplierId: string, examples: { raw: string; ar: string }[], companies: string[]) => {
+    if (!supplierId || (!examples.length && !companies.length)) return;
+    const prev = supplierMemory[supplierId] || { supplierId, examples: [], companies: [] };
+    const seen = new Set<string>();
+    const mergedExamples = [...examples, ...prev.examples]
+      .filter(e => { const k = e.raw.trim().toLowerCase(); if (!k || seen.has(k)) return false; seen.add(k); return true; })
+      .slice(0, 60);
+    const mergedCompanies = Array.from(new Set([...companies, ...prev.companies].map(c => c.trim()).filter(Boolean))).slice(0, 40);
+    const next: SupplierMemory = { supplierId, examples: mergedExamples, companies: mergedCompanies, updatedAt: new Date().toISOString() };
+    setSupplierMemory(m => ({ ...m, [supplierId]: next }));
+    if (currentUser) {
+      const userId = currentUser.uid;
+      setDoc(doc(db, 'users', userId, 'supplierMemory', supplierId), { ...next, userId })
+        .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/supplierMemory/${supplierId}`));
+    }
+  }, [supplierMemory, currentUser]);
 
   // إضافة دواء لقائمة النواقص (بالنقر المزدوج على عنصر السلة) — الاسم فقط، بلا تكرار
   const addToShortages = useCallback((med: Medicine) => {
@@ -3812,7 +3856,11 @@ export default function Dashboard() {
       draftSnapshot: JSON.parse(JSON.stringify(purchaseDraft)),
       onCredit: purchaseOnCredit,
       creditSupplierName: purchaseOnCredit ? (creditSupplierName.trim() || 'المذخر') : '',
+      // رقم فاتورة المورد (من الاستيراد بالصورة) واسمه — لكشف إدخال الفاتورة نفسها مرتين
+      ...(purchaseInvoiceNo.trim() ? { invoiceNo: purchaseInvoiceNo.trim() } : {}),
+      ...(purchaseSupplier.trim() ? { supplierName: purchaseSupplier.trim() } : {}),
     };
+    setPurchaseInvoiceNo('');
 
     let updatedInventory = [...inventory];
     const updatedExpiries = { ...expiryDates };
@@ -9361,6 +9409,8 @@ export default function Dashboard() {
           <InvoiceImportModal
             inventory={inventory}
             suppliers={suppliers}
+            supplierMemory={supplierMemory}
+            b2bOrders={b2bOrders}
             expiryDates={expiryDates}
             lastEnteredExpiry={lastEnteredExpiry}
             aliases={invoiceAliases}
@@ -9371,7 +9421,7 @@ export default function Dashboard() {
             initialDraft={invoiceImportDraft}
             onDraftChange={onInvoiceDraftChange}
             onClose={() => { setShowInvoiceImport(false); onInvoiceDraftChange(null); }}
-            onConfirm={(draftItems, supplierName) => {
+            onConfirm={(draftItems, supplierName, meta) => {
               // Merge imported items into purchaseDraft
               setPurchaseDraft(prev => {
                 const updated = [...prev];
@@ -9394,7 +9444,13 @@ export default function Dashboard() {
                 });
                 return updated;
               });
-              if (supplierName) { ensureSupplier(supplierName); applyDraftSupplier(supplierName); }
+              if (supplierName) {
+                const sup = ensureSupplier(supplierName);
+                applyDraftSupplier(supplierName);
+                // ذاكرة المورد: ما اعتُمد في هذه المراجعة يُغذّي الفواتير القادمة لهذا المورد
+                if (sup) learnSupplierMemory(sup.id, meta.examples, meta.companies);
+              }
+              if (meta.invoiceNo) setPurchaseInvoiceNo(meta.invoiceNo);
               setShowInvoiceImport(false);
               onInvoiceDraftChange(null);
               setPurchaseSuccessBanner(`تم استيراد ${draftItems.length} صنف من الفاتورة إلى مسودة الشراء`);

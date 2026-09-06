@@ -4,10 +4,10 @@ import {
   X, Upload, Loader2, CheckCircle2, AlertCircle, Search,
   ChevronDown, Trash2, FileImage, KeyRound, Eye, EyeOff, Barcode,
 } from 'lucide-react';
-import type { Medicine, ExtractedInvoiceItem, ExtractedInvoice, InvoiceImportDraft, Supplier } from '../types';
+import type { Medicine, ExtractedInvoiceItem, ExtractedInvoice, InvoiceImportDraft, Supplier, SupplierMemory, Order } from '../types';
 import SupplierPicker from './SupplierPicker';
 import { extractInvoice, getStoredApiKey, saveApiKey, matchToInventory, normalizeName, getErrorMessage } from '../utils/invoiceExtractor';
-import type { InvoiceAliasMap, StripsMemoryMap } from '../utils/invoiceExtractor';
+import type { InvoiceAliasMap, StripsMemoryMap, InvoiceImage } from '../utils/invoiceExtractor';
 
 interface DraftItem {
   id: string;
@@ -31,6 +31,8 @@ interface DraftItem {
 interface Props {
   inventory: Medicine[];
   suppliers: Supplier[]; // الموردون المحفوظون — مصدر القائمة المنسدلة لاختيار المورد
+  supplierMemory: Record<string, SupplierMemory>; // ذاكرة كل مورد (أمثلة مؤكَّدة + شركاته) — تُمرَّر للنموذج
+  b2bOrders: Order[]; // الطلبيات السابقة — لكشف فاتورة أُدخلت من قبل بنفس الرقم
   expiryDates: Record<string, string>; // معرّف الدواء → تاريخ الانتهاء المخزَّن (الأبكر، للتنبيهات)
   lastEnteredExpiry: Record<string, string>; // معرّف الدواء → آخر تاريخ أدخله المستخدم (بديل عند خلو الفاتورة)
   aliases: InvoiceAliasMap; // ذاكرة المطابقات المُتعلَّمة: اسم الفاتورة المطبَّع → معرّف الدواء
@@ -41,7 +43,52 @@ interface Props {
   initialDraft?: InvoiceImportDraft | null; // مسودة معلَّقة من جلسة/جهاز سابق — تُستعاد مباشرة في خطوة المراجعة
   onDraftChange: (draft: InvoiceImportDraft | null) => void; // يُبلَّغ به الأب فيكتبه (أو يمسحه) في السحابة
   onClose: () => void;
-  onConfirm: (items: DraftItem[], supplierName: string) => void;
+  // meta: رقم الفاتورة (يُحفظ مع الطلبية لكشف التكرار) + ما يُتعلَّم لذاكرة المورد
+  onConfirm: (items: DraftItem[], supplierName: string, meta: ConfirmMeta) => void;
+}
+
+export interface ConfirmMeta {
+  invoiceNo?: string;
+  examples: { raw: string; ar: string }[];
+  companies: string[];
+}
+
+// تصغير صورة الفاتورة قبل الإرسال: صور الهاتف (8–12 ميغابايت) تُرسل خاماً فتبطئ الاستخراج وتكلّف
+// أكثر بلا فائدة — عرض 1600 بكسل كافٍ تماماً لقراءة النص. نُخرج JPEG بجودة 0.85.
+const MAX_IMAGE_EDGE = 1600;
+async function downscaleImage(file: File): Promise<InvoiceImage> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result as string);
+    r.onerror = () => reject(new Error('تعذّرت قراءة ملف الصورة.'));
+    r.readAsDataURL(file);
+  });
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const i = new Image();
+    i.onload = () => resolve(i);
+    i.onerror = () => reject(new Error('تعذّر فكّ ترميز الصورة.'));
+    i.src = dataUrl;
+  });
+  const scale = Math.min(1, MAX_IMAGE_EDGE / Math.max(img.width, img.height));
+  if (scale >= 1 && file.size < 1.5 * 1024 * 1024) {
+    return { base64: dataUrl.split(',')[1], mimeType: file.type };
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(img.width * scale);
+  canvas.height = Math.round(img.height * scale);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return { base64: dataUrl.split(',')[1], mimeType: file.type };
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  const out = canvas.toDataURL('image/jpeg', 0.85);
+  return { base64: out.split(',')[1], mimeType: 'image/jpeg' };
+}
+
+// انحراف سعر الجملة المقروء عن آخر تكلفة محفوظة للمادة — يكشف أخطاء قراءة الأرقام (14'765 مقابل 1'4765)
+const PRICE_DEVIATION_LIMIT = 0.3;
+function priceDeviation(pricePerStrip: number, med: Medicine | null): number | null {
+  const ref = med ? (med.lastCostPrice || med.costPrice || 0) : 0;
+  if (!ref || !pricePerStrip) return null;
+  return (pricePerStrip - ref) / ref;
 }
 
 type Step = 'key' | 'upload' | 'processing' | 'review';
@@ -54,21 +101,25 @@ function toMonthInput(s?: string): string {
   return m ? `${m[1]}-${m[2].padStart(2, '0')}` : '';
 }
 
-function matchBadge(score: number, isMatched: boolean, byAlias?: boolean) {
+function matchBadge(score: number, isMatched: boolean, byAlias?: boolean, byAI?: boolean) {
   if (!isMatched) return { label: 'جديد', cls: 'bg-amber-100 text-amber-700 border-amber-200' };
   if (byAlias) return { label: 'محفوظ ✓', cls: 'bg-violet-100 text-violet-700 border-violet-200' };
+  if (byAI) return { label: 'حُسم ذكياً', cls: 'bg-sky-100 text-sky-700 border-sky-200' };
   if (score >= 0.8) return { label: 'تطابق', cls: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
   return { label: 'تقريبي', cls: 'bg-blue-100 text-blue-700 border-blue-200' };
 }
 
-export default function InvoiceImportModal({ inventory, suppliers, expiryDates, lastEnteredExpiry, aliases, stripsMemory, onLearnAliases, onForgetAliases, onLearnStrips, initialDraft, onDraftChange, onClose, onConfirm }: Props) {
+export default function InvoiceImportModal({ inventory, suppliers, supplierMemory, b2bOrders, expiryDates, lastEnteredExpiry, aliases, stripsMemory, onLearnAliases, onForgetAliases, onLearnStrips, initialDraft, onDraftChange, onClose, onConfirm }: Props) {
   const initialKey = getStoredApiKey();
   // مسودة سحابية معلَّقة (فاتورة رُوجعت ولم تُضَف لمسودة الشراء بعد) — تُستعاد مباشرة في خطوة المراجعة
   const [step, setStep] = useState<Step>(initialDraft ? 'review' : (initialKey ? 'upload' : 'key'));
   const [apiKey, setApiKey] = useState(initialKey);
   const [showKey, setShowKey] = useState(false);
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string>('');
+  // صور متعددة لفاتورة واحدة (الفواتير الطويلة تحتاج صفحتين أو أكثر) — تُرسل معاً في طلب واحد
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [progressMsg, setProgressMsg] = useState('');
+  const [sortByConfidence, setSortByConfidence] = useState(false); // الأقل ثقة أولاً في المراجعة
   const [extractedInvoice, setExtractedInvoice] = useState<ExtractedInvoice | null>(() =>
     initialDraft ? { supplierName: initialDraft.supplierName, invoiceNo: initialDraft.invoiceNo, date: initialDraft.date, items: [], totalAmount: initialDraft.totalAmount } : null
   );
@@ -176,39 +227,44 @@ export default function InvoiceImportModal({ inventory, suppliers, expiryDates, 
     return () => clearTimeout(t);
   }, [step, items, extractedInvoice, supplierName, onDraftChange]);
 
-  const handleFilePicked = useCallback((file: File) => {
-    if (!file.type.startsWith('image/')) {
+  const handleFilesPicked = useCallback((files: FileList | File[]) => {
+    const list = Array.from(files).filter(f => f.type.startsWith('image/'));
+    if (!list.length) {
       setError('يرجى اختيار ملف صورة فقط (JPG, PNG, WEBP)');
       return;
     }
-    setImageFile(file);
     setError('');
-    const reader = new FileReader();
-    reader.onload = (e) => setImagePreview(e.target?.result as string);
-    reader.readAsDataURL(file);
+    setImageFiles(prev => [...prev, ...list]);
+    list.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (e) => setImagePreviews(prev => [...prev, e.target?.result as string]);
+      reader.readAsDataURL(file);
+    });
   }, []);
+  const removeImageAt = (idx: number) => {
+    setImageFiles(prev => prev.filter((_, i) => i !== idx));
+    setImagePreviews(prev => prev.filter((_, i) => i !== idx));
+  };
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file) handleFilePicked(file);
-  }, [handleFilePicked]);
+    if (e.dataTransfer.files.length) handleFilesPicked(e.dataTransfer.files);
+  }, [handleFilesPicked]);
 
   const handleAnalyze = async () => {
-    if (!imageFile || !apiKey.trim()) return;
+    if (!imageFiles.length || !apiKey.trim()) return;
     setStep('processing');
     setError('');
     try {
-      const reader = new FileReader();
-      const base64 = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => {
-          const result = reader.result as string;
-          resolve(result.split(',')[1]);
-        };
-        reader.onerror = () => reject(new Error('تعذّرت قراءة ملف الصورة.'));
-        reader.readAsDataURL(imageFile);
+      setProgressMsg(imageFiles.length > 1 ? `جارٍ ضغط ${imageFiles.length} صور…` : 'جارٍ ضغط الصورة…');
+      const imgs: InvoiceImage[] = [];
+      for (const f of imageFiles) imgs.push(await downscaleImage(f));
+      // ذاكرة المورد المختار مسبقاً (إن اختير في خطوة الرفع) تُلحَق بالطلب كأمثلة مؤكَّدة
+      const chosenSupplier = suppliers.find(sp => sp.name === supplierName.trim());
+      const mem = chosenSupplier ? supplierMemory[chosenSupplier.id] : null;
+      const invoice = await extractInvoice(imgs, apiKey.trim(), inventory, {
+        aliases, stripsMemory, supplierMemory: mem, onProgress: setProgressMsg,
       });
-      const invoice = await extractInvoice(base64, imageFile.type, apiKey.trim(), inventory, aliases, stripsMemory);
       setExtractedInvoice(invoice);
       // تهيئة كل صنف: تاريخ الانتهاء (YYYY-MM) — الأولوية: تاريخ الفاتورة الحالية (OCR) أولاً،
       // وإلا آخر تاريخ أدخله المستخدم لهذه المادة، وإلا المخزَّن (الأبكر) للتوافق، وإلا الافتراضي.
@@ -302,9 +358,10 @@ export default function InvoiceImportModal({ inventory, suppliers, expiryDates, 
     return n;
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = (onlyMatched = false) => {
     // اعتماد الفاتورة بعد المراجعة = تأكيد ضمني لكل المطابقات الظاهرة:
     // نحفظها في الذاكرة فتُطابَق فوراً في الفواتير القادمة (المكرَّر يُهمَل في الأعلى)
+    const source = onlyMatched ? items.filter(it => it.matchedMedicine) : items;
     items.forEach(it => { if (it.matchedMedicine) learnItemAliases(it, it.matchedMedicine); });
     // وكذلك «شريط/علبة» المعتمَد لكل مادة مطابَقة — تصحيح المستخدم (أو إقراره للتقدير)
     // يُحفَظ فتقرؤه الفواتير القادمة كما هو بدل إعادة التقدير
@@ -313,7 +370,7 @@ export default function InvoiceImportModal({ inventory, suppliers, expiryDates, 
         .filter(it => it.matchedMedicine && it.stripsPerBox > 0)
         .map(it => ({ medicineId: it.matchedMedicine!.id, stripsPerBox: it.stripsPerBox }))
     );
-    const draftItems: DraftItem[] = items
+    const draftItems: DraftItem[] = source
       .filter(it => it.quantityBoxes > 0 && it.pricePerBox > 0)
       .map(it => {
         const totalStrips = it.quantityBoxes * it.stripsPerBox;
@@ -347,12 +404,48 @@ export default function InvoiceImportModal({ inventory, suppliers, expiryDates, 
           warehouse: supplierName || it.company || '',
         };
       });
-    onConfirm(draftItems, supplierName.trim());
+    // ذاكرة المورد: أمثلة (اسم الفاتورة → اسم المخزون المعتمد) + الشركات — تُدمج في Dashboard
+    const examples = items
+      .filter(it => it.matchedMedicine && it.rawName.trim())
+      .map(it => ({ raw: it.rawName.trim(), ar: it.matchedMedicine!.nameAr }));
+    const companies = Array.from(new Set(items.map(it => (it.company || '').trim()).filter(Boolean)));
+    onConfirm(draftItems, supplierName.trim(), { invoiceNo: extractedInvoice?.invoiceNo, examples, companies });
   };
 
   const matchedCount = items.filter(it => it.matchedMedicine).length;
   const newCount = items.filter(it => !it.matchedMedicine).length;
   const validCount = items.filter(it => it.quantityBoxes > 0 && it.pricePerBox > 0).length;
+  const matchedValidCount = items.filter(it => it.matchedMedicine && it.quantityBoxes > 0 && it.pricePerBox > 0).length;
+
+  // مطابقة الإجمالي: مجموع الأسطر مقابل إجمالي الفاتورة المقروء — فرق يعني سطراً ضائعاً أو رقماً خاطئاً
+  const linesTotal = items.reduce((sum, it) => sum + it.quantityBoxes * it.pricePerBox, 0);
+  const invoiceTotal = extractedInvoice?.totalAmount || 0;
+  const totalDiff = invoiceTotal > 0 && linesTotal > 0 ? linesTotal - invoiceTotal : 0;
+  const totalMismatch = Math.abs(totalDiff) > Math.max(250, invoiceTotal * 0.01);
+
+  // فاتورة مكرّرة: نفس رقم الفاتورة سبق اعتماده في طلبية سابقة (للمورد نفسه إن كان معروفاً)
+  const invoiceNo = (extractedInvoice?.invoiceNo || '').trim();
+  const duplicateOrder = invoiceNo
+    ? b2bOrders.find(o => (o.invoiceNo || '').trim() === invoiceNo
+        && (!supplierName.trim() || !o.supplierName || o.supplierName === supplierName.trim()))
+    : undefined;
+
+  // انحرافات السعر: عدد الأسطر التي يختلف سعرها عن آخر شراء بأكثر من الحد
+  const deviationCount = items.filter(it => {
+    const pps = it.stripsPerBox > 0 ? Math.round(it.pricePerBox / it.stripsPerBox) : 0;
+    const d = priceDeviation(pps, it.matchedMedicine);
+    return d !== null && Math.abs(d) > PRICE_DEVIATION_LIMIT;
+  }).length;
+
+  // ترتيب المراجعة: الأقل ثقة أولاً (جديد ← ضبابي ← حُسم ذكياً ← تطابق ← محفوظ) — الترتيب الأصلي عند الإيقاف
+  const confidenceRank = (it: ExtractedInvoiceItem) =>
+    !it.matchedMedicine ? 0 : it.matchedByAlias ? 4 : it.matchedByAI ? 2 : it.matchScore >= 0.8 ? 3 : 1;
+  const visibleItems = sortByConfidence ? [...items].sort((a, b) => confidenceRank(a) - confidenceRank(b)) : items;
+  const removeUnmatched = () => {
+    if (!newCount) return;
+    if (!window.confirm(`حذف ${newCount} صنف غير مطابق من هذه الفاتورة؟`)) return;
+    setItems(prev => prev.filter(it => it.matchedMedicine));
+  };
 
   // صاحب باركود موجود مسبقاً في المخزون — الباركود مطابقة مؤكَّدة 100%، أوثق من تطابق الاسم الضبابي
   const barcodeOwner = (barcode: string): Medicine | null => {
@@ -488,12 +581,28 @@ export default function InvoiceImportModal({ inventory, suppliers, expiryDates, 
                   onDrop={handleDrop}
                   onDragOver={e => e.preventDefault()}
                   onClick={() => fileInputRef.current?.click()}
-                  className={`border-2 border-dashed rounded-2xl flex flex-col items-center justify-center gap-3 cursor-pointer transition
-                    ${imageFile ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 hover:border-emerald-300 bg-slate-50 hover:bg-emerald-50/50'}`}
+                  className={`border-2 border-dashed rounded-2xl flex flex-col items-center justify-center gap-3 cursor-pointer transition p-3
+                    ${imageFiles.length ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 hover:border-emerald-300 bg-slate-50 hover:bg-emerald-50/50'}`}
                   style={{ minHeight: 180 }}
                 >
-                  {imagePreview ? (
-                    <img src={imagePreview} alt="فاتورة" className="max-h-44 rounded-xl object-contain shadow" />
+                  {imagePreviews.length ? (
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                      {imagePreviews.map((src, i) => (
+                        <div key={i} className="relative">
+                          <img src={src} alt={`صفحة ${i + 1}`} className="h-36 rounded-xl object-contain shadow bg-white" />
+                          <span className="absolute top-1 right-1 text-[9px] font-black bg-slate-900/70 text-white rounded-full px-1.5 py-0.5">{i + 1}</span>
+                          <button type="button" title="إزالة هذه الصورة"
+                            onClick={e => { e.stopPropagation(); removeImageAt(i); }}
+                            className="absolute top-1 left-1 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center cursor-pointer hover:bg-rose-700">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                      <div className="h-36 w-24 rounded-xl border-2 border-dashed border-emerald-300 flex flex-col items-center justify-center text-emerald-700 text-[10px] font-extrabold gap-1">
+                        <FileImage className="w-5 h-5" />
+                        + صفحة أخرى
+                      </div>
+                    </div>
                   ) : (
                     <>
                       <div className="w-14 h-14 bg-white rounded-2xl shadow-sm flex items-center justify-center border border-slate-200">
@@ -501,19 +610,33 @@ export default function InvoiceImportModal({ inventory, suppliers, expiryDates, 
                       </div>
                       <div className="text-center">
                         <p className="text-xs font-extrabold text-slate-700">اسحب الصورة هنا أو انقر للاختيار</p>
-                        <p className="text-[10px] text-slate-400 font-bold mt-1">JPG, PNG, WEBP — الحد الأقصى 10MB</p>
+                        <p className="text-[10px] text-slate-400 font-bold mt-1">JPG, PNG, WEBP — يمكن اختيار عدة صور لفاتورة طويلة (تُضغط تلقائياً قبل الإرسال)</p>
                       </div>
                     </>
                   )}
-                  <input ref={fileInputRef} type="file" accept="image/*" className="hidden"
-                    onChange={e => { const f = e.target.files?.[0]; if (f) handleFilePicked(f); }} />
+                  <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden"
+                    onChange={e => { if (e.target.files?.length) handleFilesPicked(e.target.files); e.target.value = ''; }} />
                 </div>
 
-                {imageFile && (
+                {imageFiles.length > 0 && (
                   <p className="text-[10px] text-emerald-700 font-bold text-center">
-                    ✓ {imageFile.name}
+                    ✓ {imageFiles.length === 1 ? imageFiles[0].name : `${imageFiles.length} صور — صفحات متتابعة لفاتورة واحدة`}
                   </p>
                 )}
+
+                {/* اختيار المورد قبل التحليل (اختياري): يُلحق أمثلته المؤكَّدة من فواتيره السابقة بالطلب
+                    فترتفع دقة الترجمة والشركات، ويُملأ حقل المورد في المراجعة تلقائياً */}
+                <div className="space-y-1">
+                  <label className="block text-[10px] font-extrabold text-slate-600">المورد (اختياري — يحسّن الدقة إن اختير)</label>
+                  <SupplierPicker suppliers={suppliers} value={supplierName} onChange={setSupplierName} />
+                  {(() => {
+                    const sp = suppliers.find(x => x.name === supplierName.trim());
+                    const mem = sp ? supplierMemory[sp.id] : undefined;
+                    return mem && mem.examples.length > 0 ? (
+                      <p className="text-[10px] text-violet-700 font-bold">✓ ذاكرة هذا المورد: {mem.examples.length} مثال مؤكَّد و{mem.companies.length} شركة ستُرفق مع الطلب</p>
+                    ) : null;
+                  })()}
+                </div>
 
                 {error && (
                   <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl p-3 text-right">
@@ -528,7 +651,7 @@ export default function InvoiceImportModal({ inventory, suppliers, expiryDates, 
                     تغيير المفتاح
                   </button>
                   <button
-                    disabled={!imageFile}
+                    disabled={!imageFiles.length}
                     onClick={handleAnalyze}
                     className="flex-1 bg-emerald-600 text-white rounded-xl py-3 text-xs font-extrabold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-emerald-700 transition flex items-center justify-center gap-2 cursor-pointer"
                   >
@@ -547,7 +670,7 @@ export default function InvoiceImportModal({ inventory, suppliers, expiryDates, 
                   <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
                 </div>
                 <div>
-                  <p className="text-sm font-extrabold text-slate-900">جارٍ قراءة الفاتورة...</p>
+                  <p className="text-sm font-extrabold text-slate-900">{progressMsg || 'جارٍ قراءة الفاتورة...'}</p>
                   <p className="text-[10px] text-slate-500 font-bold mt-1">يقوم Gemini بتحليل الصورة واستخراج الأدوية والأسعار</p>
                 </div>
                 <div className="flex gap-1.5 mt-2">
@@ -586,8 +709,36 @@ export default function InvoiceImportModal({ inventory, suppliers, expiryDates, 
                   )}
                 </div>
 
-                {/* صفّ الإحصاءات — أقراص مدمجة خفيفة بدل ثلاث بطاقات ضخمة */}
-                <div className="mx-4 sm:mx-5 mb-3 flex items-center gap-2">
+                {/* تنبيهات ما قبل الاعتماد: فاتورة مكرّرة / إجمالي لا يطابق / انحرافات سعر */}
+                {duplicateOrder && (
+                  <div className="mx-4 sm:mx-5 mb-2 bg-rose-50 border border-rose-300 rounded-2xl px-4 py-2.5 flex items-start gap-2 text-right">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <p className="text-[11px] font-extrabold text-rose-800 leading-snug">
+                      فاتورة مكرّرة؟ الرقم «{invoiceNo}» سبق اعتماده بتاريخ {duplicateOrder.date}
+                      {duplicateOrder.supplierName ? ` للمورد «${duplicateOrder.supplierName}»` : ''} بقيمة {duplicateOrder.totalAmount.toLocaleString()} د.ع.
+                    </p>
+                  </div>
+                )}
+                {totalMismatch && (
+                  <div className="mx-4 sm:mx-5 mb-2 bg-rose-50 border border-rose-200 rounded-2xl px-4 py-2.5 flex items-start gap-2 text-right">
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <p className="text-[11px] font-extrabold text-rose-700 leading-snug">
+                      مجموع الأسطر {linesTotal.toLocaleString()} ≠ إجمالي الفاتورة {invoiceTotal.toLocaleString()} د.ع
+                      (فرق {totalDiff > 0 ? '+' : ''}{totalDiff.toLocaleString()}) — قد يكون سطر ضائع أو رقم مقروء خطأً.
+                    </p>
+                  </div>
+                )}
+                {deviationCount > 0 && (
+                  <div className="mx-4 sm:mx-5 mb-2 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-2 flex items-start gap-2 text-right">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <p className="text-[11px] font-extrabold text-amber-800 leading-snug">
+                      {deviationCount} سطر سعره يختلف عن آخر شراء بأكثر من {Math.round(PRICE_DEVIATION_LIMIT * 100)}% — راجع الأرقام المعلَّمة بالبرتقالي.
+                    </p>
+                  </div>
+                )}
+
+                {/* صفّ الإحصاءات — أقراص مدمجة خفيفة بدل ثلاث بطاقات ضخمة + إجراءات جماعية */}
+                <div className="mx-4 sm:mx-5 mb-3 flex items-center gap-2 flex-wrap">
                   <span className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 bg-emerald-50 border border-emerald-100 rounded-full px-3.5 py-1.5">
                     <span className="text-xs font-extrabold text-emerald-700">{matchedCount}</span>
                     <span className="text-[10px] text-emerald-600 font-bold">مطابق</span>
@@ -600,14 +751,29 @@ export default function InvoiceImportModal({ inventory, suppliers, expiryDates, 
                     <span className="text-xs font-extrabold text-slate-700">{items.length}</span>
                     <span className="text-[10px] text-slate-500 font-bold">إجمالي</span>
                   </span>
+                  <span className="flex-1" />
+                  <button type="button" onClick={() => setSortByConfidence(v => !v)}
+                    className={`text-[10px] font-extrabold px-3 py-1.5 rounded-full border transition cursor-pointer ${sortByConfidence ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'}`}
+                    title="عرض الأصناف الأقل ثقة أولاً لتبدأ المراجعة بالمشكوك فيه">
+                    {sortByConfidence ? '✓ الأقل ثقة أولاً' : 'ترتيب: الأقل ثقة أولاً'}
+                  </button>
+                  {newCount > 0 && (
+                    <button type="button" onClick={removeUnmatched}
+                      className="text-[10px] font-extrabold px-3 py-1.5 rounded-full border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 transition cursor-pointer"
+                      title="حذف كل الأصناف غير المطابقة من هذه الفاتورة">
+                      حذف غير المطابق ({newCount})
+                    </button>
+                  )}
                 </div>
 
                 {/* Items list */}
                 <div className="px-4 sm:px-5 pb-3 space-y-2.5">
-                  {items.map(item => {
+                  {visibleItems.map(item => {
                     const pricePerStrip = item.stripsPerBox > 0 ? Math.round(item.pricePerBox / item.stripsPerBox) : 0;
                     const totalStrips = item.quantityBoxes * item.stripsPerBox;
-                    const badge = matchBadge(item.matchScore, !!item.matchedMedicine, item.matchedByAlias);
+                    const badge = matchBadge(item.matchScore, !!item.matchedMedicine, item.matchedByAlias, item.matchedByAI);
+                    const deviation = priceDeviation(pricePerStrip, item.matchedMedicine);
+                    const deviates = deviation !== null && Math.abs(deviation) > PRICE_DEVIATION_LIMIT;
                     const isSearchingThis = searchOpen === item.id;
 
                     return (
@@ -752,14 +918,16 @@ export default function InvoiceImportModal({ inventory, suppliers, expiryDates, 
                               className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-extrabold text-slate-900 text-center focus:outline-emerald-400" />
                           </div>
                           <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-emerald-700 block text-center">س/شريط</label>
-                            <div className="w-full bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1.5 text-xs font-extrabold text-emerald-700 text-center">
+                            <label className={`text-[10px] font-bold block text-center ${deviates ? 'text-orange-700' : 'text-emerald-700'}`}>س/شريط</label>
+                            <div className={`w-full border rounded-lg px-2 py-1.5 text-xs font-extrabold text-center ${deviates ? 'bg-orange-50 border-orange-300 text-orange-800 ring-2 ring-orange-200' : 'bg-emerald-50 border-emerald-100 text-emerald-700'}`}
+                              title={deviates ? `يختلف عن آخر شراء بنسبة ${Math.round(Math.abs(deviation!) * 100)}% — تحقّق من الرقم في الفاتورة` : undefined}>
                               {pricePerStrip.toLocaleString()}
                             </div>
                             {/* التكلفة السابقة المسجَّلة في المخزن — رقم مجرَّد بالأحمر مباشرة تحت س/شريط، بلا تسمية ولا صندوق */}
                             {item.matchedMedicine && (item.matchedMedicine.costPrice ?? item.matchedMedicine.lastCostPrice) && (
-                              <p className="text-[10px] font-extrabold text-rose-600 text-center">
+                              <p className={`text-[10px] font-extrabold text-center ${deviates ? 'text-orange-700' : 'text-rose-600'}`}>
                                 {(item.matchedMedicine.costPrice ?? item.matchedMedicine.lastCostPrice)!.toLocaleString()}
+                                {deviates && <span className="mr-1">({deviation! > 0 ? '+' : ''}{Math.round(deviation! * 100)}%)</span>}
                               </p>
                             )}
                           </div>
@@ -962,12 +1130,23 @@ export default function InvoiceImportModal({ inventory, suppliers, expiryDates, 
               {/* زر «إعادة» حُذف — علامة ✕ تغلق وتمسح المسودة، وإعادة الفتح تبدأ بصورة جديدة أصلاً */}
               <button
                 disabled={validCount === 0 || hasDuplicateBarcode}
-                onClick={handleConfirm}
+                onClick={() => handleConfirm(false)}
                 className="flex-1 bg-emerald-600 text-white rounded-xl py-3 text-xs font-extrabold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-emerald-700 transition flex items-center justify-center gap-2 cursor-pointer"
               >
                 <CheckCircle2 className="w-4 h-4" />
                 إضافة {validCount} صنف إلى مسودة الشراء
               </button>
+              {/* اعتماد المطابق فقط: يترك الأصناف الجديدة/غير المطابقة خارج المسودة دون حذفها يدوياً */}
+              {newCount > 0 && matchedValidCount > 0 && (
+                <button
+                  disabled={hasDuplicateBarcode}
+                  onClick={() => handleConfirm(true)}
+                  className="flex-none px-4 py-3 border border-emerald-300 bg-emerald-50 text-emerald-800 rounded-xl text-xs font-extrabold hover:bg-emerald-100 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="إضافة الأصناف المطابقة فقط وتجاهل غير المطابقة"
+                >
+                  المطابق فقط ({matchedValidCount})
+                </button>
+              )}
             </div>
             {hasDuplicateBarcode ? (
               <p className="text-[10px] text-rose-600 font-extrabold text-center mt-2">
