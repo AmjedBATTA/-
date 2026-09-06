@@ -55,7 +55,9 @@ export default defineConfig(() => {
           // (تُحمَّل بالتوازي وتبقى في الكاش عند تحديث كود التطبيق)
           manualChunks(id) {
             if (!id.includes('node_modules')) return undefined;
-            if (id.includes('/firebase/') || id.includes('@firebase')) return 'firebase-vendor';
+            // كل ما يخص Firebase في حزمة واحدة: firebase و@firebase و@capacitor-firebase،
+            // مع مكتبتَي tslib وidb اللتين تعتمد عليهما Firebase — يمنع الحلقة الدائرية بين الحزم
+            if (id.includes('firebase') || id.includes('/tslib/') || id.includes('/idb/')) return 'firebase-vendor';
             if (id.includes('/@google/genai')) return 'genai-vendor';
             if (id.includes('/motion') || id.includes('framer-motion')) return 'motion-vendor';
             if (id.includes('/lucide-react/')) return 'icons-vendor';
