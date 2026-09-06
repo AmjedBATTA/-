@@ -4696,7 +4696,7 @@ export default function Dashboard() {
 
                     {/* Historical sales log list below the shelf to see how money accumulated */}
                     <div className="pt-4 border-t border-slate-100">
-                      <h4 className="font-semibold text-slate-800 text-xs mb-3 flex items-center space-x-reverse space-x-2">
+                      <h4 className="font-semibold text-slate-800 text-xs mb-3 flex items-center gap-2">
                         <ClipboardList className="w-4 h-4 text-primary-500" />
                         <span>أحدث فواتير المبيعات الصادرة اليوم</span>
                       </h4>
@@ -4892,7 +4892,7 @@ export default function Dashboard() {
                           onClick={() => setShowNearExpiry30(!showNearExpiry30)}
                           className="w-full flex items-center justify-between cursor-pointer text-right"
                         >
-                          <div className="flex items-center space-x-reverse space-x-2.5">
+                          <div className="flex items-center gap-2.5">
                             <span className="flex h-3 w-3 relative">
                               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-danger-400 opacity-75"></span>
                               <span className="relative inline-flex rounded-full h-3 w-3 bg-danger-600"></span>
@@ -4902,7 +4902,7 @@ export default function Dashboard() {
                               <p className="text-xs text-danger-500 font-bold mt-0.5 font-sans">يرجى اتخاذ تدابير الوقاية وتوريد كميات جديدة أو إبرام طلبية مرتجع مع المذخر المعني</p>
                             </div>
                           </div>
-                          <div className="flex items-center space-x-reverse space-x-2">
+                          <div className="flex items-center gap-2">
                             <span className="text-sm bg-danger-100 text-danger-800 font-semibold px-3 py-0.5 rounded-full border border-danger-200/50">
                               {getNearExpiryMeds().length} {getNearExpiryMeds().length === 1 ? "مستحضر حرج" : "مستحضرات حرجة"}
                             </span>
@@ -4923,7 +4923,7 @@ export default function Dashboard() {
                                   <span className="text-sm text-slate-500 tabular-nums block">
                                     {med.nameEn} • {med.scientificName}
                                   </span>
-                                  <div className="flex items-center space-x-reverse space-x-1.5 mt-1">
+                                  <div className="flex items-center gap-1.5 mt-1">
                                     <Clock className="w-3.5 h-3.5 text-danger-600" />
                                     <span className="text-sm font-bold text-danger-600 tabular-nums">
                                       انتهاء الصلاحية: {expDate}
@@ -4968,7 +4968,7 @@ export default function Dashboard() {
                           onClick={() => setShowExpiryHorizon(!showExpiryHorizon)}
                           className="w-full flex items-center justify-between p-5 text-right hover:bg-slate-50/60 transition cursor-pointer"
                         >
-                          <div className="flex items-center space-x-reverse space-x-2.5">
+                          <div className="flex items-center gap-2.5">
                             <span className="flex items-center justify-center w-8 h-8 rounded-xl bg-warn-50 border border-warn-200">
                               <CalendarClock className="w-4 h-4 text-warn-600" />
                             </span>
@@ -4977,7 +4977,7 @@ export default function Dashboard() {
                               <p className="text-xs text-slate-500 font-bold mt-0.5">اضغط شهراً لعرض كل المواد المنتهية فيه، مرتّبة بالأولوية (الأقرب انتهاءً أولاً)</p>
                             </div>
                           </div>
-                          <div className="flex items-center space-x-reverse space-x-2">
+                          <div className="flex items-center gap-2">
                             <span className="text-sm bg-warn-100 text-warn-800 font-semibold px-3 py-0.5 rounded-full border border-warn-200/50">
                               {getHorizonExpiryMeds().length} مستحضر
                             </span>
@@ -5035,7 +5035,7 @@ export default function Dashboard() {
                                       <div className="space-y-1">
                                         <strong className="font-semibold text-slate-950 block">{med.nameAr}</strong>
                                         <span className="text-sm text-slate-500 tabular-nums block">{med.nameEn} • {med.scientificName}</span>
-                                        <div className="flex items-center space-x-reverse space-x-1.5 mt-1">
+                                        <div className="flex items-center gap-1.5 mt-1">
                                           <Clock className={`w-3.5 h-3.5 ${tone.icon}`} />
                                           <span className={`text-sm font-bold tabular-nums ${tone.icon}`}>انتهاء الصلاحية: {expiryDates[med.id]}</span>
                                         </div>
@@ -5076,7 +5076,7 @@ export default function Dashboard() {
                         onClick={() => setShowDeadStock(!showDeadStock)}
                         className="w-full flex items-center justify-between p-5 text-right hover:bg-slate-50/60 transition cursor-pointer"
                       >
-                        <div className="flex items-center space-x-reverse space-x-2.5">
+                        <div className="flex items-center gap-2.5">
                           <span className="flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 border border-slate-200">
                             <Clock className="w-4 h-4 text-slate-600" />
                           </span>
@@ -5085,7 +5085,7 @@ export default function Dashboard() {
                             <p className="text-xs text-slate-500 font-bold mt-0.5">مواد برصيد موجود بلا أي بيع خلال المدة، مرتّبة برأس المال المحبوس فيها — للإرجاع أو التصفية قبل الانتهاء</p>
                           </div>
                         </div>
-                        <div className="flex items-center space-x-reverse space-x-2">
+                        <div className="flex items-center gap-2">
                           <span className="text-sm bg-slate-100 text-slate-700 font-semibold px-3 py-0.5 rounded-full border border-slate-200">
                             {fmtNum(deadStock.rows.length)} مادة · {fmtNum(deadStock.total)} د.ع
                           </span>
@@ -5241,7 +5241,7 @@ export default function Dashboard() {
                           />
                         </div>
 
-                        <div className="flex justify-end space-x-reverse space-x-3 pt-3">
+                        <div className="flex justify-end gap-3 pt-3">
                           <button 
                             type="button" onClick={() => setIsAddingDrug(false)}
                             className="bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-bold cursor-pointer"
@@ -5634,7 +5634,7 @@ export default function Dashboard() {
                       </button>
                       <button
                         onClick={() => setIsAddingDrug(!isAddingDrug)}
-                        className="bg-primary-600 hover:bg-primary-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5"
+                        className="bg-primary-600 hover:bg-primary-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center gap-1.5"
                       >
                         <Plus className="w-4 h-4" />
                         <span>إضافة دواء</span>
@@ -5642,7 +5642,7 @@ export default function Dashboard() {
                       {/* زر مؤقت للاختبار */}
                       <button
                         onClick={handleSeedTestData}
-                        className="bg-warn-500 hover:bg-warn-600 text-white font-bold text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5"
+                        className="bg-warn-500 hover:bg-warn-600 text-white font-bold text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center gap-1.5"
                         title="إضافة 5 أدوية تجريبية"
                       >
                         <span className="inline-flex items-center gap-1"><FlaskConical className="w-3.5 h-3.5" />بيانات تجريبية</span>
@@ -5651,7 +5651,7 @@ export default function Dashboard() {
                         <button
                           onClick={() => setShowBulkImportConfirm(true)}
                           disabled={bulkImportStatus === 'loading' || bulkImportStatus === 'writing'}
-                          className="bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <Download className="w-4 h-4" />
                           <span>استيراد المخزون</span>
@@ -5737,14 +5737,14 @@ export default function Dashboard() {
                                     )}
                                   </td>
                                   <td className={`py-3 px-4 tabular-nums font-bold ${isNearExpiry30 ? 'text-danger-600' : 'text-slate-500'}`}>
-                                    <div className="flex items-center space-x-reverse space-x-1">
+                                    <div className="flex items-center gap-1">
                                       {isNearExpiry30 && <AlertCircle className="w-3.5 h-3.5" />}
                                       <span>{expDate}</span>
                                     </div>
                                   </td>
                                   <td className="py-3 px-4">
                                     {editingQtyId === med.id ? (
-                                      <div className="flex items-center justify-center space-x-reverse space-x-1.5">
+                                      <div className="flex items-center justify-center gap-1.5">
                                         <input
                                           type="number" min={0} autoFocus
                                           value={editingQtyValue}
@@ -5756,7 +5756,7 @@ export default function Dashboard() {
                                         <button type="button" onClick={() => setEditingQtyId(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded-lg transition cursor-pointer" title="إلغاء"><X className="w-3.5 h-3.5" /></button>
                                       </div>
                                     ) : (
-                                      <div className="flex items-center justify-center space-x-reverse space-x-1.5">
+                                      <div className="flex items-center justify-center gap-1.5">
                                         <button type="button" onClick={() => startEditingQty(med)} className="bg-primary-50 hover:bg-primary-100 text-primary-800 px-2.5 py-1 rounded-lg font-bold transition cursor-pointer text-sm flex items-center gap-1 border border-primary-100" title="تعديل الكمية يدوياً"><Pencil className="w-3 h-3" /><span>تعديل</span></button>
                                         <button onClick={() => adjustStockQty(med.id, 10)} className="bg-slate-100 hover:bg-primary-100 text-slate-600 hover:text-primary-800 px-3 py-2 min-h-10 rounded-lg font-bold transition cursor-pointer text-xs" title="إضافة 10 علب">+10</button>
                                         <button onClick={() => adjustStockQty(med.id, -5)} className="bg-slate-100 hover:bg-danger-100 text-slate-600 hover:text-danger-800 px-3 py-2 min-h-10 rounded-lg font-bold transition cursor-pointer text-xs" title="تخفيض 5 علب">-5</button>
@@ -8579,7 +8579,7 @@ export default function Dashboard() {
               
               {/* Modal Header */}
               <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-                <div className="flex items-center space-x-reverse space-x-2.5">
+                <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 bg-primary-50 rounded-lg flex items-center justify-center text-primary-600">
                     <Barcode className="w-5 h-5" />
                   </div>
@@ -8589,7 +8589,7 @@ export default function Dashboard() {
                   </div>
                 </div>
                 
-                <div className="flex items-center space-x-reverse space-x-2">
+                <div className="flex items-center gap-2">
                   {/* Sound Toggle */}
                   <button
                     type="button"
