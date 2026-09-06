@@ -14,6 +14,7 @@ import { fmtNum } from '../../utils/format';
 interface CartItemRowProps {
   item: POSItem;
   showVirtualPrice: boolean;
+  showCost: boolean; // إخفاء الكلفة عن دور الكاشير — نفس منطق رف البيع
   onInc: (medId: string) => void;
   onDec: (medId: string) => void;
   onRemove: (medId: string) => void;
@@ -23,7 +24,7 @@ interface CartItemRowProps {
   onSetPrice: (medId: string, price: number | null) => void; // سعر مخصّص للسطر (null = العودة لسعر المخزون)
 }
 
-export const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, onRemove, onAddShortage, onAddToCalculator, soldToday, onSetPrice }: CartItemRowProps) => {
+export const CartItemRow = React.memo(({ item, showVirtualPrice, showCost, onInc, onDec, onRemove, onAddShortage, onAddToCalculator, soldToday, onSetPrice }: CartItemRowProps) => {
   // السعر المُحاسَب دائماً هو الجمهوري — «الرسمي» للعرض فقط ولا يدخل في المحاسبة.
   // وضع «السعر الرسمي» مفعّلاً: يُعرض الرسمي وحده (سعراً وإجمالياً) ويُخفى الجمهوري
   // و«الشراء» — شاشة تواجه الزبون، لا تكشف السعر الداخلي ولا الكلفة.
@@ -61,7 +62,7 @@ export const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, o
           </div>
           <div className="flex items-baseline gap-2 flex-wrap">
             <span className="text-sm text-danger-300/80 tabular-nums font-bold">{fmtNum(shownUnit)} د.ع</span>
-            {!showVirtualPrice && costUnit > 0 && (
+            {showCost && !showVirtualPrice && costUnit > 0 && (
               <span className="text-sm text-danger-300/60 tabular-nums">شراء: {fmtNum(costUnit)}</span>
             )}
           </div>
@@ -127,7 +128,7 @@ export const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, o
                 </button>
                 {item.customPrice !== undefined && <span className="line-through opacity-60 mr-1">{' '}{fmtNum(unitPrice)}{' '}</span>}
                 <span> × {item.quantity}</span>
-                {item.medicine.costPrice ? <span> · شراء {fmtNum((item.medicine.costPrice * item.quantity))}</span> : null}
+                {showCost && item.medicine.costPrice ? <span> · شراء {fmtNum((item.medicine.costPrice * item.quantity))}</span> : null}
               </>
             ) : null}
           </span>

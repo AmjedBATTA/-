@@ -4312,20 +4312,6 @@ export default function Dashboard() {
 
             </div>
 
-            {/* Compliance card — كان في الـ sidebar، يظهر في الصفحة الرئيسية فقط */}
-            <div className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-primary-400 font-semibold text-sm">
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>تفتيش نقابة صيادلة العراق</span>
-                </div>
-                <p className="text-sm text-slate-300 font-semibold">الصيدلية ممتثلة لكافة شروط نقابة صيادلة العراق ووزارة الصحة الاتحادية.</p>
-              </div>
-              <div className="flex gap-4 text-sm tabular-nums text-slate-500 shrink-0">
-                <span>ترخيص: مجاز رسمي</span>
-                <span>آخر مطابقة: اليوم</span>
-              </div>
-            </div>
           </div>
         ) : (
           /* ======================================================
@@ -4420,6 +4406,7 @@ export default function Dashboard() {
                               soldToday={soldTodayByMed.get(item.medicine.id) || 0}
                               onSetPrice={setCartPrice}
                               showVirtualPrice={showVirtualPriceInPOS}
+                              showCost={currentRole !== 'cashier'}
                               onInc={incCartQty}
                               onDec={decCartQty}
                               onRemove={removeFromCart}
@@ -4619,6 +4606,7 @@ export default function Dashboard() {
                           key={med.id}
                           med={med}
                           showVirtualPrice={showVirtualPriceInPOS}
+                          showCost={currentRole !== 'cashier'}
                           daysUntilExpiry={getDaysUntilExpiry(med.id)}
                           onAdd={addToCart}
                         />

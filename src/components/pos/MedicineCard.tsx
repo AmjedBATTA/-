@@ -11,11 +11,12 @@ import { fmtNum } from '../../utils/format';
 interface MedicineCardProps {
   med: Medicine;
   showVirtualPrice: boolean;
+  showCost: boolean; // إخفاء الكلفة ونسبة الربح عن دور الكاشير — الكاشير لا يحتاج قرار الشراء
   daysUntilExpiry: number;   // محسوب مسبقاً في الأب — لا استدعاء دالة داخل المكوّن
   onAdd: (med: Medicine) => void;
 }
 
-export const MedicineCard = React.memo(({ med, showVirtualPrice, daysUntilExpiry, onAdd }: MedicineCardProps) => {
+export const MedicineCard = React.memo(({ med, showVirtualPrice, showCost, daysUntilExpiry, onAdd }: MedicineCardProps) => {
   const isLow = med.availableQuantity < 15;
   const isOut = med.availableQuantity <= 0;
   const isExpiringSoon = daysUntilExpiry <= 30;
@@ -71,13 +72,13 @@ export const MedicineCard = React.memo(({ med, showVirtualPrice, daysUntilExpiry
                 {fmtNum(med.price)}
                 <span className="text-xs font-bold text-slate-500 mr-0.5">د.ع</span>
               </span>
-              {med.costPrice && med.costPrice > 0 && (
+              {showCost && med.costPrice && med.costPrice > 0 && (
                 <span className="text-xs text-slate-500 tabular-nums block">
                   شراء: <span className="text-slate-500 font-bold">{fmtNum(med.costPrice)}</span>
                 </span>
               )}
             </div>
-            {margin !== null && (
+            {showCost && margin !== null && (
               <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
                 margin >= 20 ? 'bg-primary-50 text-primary-700'
                   : margin >= 10 ? 'bg-warn-50 text-warn-700'
