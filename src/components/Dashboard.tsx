@@ -174,7 +174,7 @@ function generateSeedSuppliers(): Supplier[] {
 // مفتاح كانت تُعيد تصيير الشجرة كاملةً = بطء محسوس. بعزله، الكتابة تُحدّث هذا
 // المكوّن الصغير فقط، ويُبلّغ الأب بالقيمة المُلتزَمة بعد debounce (150ms) فقط.
 // =========================================================
-export type POSSearchHandle = { setValue: (v: string) => void };
+export type POSSearchHandle = { setValue: (v: string) => void; focus: () => void };
 
 interface POSSearchBarProps {
   onQueryChange: (q: string) => void;   // تُستدعى بالقيمة المؤجّلة (debounced) لفلترة الرف
@@ -185,6 +185,7 @@ interface POSSearchBarProps {
 const POSSearchBar = forwardRef<POSSearchHandle, POSSearchBarProps>(
   ({ onQueryChange, onEnter, onScanClick }, ref) => {
     const [input, setInput] = useState('');
+    const inputRef = useRef<HTMLInputElement>(null);
 
     // debounce: تأخير الفلترة 150ms بعد آخر ضغطة — يمنع إعادة تصيير الأب لكل حرف
     useEffect(() => {
@@ -195,6 +196,7 @@ const POSSearchBar = forwardRef<POSSearchHandle, POSSearchBarProps>(
     // يسمح لقارئ الباركود (في الأب) بدفع قيمة ممسوحة إلى الحقل مباشرةً
     useImperativeHandle(ref, () => ({
       setValue: (v: string) => { setInput(v); onQueryChange(v); },
+      focus: () => inputRef.current?.focus(),
     }), [onQueryChange]);
 
     return (
@@ -202,6 +204,7 @@ const POSSearchBar = forwardRef<POSSearchHandle, POSSearchBarProps>(
         <div className="relative flex-1 sm:flex-initial">
           <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
           <input
+            ref={inputRef}
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -242,17 +245,20 @@ interface InventorySearchBarProps {
 const InventorySearchBar = forwardRef<POSSearchHandle, InventorySearchBarProps>(
   ({ onQueryChange }, ref) => {
     const [input, setInput] = useState('');
+    const inputRef = useRef<HTMLInputElement>(null);
     useEffect(() => {
       const t = setTimeout(() => onQueryChange(input), 150);
       return () => clearTimeout(t);
     }, [input, onQueryChange]);
     useImperativeHandle(ref, () => ({
       setValue: (v: string) => { setInput(v); onQueryChange(v); },
+      focus: () => inputRef.current?.focus(),
     }), [onQueryChange]);
     return (
       <div className="relative flex-1 min-w-[180px]">
         <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
         <input
+          ref={inputRef}
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -1026,6 +1032,9 @@ export default function Dashboard() {
   const [showCalculator, setShowCalculator] = useState(() => { try { return localStorage.getItem('anwar_calc_open') === '1'; } catch { return false; } });
   useEffect(() => { try { localStorage.setItem('anwar_calc_open', showCalculator ? '1' : '0'); } catch {} }, [showCalculator]);
   const calculatorRef = useRef<CalculatorHandle>(null);
+  // اختصارات لوحة المفاتيح في نقطة البيع: مراجع لحقل الخصم ونموذج الدفع (F4 / F9)
+  const posDiscountRef = useRef<HTMLSelectElement>(null);
+  const posFormRef = useRef<HTMLFormElement>(null);
   const [lastPrintedInvoice, setLastPrintedInvoice] = useState<SaleRecord | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [showVirtualPriceInPOS, setShowVirtualPriceInPOS] = useState(false);
@@ -3469,6 +3478,42 @@ export default function Dashboard() {
   // مغلّفان لتثبيت الإشارة المُمرَّرة إلى CartItemRow (onInc/onDec لا تقبل delta)
   const incCartQty = useCallback((medId: string) => updateCartQty(medId, 1), [updateCartQty]);
   const decCartQty = useCallback((medId: string) => updateCartQty(medId, -1), [updateCartQty]);
+  // اختصارات لوحة المفاتيح في نقطة البيع (اتُّفق عليها مع المستخدم):
+  // F2 بحث · F4 خصم · F8 تبديل السعر الرسمي · F9 دفع · Esc مسح السلة (بتأكيد) · ↑/↓ كمية آخر مادة أُضيفت.
+  // لا تعمل أثناء الكتابة داخل حقل (عدا F2 وF9)، ولا Esc والحاسبة/الإيصال/الماسح مفتوح كي لا تتعارض.
+  useEffect(() => {
+    if (activeTab !== 'pos') return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      const inField = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
+      const k = e.key;
+      if (k === 'F2') { e.preventDefault(); posSearchRef.current?.focus(); return; }
+      if (k === 'F9') {
+        e.preventDefault();
+        if (showReceiptModal || isScanning) return;
+        posFormRef.current?.requestSubmit(); // نفس مسار زر «إتمام البيع» (onSubmit) — لا يتجاوز أي تحقق
+        return;
+      }
+      if (inField) return;
+      if (k === 'F4') { e.preventDefault(); posDiscountRef.current?.focus(); return; }
+      if (k === 'F8') { e.preventDefault(); setShowVirtualPriceInPOS(v => !v); return; }
+      if (k === 'Escape') {
+        if (showCalculator || showReceiptModal || isScanning || currentCart.length === 0) return;
+        if (window.confirm('مسح سلة البيع بالكامل؟')) setCurrentCart([]);
+        return;
+      }
+      if (k === 'ArrowUp' || k === 'ArrowDown') {
+        const top = currentCart[0]; // آخر مادة أُضيفت تكون دائماً في رأس السلة
+        if (!top || top.outOfStock) return;
+        e.preventDefault();
+        updateCartQty(top.medicine.id, k === 'ArrowUp' ? 1 : -1);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activeTab, showCalculator, showReceiptModal, isScanning, currentCart, updateCartQty]);
+
   // يدفع قيمة لمرجع الحاسبة مباشرة — هوية ثابتة دائماً (لا تعتمد على حالة) فلا تُعيد تصيير صفوف السلة
   const addToCalculator = useCallback((amount: number) => { calculatorRef.current?.pushValue(amount); }, []);
 
@@ -5174,6 +5219,9 @@ export default function Dashboard() {
                       <div className="flex items-center gap-2">
                         <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
                         <h3 className="font-extrabold text-white text-sm">سلة البيع</h3>
+                        <span className="hidden lg:inline text-[9px] text-slate-500 font-bold mr-1" title="اختصارات لوحة المفاتيح (لا تعمل أثناء الكتابة في حقل، عدا F2 وF9)">
+                          F2 بحث · F4 خصم · F8 رسمي · F9 دفع · Esc مسح · ↑↓ كمية
+                        </span>
                         {currentCart.length > 0 && (
                           <span className="bg-emerald-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full">
                             {currentCart.length}
@@ -5195,7 +5243,7 @@ export default function Dashboard() {
                         <p className="text-xs text-slate-500 font-semibold">السلة فارغة — اختر دواءً من اليمين</p>
                       </div>
                     ) : (
-                      <form onSubmit={handleCheckoutPOS} className="flex flex-col gap-4 flex-1">
+                      <form ref={posFormRef} onSubmit={handleCheckoutPOS} className="flex flex-col gap-4 flex-1">
 
                         {/* Cart Items */}
                         {/* ارتفاع الحاوية يضمن ظهور 5 أصناف على الأقل دفعة واحدة (صف مضغوط ≈ 60px) */}
@@ -5226,6 +5274,8 @@ export default function Dashboard() {
                             placeholder="اسم المريض / المشتري"
                           />
                           <select
+                            ref={posDiscountRef}
+                            title="اختصار: F4"
                             value={posDiscountPercent}
                             onChange={(e) => setPosDiscountPercent(Number(e.target.value))}
                             className="w-full bg-slate-800 border border-slate-700 rounded-xl py-2.5 px-3 text-xs font-semibold text-slate-300"
@@ -5267,7 +5317,7 @@ export default function Dashboard() {
                           </div>
                         </div>
 
-                        <button type="submit"
+                        <button type="submit" title="اختصار: F9"
                           className="w-full bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-white py-3.5 rounded-2xl text-sm font-black shadow-lg shadow-emerald-900/40 transition cursor-pointer flex items-center justify-center gap-2">
                           <Check className="w-4 h-4" />
                           <span>{posOnCredit ? 'تسجيل البيع كذمّة آجلة' : 'إتمام البيع وصرف الفاتورة'}</span>
