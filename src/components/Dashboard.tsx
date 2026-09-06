@@ -7,11 +7,28 @@ import {
   TrendingUp, FileText, Ban, DollarSign, Calendar, RefreshCw, BarChart3, Pill, ClipboardList, ShieldAlert, Heart,
   Barcode, X, Volume2, VolumeX, Camera, Download, Upload, Bell, Pencil, ScanLine, ChevronDown, CalendarClock,
   Calculator as CalculatorIcon,
-  Snail, Factory, FlaskConical, Trophy, Eye, EyeOff, Phone, User as UserIcon, CreditCard, AlertTriangle
+  Snail, Factory, FlaskConical, Trophy, Eye, EyeOff, Phone, User as UserIcon, CreditCard, AlertTriangle, LogOut
 } from 'lucide-react';
 import { Medicine, Order, Supplier, InvoiceImportDraft, SupplierMemory } from '../types';
 import { fmtNum, fmtDate, fmtDateTime } from '../utils/format';
 import { toast, confirmDialog, promptDialog, alertDialog, isDialogOpen } from './ui/dialogs';
+
+type DeviceRole = 'admin' | 'pharmacist' | 'cashier';
+const ROLE_LABEL: Record<DeviceRole, string> = { admin: 'مدير', pharmacist: 'صيدلاني', cashier: 'كاشير' };
+
+// عنصر في قائمة الحساب (الرأس): أيقونة + تسمية + تلميح اختياري
+function MenuItem({ icon: Icon, label, hint, danger, onClick }: { icon: React.ComponentType<{ className?: string }>; label: string; hint?: string; danger?: boolean; onClick: () => void }) {
+  return (
+    <button type="button" role="menuitem" onClick={onClick}
+      className={`w-full flex items-center gap-3 px-3 min-h-11 rounded-lg text-right transition cursor-pointer ${danger ? 'text-danger hover:bg-danger-soft' : 'text-ink hover:bg-slate-50'}`}>
+      <Icon className={`w-4 h-4 shrink-0 ${danger ? '' : 'text-muted'}`} />
+      <span className="flex-1 min-w-0">
+        <span className="block text-sm font-semibold leading-tight">{label}</span>
+        {hint && <span className="block text-xs text-muted leading-tight mt-0.5">{hint}</span>}
+      </span>
+    </button>
+  );
+}
 import SupplierPicker from './SupplierPicker';
 // تحميل كسول: نافذة استيراد الفاتورة + مكتبة @google/genai (~305kB) لا تُحمَّل إلا عند فتحها
 const InvoiceImportModal = lazy(() => import('./InvoiceImportModal'));
@@ -1011,6 +1028,7 @@ export default function Dashboard() {
 
   // --- NOTIFICATION CENTER ---
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+  const [showAccountMenu, setShowAccountMenu] = useState(false); // قائمة الحساب في الرأس (الدور، الإشعارات، فحص السحابة، الخروج)
 
   // --- POS CART STATES ---
   const [currentCart, setCurrentCart] = useState<POSItem[]>([]);
@@ -3112,6 +3130,23 @@ export default function Dashboard() {
   // فحص قاطع للمزامنة: يقرأ العدد الفعلي للبيانات مباشرةً من خادم Firestore
   // (getCountFromServer يتجاوز الكاش المحلي دائماً) ويقارنه بالظاهر على هذا الجهاز.
   // شغّله على كل جهاز ليكشف بدقّة: هل البيانات وصلت للسحابة؟ وهل هذا الجهاز يقرؤها؟
+  // تغيير دور الجهاز من قائمة الحساب — الترقية لدور أعلى تتطلب كلمة مرور الحسابات، والتنزيل حر
+  const requestRoleChange = async (next: DeviceRole) => {
+    if (next === currentRole) { setShowAccountMenu(false); return; }
+    const rank: Record<DeviceRole, number> = { cashier: 0, pharmacist: 1, admin: 2 };
+    if (rank[next] > rank[currentRole]) {
+      const pin = await promptDialog({ title: 'الترقية لدور أعلى', message: 'تتطلب كلمة مرور الحسابات.', password: true, placeholder: '••••', confirmText: 'تأكيد' });
+      if (pin !== financialPin) {
+        if (pin !== null) toast('كلمة المرور غير صحيحة — بقي الدور كما هو.', 'error');
+        return;
+      }
+      addAuditEntry({ action: 'security', amount: 0, description: `ترقية دور الجهاز من ${ROLE_LABEL[currentRole]} إلى ${ROLE_LABEL[next]}` });
+    }
+    setCurrentRole(next);
+    setShowAccountMenu(false);
+    try { localStorage.setItem('anwar_device_role', next); } catch { /* localStorage غير متاح */ }
+  };
+
   const handleCloudCheck = async () => {
     if (!currentUser) return;
     const uid = currentUser.uid;
@@ -4794,63 +4829,38 @@ export default function Dashboard() {
         MATCH BRAND HEADER DIRECT FROM THE USER SCREENSHOT IMAGE
         =========================================================
       */}
-      <header className="bg-white border-b border-slate-200/80 sticky top-0 z-40 px-4 sm:px-6 lg:px-8 py-3.5 shadow-sm">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          
-          {/* LEFT: Firebase Authentication Cloud Sync status */}
-          <div className="flex items-center space-x-reverse space-x-3">
+      <header className="bg-white border-b border-line sticky top-0 z-40 px-4 sm:px-6 lg:px-8 shadow-sm">
+        <div className="max-w-7xl mx-auto h-14 flex items-center justify-between gap-3">
+
+          {/* الشعار واسم الصيدلية — شعار واحد في كل مكان */}
+          <div className="flex items-center gap-3 min-w-0">
+            <img src="/icon.svg" alt="" className="w-9 h-9 rounded-xl shrink-0 shadow-sm" />
+            <div className="text-right min-w-0">
+              <h1 className="text-ink font-bold text-base leading-tight whitespace-nowrap">انوار الحسن</h1>
+              <p className="text-xs text-muted leading-tight hidden sm:block">نظام إدارة الصيدلية</p>
+            </div>
+          </div>
+
+          {/* الحالة والحساب: مزامنة (نقطة + كلمة) · جرس · قائمة الحساب. كل ما عداها انتقل إلى القائمة */}
+          <div className="flex items-center gap-2">
             {isAuthLoading ? (
-              <div className="flex items-center space-x-reverse space-x-2 text-slate-500 text-xs">
+              <span className="hidden sm:inline-flex items-center gap-1.5 text-xs text-muted">
                 <span className="w-4 h-4 border-2 border-slate-300 border-t-slate-600 rounded-full animate-spin" />
-                <span>جاري تحميل المزامنة...</span>
-              </div>
+                جاري التحميل
+              </span>
             ) : currentUser ? (
-              <div className="flex items-center space-x-reverse space-x-2.5">
-                {currentUser.photoURL && (
-                  <img 
-                    src={currentUser.photoURL} 
-                    alt={currentUser.displayName || 'الصيدلية'} 
-                    className="w-8 h-8 rounded-full border border-slate-200"
-                    referrerPolicy="no-referrer"
-                  />
-                )}
-                <div className="text-right hidden sm:block">
-                  <span className="text-xs font-bold text-slate-800 block leading-tight">
-                    {currentUser.displayName || 'صيدلية شريكة'}
-                  </span>
-                  {/* بريد الحساب المسجّل — للتأكد بصرياً أن كل الأجهزة تستخدم نفس الحساب */}
-                  <span className="text-xs text-slate-500 tabular-nums block leading-tight" dir="ltr">
-                    {currentUser.email}
-                  </span>
-                  {/* مؤشر المزامنة الحقيقي — مشتقّ من حالة الاتصال الفعلية بخادم Firestore */}
-                  <span className="text-xs font-bold block flex items-center space-x-reverse space-x-1">
-                    {syncState === 'synced' ? (
-                      <><span className="w-1.5 h-1.5 bg-money-500 rounded-full" /><span className="text-money-600">متزامن مع السحابة ✓</span></>
-                    ) : syncState === 'pending' ? (
-                      <><span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse" /><span className="text-amber-600">جارٍ المزامنة...</span></>
-                    ) : (
-                      <><span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" /><span className="text-red-600">غير متصل — محلي فقط</span></>
-                    )}
-                  </span>
-                </div>
-                <button
-                  onClick={handleCloudCheck}
-                  className="px-2.5 py-1.5 bg-primary-50 hover:bg-primary-100 text-primary-700 text-sm font-bold rounded-lg transition cursor-pointer border border-primary-200"
-                  title="قراءة العدد الفعلي من خادم Firestore ومقارنته بهذا الجهاز"
-                >
-                  <span className="inline-flex items-center gap-1"><Search className="w-3 h-3" />فحص السحابة</span>
-                </button>
-                <button
-                  onClick={handleSignOut}
-                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm font-bold rounded-lg transition cursor-pointer"
-                >
-                  تسجيل خروج
-                </button>
-              </div>
+              <span className={`hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 h-8 rounded-full border ${
+                syncState === 'synced' ? 'bg-money-50 text-money-700 border-money-200'
+                : syncState === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200'
+                : 'bg-danger-soft text-danger border-danger-line'}`}
+                title={syncState === 'synced' ? 'متزامن مع السحابة' : syncState === 'pending' ? 'جارٍ رفع التغييرات' : 'غير متصل — البيانات محلية حتى عودة الاتصال'}>
+                <span className={`w-1.5 h-1.5 rounded-full ${syncState === 'synced' ? 'bg-money-500' : syncState === 'pending' ? 'bg-amber-500 animate-pulse' : 'bg-red-500 animate-pulse'}`} />
+                {syncState === 'synced' ? 'متزامن' : syncState === 'pending' ? 'جارٍ المزامنة' : 'غير متصل'}
+              </span>
             ) : (
-              <button 
+              <button
                 onClick={handleGoogleSignIn}
-                className="flex items-center space-x-reverse space-x-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
+                className="flex items-center gap-2 px-3 sm:px-4 h-10 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-bold transition shadow-sm cursor-pointer whitespace-nowrap shrink-0"
               >
                 <svg className="w-4 h-4" viewBox="0 0 24 24">
                   <path 
@@ -4870,60 +4880,17 @@ export default function Dashboard() {
                     d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" 
                   />
                 </svg>
-                <span>ربط المزامنة السحابية (Google)</span>
+                <span className="hidden sm:inline">ربط المزامنة السحابية (Google)</span>
+                <span className="sm:hidden">ربط</span>
               </button>
             )}
-            <span className="text-slate-300 tabular-nums text-sm tracking-wide font-bold hidden sm:inline">|</span>
-            <span className="text-slate-500 tabular-nums text-sm tracking-wide font-bold hidden sm:inline">ANWAR AL-HASSAN</span>
-            {/* Role selector */}
-            {currentUser && (
-              <select
-                value={currentRole}
-                onChange={async e => {
-                  const next = e.target.value as 'admin' | 'pharmacist' | 'cashier';
-                  // الترقية لدور أعلى صلاحية تتطلب كلمة مرور الحسابات — التنزيل حر
-                  const rank: Record<typeof next, number> = { cashier: 0, pharmacist: 1, admin: 2 };
-                  if (rank[next] > rank[currentRole]) {
-                    const pin = await promptDialog({ title: 'الترقية لدور أعلى', message: 'تتطلب كلمة مرور الحسابات.', password: true, placeholder: '••••', confirmText: 'تأكيد' });
-                    if (pin !== financialPin) {
-                      if (pin !== null) toast('كلمة المرور غير صحيحة — بقي الدور كما هو.', 'error');
-                      return;
-                    }
-                    addAuditEntry({
-                      action: 'security',
-                      amount: 0,
-                      description: `ترقية دور الجهاز من ${currentRole === 'cashier' ? 'كاشير' : 'صيدلاني'} إلى ${next === 'admin' ? 'مدير' : 'صيدلاني'}`,
-                    });
-                  }
-                  setCurrentRole(next);
-                  try { localStorage.setItem('anwar_device_role', next); } catch { /* localStorage غير متاح */ }
-                }}
-                className="text-xs font-bold bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 cursor-pointer"
-              >
-                <option value="admin">مدير</option>
-                <option value="pharmacist">صيدلاني</option>
-                <option value="cashier">كاشير</option>
-              </select>
-            )}
-            {/* Enable Notifications Button */}
-            {typeof Notification !== 'undefined' && Notification.permission !== 'granted' && (
-              <button
-                onClick={() => {
-                  Notification.requestPermission().then(p => {
-                    if (p === 'granted') toast('تم تفعيل الإشعارات بنجاح!', 'success');
-                  });
-                }}
-                className="text-xs font-bold bg-amber-50 border border-amber-200 text-amber-700 rounded-lg px-2 py-1 cursor-pointer hover:bg-amber-100 transition hidden sm:flex items-center gap-1"
-              >
-                <Bell className="w-3 h-3" />
-                تفعيل الإشعارات
-              </button>
-            )}
-            {/* Notification Bell */}
+
+            {/* الجرس */}
             <div className="relative">
               <button
-                onClick={() => setShowNotifDropdown(prev => !prev)}
-                className="w-8 h-8 flex items-center justify-center bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-600 transition cursor-pointer relative"
+                onClick={() => { setShowNotifDropdown(prev => !prev); setShowAccountMenu(false); }}
+                aria-label="التنبيهات"
+                className="w-10 h-10 flex items-center justify-center bg-slate-100 hover:bg-slate-200 rounded-xl text-ink-2 transition cursor-pointer relative"
               >
                 <Bell className="w-4 h-4" />
                 {(inventory.some(m => expiryDates[m.id] && new Date(expiryDates[m.id]) < new Date()) ||
@@ -4980,21 +4947,69 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
-          </div>
 
-          {/* RIGHT: Logo tile widget following the screenshot image of 'نظام إدارة صيدليات المتكامل' */}
-          <div className="flex items-center space-x-reverse space-x-3.5">
-            <div className="text-right hidden sm:block">
-              <h1 className="text-slate-900 font-semibold text-lg tracking-tight leading-none mb-0.5">
-                انوار الحسن <span className="text-primary-500 font-bold">+</span>
-              </h1>
-              <p className="text-sm text-slate-500 font-bold tracking-tight">
-                نظام إدارة صيدليات المتكامل
-              </p>
-            </div>
-            <div className="w-11 h-11 bg-white rounded-2xl border border-slate-100 shadow-sm flex items-center justify-center text-primary-600 font-bold">
-              {/* شعار التطبيق نفسه (أيقونة PWA) بدل رسم البطة السابق — شعار واحد في كل مكان */}
-              <img src="/icon.svg" alt="" className="w-7 h-7 rounded-lg" />
+            {/* قائمة الحساب */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => { setShowAccountMenu(prev => !prev); setShowNotifDropdown(false); }}
+                aria-haspopup="menu"
+                aria-expanded={showAccountMenu}
+                aria-label="قائمة الحساب"
+                className="h-10 flex items-center gap-2 pl-2 pr-1.5 rounded-xl border border-line bg-white hover:bg-slate-50 transition cursor-pointer"
+              >
+                {currentUser?.photoURL ? (
+                  <img src={currentUser.photoURL} alt="" className="w-7 h-7 rounded-full border border-line" referrerPolicy="no-referrer" />
+                ) : (
+                  <span className="w-7 h-7 rounded-full bg-primary-50 text-primary-700 flex items-center justify-center"><UserIcon className="w-4 h-4" /></span>
+                )}
+                <span className="hidden sm:block text-xs font-bold text-ink-2">{ROLE_LABEL[currentRole]}</span>
+                <ChevronDown className={`w-4 h-4 text-muted transition-transform ${showAccountMenu ? 'rotate-180' : ''}`} />
+              </button>
+              {showAccountMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowAccountMenu(false)} aria-hidden="true" />
+                  <div role="menu" className="absolute left-0 top-12 w-72 bg-white border border-line rounded-2xl shadow-xl z-50 p-2 text-right" dir="rtl">
+                    <div className="px-3 py-2">
+                      <p className="text-sm font-bold text-ink truncate">
+                        {currentUser ? (currentUser.displayName || 'صيدلية شريكة') : bypassLogin ? 'وضع محلي بلا مزامنة' : 'غير مسجّل دخول'}
+                      </p>
+                      {currentUser?.email && <p className="text-xs text-muted truncate" dir="ltr">{currentUser.email}</p>}
+                      {currentUser && (
+                        <p className={`text-xs font-semibold mt-1 ${syncState === 'synced' ? 'text-money-700' : syncState === 'pending' ? 'text-amber-700' : 'text-danger'}`}>
+                          {syncState === 'synced' ? 'متزامن مع السحابة' : syncState === 'pending' ? 'جارٍ المزامنة…' : 'غير متصل — محلي فقط'}
+                        </p>
+                      )}
+                    </div>
+                    {currentUser && (
+                      <div className="px-3 py-2 border-t border-line">
+                        <p className="text-xs font-semibold text-muted mb-1.5">دور هذا الجهاز</p>
+                        <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-lg" role="radiogroup" aria-label="دور الجهاز">
+                          {(['admin', 'pharmacist', 'cashier'] as const).map(r => (
+                            <button key={r} type="button" role="radio" aria-checked={currentRole === r} onClick={() => requestRoleChange(r)}
+                              className={`h-9 rounded-md text-xs font-bold transition cursor-pointer ${currentRole === r ? 'bg-white text-primary-700 shadow-sm' : 'text-ink-2 hover:bg-white/60'}`}>
+                              {ROLE_LABEL[r]}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="border-t border-line pt-1 space-y-0.5">
+                      {typeof Notification !== 'undefined' && Notification.permission !== 'granted' && (
+                        <MenuItem icon={Bell} label="تفعيل الإشعارات" hint="تنبيهات الصلاحية والنواقص على هذا الجهاز"
+                          onClick={() => { setShowAccountMenu(false); Notification.requestPermission().then(p => { if (p === 'granted') toast('تم تفعيل الإشعارات بنجاح', 'success'); }); }} />
+                      )}
+                      {currentUser && (
+                        <MenuItem icon={Search} label="فحص السحابة" hint="مقارنة بيانات هذا الجهاز بالخادم"
+                          onClick={() => { setShowAccountMenu(false); handleCloudCheck(); }} />
+                      )}
+                      {currentUser && (
+                        <MenuItem icon={LogOut} label="تسجيل خروج" danger onClick={() => { setShowAccountMenu(false); handleSignOut(); }} />
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
