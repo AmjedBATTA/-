@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { Medicine, Order, Supplier, InvoiceImportDraft, SupplierMemory } from '../types';
 import { fmtNum, fmtDate, fmtDateTime } from '../utils/format';
+import { toast, confirmDialog, promptDialog, alertDialog, isDialogOpen } from './ui/dialogs';
 import SupplierPicker from './SupplierPicker';
 // تحميل كسول: نافذة استيراد الفاتورة + مكتبة @google/genai (~305kB) لا تُحمَّل إلا عند فتحها
 const InvoiceImportModal = lazy(() => import('./InvoiceImportModal'));
@@ -2506,7 +2507,7 @@ export default function Dashboard() {
 
   // (3) الاستعادة — تُطبّق اللقطة على الحالة المحلية
   const applyRestoredSnapshot = (snap: any): boolean => {
-    if (!snap || typeof snap !== 'object') { window.alert('ملف النسخة غير صالح.'); return false; }
+    if (!snap || typeof snap !== 'object') { toast('ملف النسخة غير صالح.', 'error'); return false; }
     if (Array.isArray(snap.inventory)) setInventory(snap.inventory);
     if (Array.isArray(snap.salesLedger)) setSalesLedger(snap.salesLedger);
     if (Array.isArray(snap.expenses)) setExpenses(snap.expenses);
@@ -2529,26 +2530,26 @@ export default function Dashboard() {
     return true;
   };
 
-  const restoreFromBrowserBackup = () => {
+  const restoreFromBrowserBackup = async () => {
     let raw: string | null = null;
     try { raw = localStorage.getItem(BACKUP_KEY); } catch {}
-    if (!raw) { window.alert('لا توجد نسخة احتياطية محلية محفوظة بعد.'); return; }
+    if (!raw) { toast('لا توجد نسخة احتياطية محلية محفوظة بعد.', 'error'); return; }
     try {
       const snap = JSON.parse(raw);
       const when = snap.exportedAt ? fmtDateTime(new Date(snap.exportedAt)) : 'غير معروف';
-      if (!window.confirm(`استعادة النسخة المحفوظة (${when})؟\nستُستبدل البيانات الحالية على هذا الجهاز.`)) return;
-      if (applyRestoredSnapshot(snap)) window.alert('تمت الاستعادة من نسخة المتصفح بنجاح ✅');
-    } catch (e) { window.alert('تعذّرت الاستعادة: ' + (e as Error).message); }
+      if (!(await confirmDialog({ title: 'استعادة النسخة المحفوظة؟', message: `النسخة بتاريخ ${when}.\nستُستبدل البيانات الحالية على هذا الجهاز.`, confirmText: 'استعادة', danger: true }))) return;
+      if (applyRestoredSnapshot(snap)) toast('تمت الاستعادة من نسخة المتصفح بنجاح', 'success');
+    } catch (e) { toast('تعذّرت الاستعادة: ' + (e as Error).message, 'error'); }
   };
 
   const handleRestoreFile = (file: File) => {
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
         const snap = JSON.parse(String(reader.result));
-        if (!window.confirm('استعادة من هذا الملف؟ ستُستبدل البيانات الحالية على هذا الجهاز.')) return;
-        if (applyRestoredSnapshot(snap)) window.alert('تمت الاستعادة من الملف بنجاح ✅');
-      } catch (e) { window.alert('ملف غير صالح: ' + (e as Error).message); }
+        if (!(await confirmDialog({ title: 'استعادة من هذا الملف؟', message: 'ستُستبدل البيانات الحالية على هذا الجهاز.', confirmText: 'استعادة', danger: true }))) return;
+        if (applyRestoredSnapshot(snap)) toast('تمت الاستعادة من الملف بنجاح', 'success');
+      } catch (e) { toast('ملف غير صالح: ' + (e as Error).message, 'error'); }
     };
     reader.readAsText(file);
   };
@@ -2580,7 +2581,7 @@ export default function Dashboard() {
 
     // فحص مسبق: الاسترداد النقدي لا يتجاوز السيولة المتاحة بالصندوق
     if (returnRefundMethod === 'cash' && returnTotal > walletBalance) {
-      alert(`لا يمكن الاسترداد نقداً: مبلغ المرتجع (${fmtNum(returnTotal)} د.ع) أكبر من السيولة المتاحة بالصندوق (${fmtNum(walletBalance)} د.ع). اختر "بدون صرف نقدي" أو قلّل الكمية.`);
+      toast(`لا يمكن الاسترداد نقداً: مبلغ المرتجع (${fmtNum(returnTotal)} د.ع) أكبر من السيولة المتاحة بالصندوق (${fmtNum(walletBalance)} د.ع). اختر "بدون صرف نقدي" أو قلّل الكمية.`, 'error');
       return;
     }
 
@@ -2664,7 +2665,7 @@ export default function Dashboard() {
           .catch(e => handleFirestoreError(e, OperationType.WRITE, `users/${userId}/receivables/${rec.id}`));
       }
       if (rec.paidAmount > newAmount) {
-        alert(`تنبيه: الزبون «${rec.customerName}» سدّد ${fmtNum(rec.paidAmount)} د.ع بينما أصبح إجمالي الفاتورة ${fmtNum(newAmount)} د.ع.\nالفائض ${fmtNum((rec.paidAmount - newAmount))} د.ع يحتاج معالجة يدوية (استرداد للزبون).`);
+        toast(`تنبيه: الزبون «${rec.customerName}» سدّد ${fmtNum(rec.paidAmount)} د.ع بينما أصبح إجمالي الفاتورة ${fmtNum(newAmount)} د.ع.\nالفائض ${fmtNum((rec.paidAmount - newAmount))} د.ع يحتاج معالجة يدوية (استرداد للزبون).`, 'warning');
       }
     } else {
       adjustWallet(diff);
@@ -2707,7 +2708,7 @@ export default function Dashboard() {
   // --- DELETE ONE ITEM FROM A SALES INVOICE (حذف صنف من فاتورة مبيعات + إرجاع عدده للمخزون) ---
   // يُزال الصنف، تُعاد كميته للمخزون، يَنقص الإجمالي، ويُصحَّح الأثر المالي حسب نوع الفاتورة:
   // آجلة → تُعدَّل ذمّة الزبون، نقدية → يُصحَّح الصندوق (عبر applyInvoiceTotalChange).
-  const handleDeleteInvoiceItem = (invoiceId: string, itemIndex: number) => {
+  const handleDeleteInvoiceItem = async (invoiceId: string, itemIndex: number) => {
     const sale = salesLedger.find(s => s.invoiceId === invoiceId);
     const item = sale?.items[itemIndex];
     if (!sale || !item) return;
@@ -2720,12 +2721,15 @@ export default function Dashboard() {
     const isCredit = receivables.some(r => r.relatedInvoiceId === invoiceId);
 
     // تأكيد سريع قبل التنفيذ
-    const ok = window.confirm(
-      `حذف «${item.name}» من الفاتورة ${invoiceId}؟\n` +
-      (med ? `سيُعاد ${restoreQty} إلى المخزون` : `⚠ تعذّرت مطابقة المادة بالمخزون — لن يُعاد العدد`) +
-      `، ويَنقص الإجمالي ${fmtNum(lineAmount)} د.ع ` +
-      (isCredit ? 'وتُصحَّح ذمّة الزبون (فاتورة آجلة — لا يُمسّ الصندوق).' : 'ويُصحَّح الصندوق.')
-    );
+    const ok = await confirmDialog({
+      title: `حذف «${item.name}» من الفاتورة ${invoiceId}؟`,
+      message:
+        (med ? `سيُعاد ${restoreQty} إلى المخزون` : `تعذّرت مطابقة المادة بالمخزون — لن يُعاد العدد`) +
+        `، ويَنقص الإجمالي ${fmtNum(lineAmount)} د.ع ` +
+        (isCredit ? 'وتُصحَّح ذمّة الزبون (فاتورة آجلة — لا يُمسّ الصندوق).' : 'ويُصحَّح الصندوق.'),
+      confirmText: 'حذف',
+      danger: true,
+    });
     if (!ok) return;
 
     // 1) أزل الصنف من الفاتورة + أعد حساب الإجماليات
@@ -2795,7 +2799,7 @@ export default function Dashboard() {
     if (!newExpAmount || newExpAmount <= 0) return;
     // فحص مسبق: لا يُسمح بمصروف أكبر من السيولة المتاحة — بدل قصّ الرصيد عند الصفر بصمت
     if (Math.round(newExpAmount) > walletBalance) {
-      alert(`لا يمكن تسجيل المصروف: المبلغ (${fmtNum(Math.round(newExpAmount))} د.ع) أكبر من السيولة المتاحة بالصندوق (${fmtNum(walletBalance)} د.ع).`);
+      toast(`لا يمكن تسجيل المصروف: المبلغ (${fmtNum(Math.round(newExpAmount))} د.ع) أكبر من السيولة المتاحة بالصندوق (${fmtNum(walletBalance)} د.ع).`, 'error');
       return;
     }
     const expId = generateDocId('EXP');
@@ -2883,7 +2887,7 @@ export default function Dashboard() {
     if (pay <= 0) return;
     // فحص مسبق: التسديد لا يتجاوز السيولة المتاحة
     if (pay > walletBalance) {
-      alert(`لا يمكن التسديد: المبلغ (${fmtNum(pay)} د.ع) أكبر من السيولة المتاحة بالصندوق (${fmtNum(walletBalance)} د.ع).`);
+      toast(`لا يمكن التسديد: المبلغ (${fmtNum(pay)} د.ع) أكبر من السيولة المتاحة بالصندوق (${fmtNum(walletBalance)} د.ع).`, 'error');
       return;
     }
     const newPaid = p.paidAmount + pay;
@@ -2968,7 +2972,7 @@ export default function Dashboard() {
     if (payTotal <= 0) return;
     // فحص مسبق: التسديد لا يتجاوز السيولة المتاحة
     if (payTotal > walletBalance) {
-      alert(`لا يمكن التسديد: المبلغ (${fmtNum(payTotal)} د.ع) أكبر من السيولة المتاحة بالصندوق (${fmtNum(walletBalance)} د.ع).`);
+      toast(`لا يمكن التسديد: المبلغ (${fmtNum(payTotal)} د.ع) أكبر من السيولة المتاحة بالصندوق (${fmtNum(walletBalance)} د.ع).`, 'error');
       return;
     }
 
@@ -3119,8 +3123,8 @@ export default function Dashboard() {
       const serverSales = salesSnap.data().count;
       const serverInv = invSnap.data().count;
       const ok = serverSales === salesLedger.length && serverInv === inventory.length;
-      alert(
-        '🔍 فحص السحابة (قراءة مباشرة من الخادم)\n\n' +
+      alertDialog(
+        'فحص السحابة (قراءة مباشرة من الخادم)',
         'الحساب: ' + (currentUser.email || '—') + '\n' +
         'معرّف الحساب (uid): ' + uid + '\n\n' +
         '— الفواتير —\n' +
@@ -3130,12 +3134,12 @@ export default function Dashboard() {
         'على الخادم: ' + serverInv + '\n' +
         'ظاهر على هذا الجهاز: ' + inventory.length + '\n\n' +
         (ok
-          ? '✅ متطابق — هذا الجهاز متزامن تماماً مع السحابة.'
-          : '⚠️ يوجد فرق — بعض البيانات لم تتزامن مع هذا الجهاز.')
+          ? 'متطابق: هذا الجهاز متزامن تماماً مع السحابة.'
+          : 'يوجد فرق: بعض البيانات لم تتزامن مع هذا الجهاز.')
       );
     } catch (e) {
       const msg = String((e as Error)?.message || e);
-      alert('تعذّر فحص السحابة:\n' + msg + '\n\nقد يعني هذا أن هذا الجهاز لا يصل لخادم Firestore (مشكلة اتصال/صلاحيات).');
+      alertDialog('تعذّر فحص السحابة', msg + '\n\nقد يعني هذا أن هذا الجهاز لا يصل لخادم Firestore (مشكلة اتصال/صلاحيات).');
     }
   };
 
@@ -3494,8 +3498,8 @@ export default function Dashboard() {
       if (k === 'F4') { e.preventDefault(); posDiscountRef.current?.focus(); return; }
       if (k === 'F8') { e.preventDefault(); setShowVirtualPriceInPOS(v => !v); return; }
       if (k === 'Escape') {
-        if (showCalculator || showReceiptModal || isScanning || currentCart.length === 0) return;
-        if (window.confirm('مسح سلة البيع بالكامل؟')) setCurrentCart([]);
+        if (showCalculator || showReceiptModal || isScanning || currentCart.length === 0 || isDialogOpen()) return;
+        confirmDialog({ title: 'مسح سلة البيع بالكامل؟', confirmText: 'مسح السلة', danger: true }).then(ok => { if (ok) setCurrentCart([]); });
         return;
       }
       if (k === 'ArrowUp' || k === 'ArrowDown') {
@@ -3688,7 +3692,7 @@ export default function Dashboard() {
 
     // تحذير: إذا لم يكن المستخدم مسجّل دخوله، البيانات لن تُحفظ بعد إغلاق التطبيق
     if (!currentUser) {
-      alert('⚠️ تنبيه: أنت غير مسجّل دخول!\n\nلحفظ المواد بشكل دائم، الرجاء الضغط على زر "ربط المزامنة السحابية (Google)" أعلى الصفحة أولاً.\n\nبدون تسجيل الدخول، ستختفي المادة عند إغلاق التطبيق أو تحديث الصفحة.');
+      alertDialog('أنت غير مسجّل دخول', 'لحفظ المواد بشكل دائم، الرجاء الضغط على زر "ربط المزامنة السحابية (Google)" أعلى الصفحة أولاً.\n\nبدون تسجيل الدخول، ستختفي المادة عند إغلاق التطبيق أو تحديث الصفحة.');
       return;
     }
 
@@ -3802,7 +3806,7 @@ export default function Dashboard() {
     const existingBarcodes = new Set(inventory.map(m => m.barcode).filter(Boolean));
     const toAdd = testMeds.filter(m => !existingBarcodes.has(m.barcode));
     if (toAdd.length === 0) {
-      alert('الأدوية التجريبية موجودة مسبقاً في المخزون.');
+      toast('الأدوية التجريبية موجودة مسبقاً في المخزون.', 'info');
       return;
     }
     // تُضاف محلياً دائماً (تعمل حتى في وضع التجاوز)
@@ -3815,7 +3819,7 @@ export default function Dashboard() {
           .catch(e => handleFirestoreError(e, OperationType.CREATE, `users/${userId}/inventory/${med.id}`));
       }
     }
-    alert(`✅ تمت إضافة ${toAdd.length} أدوية تجريبية${currentUser ? ' ومزامنتها سحابياً' : ' محلياً (وضع التجاوز)'}!`);
+    toast(`تمت إضافة ${toAdd.length} أدوية تجريبية${currentUser ? ' ومزامنتها سحابياً' : ' محلياً (وضع التجاوز)'}!`, 'success');
   };
 
   // --- BULK INVENTORY IMPORT (استيراد المخزون الكامل من ملف على الجهاز) ---
@@ -3973,7 +3977,7 @@ export default function Dashboard() {
     }
   };
 
-  const commitPurchaseDraft = () => {
+  const commitPurchaseDraft = async () => {
     if (purchaseDraft.length === 0) return;
     // اسم مورد جديد كُتب يدوياً في مسودة الشراء → يُحفظ في قائمة الموردين (نقداً أو آجلاً)
     ensureSupplier(purchaseSupplier);
@@ -3985,11 +3989,14 @@ export default function Dashboard() {
     // سهل تفويته فيبدو أن «لا شيء يحدث» — صار سؤال تأكيد لا يمكن تجاهله يترك القرار للمستخدم.
     // المتابعة تجعل الصندوق بالسالب (إشارة صادقة إلى الدفع من مصدر خارج الصندوق).
     if (!purchaseOnCredit && totalCost > walletBalance) {
-      const proceed = window.confirm(
-        `رصيد الصندوق (${fmtNum(walletBalance)} د.ع) أقل من قيمة الشراء النقدي (${fmtNum(totalCost)} د.ع).\n\n` +
-        `• «موافق» = المتابعة نقداً (سيصبح رصيد الصندوق بالسالب — أي دفعتَ من مصدر خارج الصندوق).\n` +
-        `• «إلغاء» = التوقف؛ يمكنك تفعيل «شراء بالآجل» لتسجيلها كذمّة على المذخر.`
-      );
+      const proceed = await confirmDialog({
+        title: 'رصيد الصندوق لا يكفي — المتابعة نقداً؟',
+        message:
+          `رصيد الصندوق (${fmtNum(walletBalance)} د.ع) أقل من قيمة الشراء النقدي (${fmtNum(totalCost)} د.ع).\n\n` +
+          `«متابعة نقداً» = سيصبح رصيد الصندوق بالسالب (أي دفعتَ من مصدر خارج الصندوق).\n` +
+          `«إلغاء» = التوقف؛ يمكنك تفعيل «شراء بالآجل» لتسجيلها كذمّة على المذخر.`,
+        confirmText: 'متابعة نقداً',
+      });
       if (!proceed) return;
     }
 
@@ -4306,12 +4313,12 @@ export default function Dashboard() {
 
   // إعادة فتح طلبية شراء سابقة للتعديل: نعكس أثرها (المخزون + النقد/الذمّة + قيد التدقيق)
   // ثم نعيد بنودها إلى المسودة ليعدّلها المستخدم ويعتمدها من جديد بنفس منطق الاعتماد المُجرَّب.
-  const reopenPurchaseOrderForEdit = (orderId: string) => {
+  const reopenPurchaseOrderForEdit = async (orderId: string) => {
     const order = b2bOrders.find(o => o.id === orderId);
     if (!order) return;
 
     if (purchaseDraft.length > 0) {
-      const ok = window.confirm('لديك مسودة شراء غير معتمدة حالياً. ستُستبدل ببنود هذه الطلبية. هل تريد المتابعة؟');
+      const ok = await confirmDialog({ title: 'استبدال مسودة الشراء الحالية؟', message: 'لديك مسودة شراء غير معتمدة. ستُستبدل ببنود هذه الطلبية.', confirmText: 'استبدال', danger: true });
       if (!ok) return;
     }
 
@@ -4872,14 +4879,14 @@ export default function Dashboard() {
             {currentUser && (
               <select
                 value={currentRole}
-                onChange={e => {
+                onChange={async e => {
                   const next = e.target.value as 'admin' | 'pharmacist' | 'cashier';
                   // الترقية لدور أعلى صلاحية تتطلب كلمة مرور الحسابات — التنزيل حر
                   const rank: Record<typeof next, number> = { cashier: 0, pharmacist: 1, admin: 2 };
                   if (rank[next] > rank[currentRole]) {
-                    const pin = window.prompt('الترقية لدور أعلى تتطلب كلمة مرور الحسابات:');
+                    const pin = await promptDialog({ title: 'الترقية لدور أعلى', message: 'تتطلب كلمة مرور الحسابات.', password: true, placeholder: '••••', confirmText: 'تأكيد' });
                     if (pin !== financialPin) {
-                      if (pin !== null) alert('كلمة المرور غير صحيحة — بقي الدور كما هو.');
+                      if (pin !== null) toast('كلمة المرور غير صحيحة — بقي الدور كما هو.', 'error');
                       return;
                     }
                     addAuditEntry({
@@ -4903,7 +4910,7 @@ export default function Dashboard() {
               <button
                 onClick={() => {
                   Notification.requestPermission().then(p => {
-                    if (p === 'granted') alert('تم تفعيل الإشعارات بنجاح!');
+                    if (p === 'granted') toast('تم تفعيل الإشعارات بنجاح!', 'success');
                   });
                 }}
                 className="text-xs font-bold bg-amber-50 border border-amber-200 text-amber-700 rounded-lg px-2 py-1 cursor-pointer hover:bg-amber-100 transition hidden sm:flex items-center gap-1"
@@ -6923,7 +6930,7 @@ export default function Dashboard() {
                                 type="button"
                                 onClick={() => {
                                   if (!purchaseNewProdAr || !purchaseNewProdEn) {
-                                    alert('الرجاء إدخال الاسم العربي والاسم الإنكليزي لإدراج المنتج!');
+                                    toast('الرجاء إدخال الاسم العربي والاسم الإنكليزي لإدراج المنتج!', 'info');
                                     return;
                                   }
                                   const customItem = {
@@ -6975,9 +6982,8 @@ export default function Dashboard() {
                             <button
                               type="button"
                               onClick={() => {
-                                if (confirm('هل أنت متأكد من تفريغ مسودة المشتريات بالكامل؟')) {
-                                  setPurchaseDraft([]);
-                                }
+                                confirmDialog({ title: 'تفريغ مسودة المشتريات بالكامل؟', confirmText: 'تفريغ', danger: true })
+                                  .then(ok => { if (ok) setPurchaseDraft([]); });
                               }}
                               className="text-sm text-rose-500 hover:text-rose-700 font-semibold bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-xl transition cursor-pointer border-none"
                             >
@@ -8063,9 +8069,8 @@ export default function Dashboard() {
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      if (window.confirm(`حذف المورد "${sup.name}"؟ لن تتأثّر الذمم أو الفواتير المسجّلة سابقاً.`)) {
-                                        deleteSupplier(sup);
-                                      }
+                                      confirmDialog({ title: `حذف المورد «${sup.name}»؟`, message: 'لن تتأثّر الذمم أو الفواتير المسجّلة سابقاً.', confirmText: 'حذف', danger: true })
+                                        .then(ok => { if (ok) deleteSupplier(sup); });
                                     }}
                                     className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-100 rounded-lg transition cursor-pointer bg-transparent border-none"
                                     title="حذف المورد"
@@ -9121,7 +9126,7 @@ export default function Dashboard() {
                         type="button"
                         onClick={() => {
                           saveDefaultCostPercent(defaultCostPercent);
-                          alert(`تم الحفظ: ستُقدَّر تكلفة المواد بلا سعر شراء بنسبة ${defaultCostPercent}% من سعر البيع.`);
+                          toast(`تم الحفظ: ستُقدَّر تكلفة المواد بلا سعر شراء بنسبة ${defaultCostPercent}% من سعر البيع.`, 'success');
                         }}
                         className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs cursor-pointer transition border-none font-sans"
                       >

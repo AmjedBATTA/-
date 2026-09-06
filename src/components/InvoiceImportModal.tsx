@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import type { Medicine, ExtractedInvoiceItem, ExtractedInvoice, InvoiceImportDraft, Supplier, SupplierMemory, Order } from '../types';
 import { fmtNum } from '../utils/format';
+import { confirmDialog } from './ui/dialogs';
 import SupplierPicker from './SupplierPicker';
 import { extractInvoice, getStoredApiKey, saveApiKey, matchToInventory, normalizeName, getErrorMessage } from '../utils/invoiceExtractor';
 import type { InvoiceAliasMap, StripsMemoryMap, InvoiceImage } from '../utils/invoiceExtractor';
@@ -570,9 +571,9 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
   const confidenceRank = (it: ExtractedInvoiceItem) =>
     it.uncertain ? -1 : !it.matchedMedicine ? 0 : it.matchedByAlias ? 4 : it.matchedByAI ? 2 : it.matchScore >= 0.8 ? 3 : 1;
   const visibleItems = sortByConfidence ? [...items].sort((a, b) => confidenceRank(a) - confidenceRank(b)) : items;
-  const removeUnmatched = () => {
+  const removeUnmatched = async () => {
     if (!newCount) return;
-    if (!window.confirm(`حذف ${newCount} صنف غير مطابق من هذه الفاتورة؟`)) return;
+    if (!(await confirmDialog({ title: `حذف ${newCount} صنف غير مطابق من هذه الفاتورة؟`, confirmText: 'حذف', danger: true }))) return;
     setItems(prev => prev.filter(it => it.matchedMedicine));
   };
 

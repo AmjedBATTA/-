@@ -1,6 +1,7 @@
 ﻿import Dashboard from './components/Dashboard';
 import ErrorBoundary from './components/ErrorBoundary';
 import PWAPrompt from './components/PWAPrompt';
+import DialogHost from './components/ui/dialogs';
 
 export default function App() {
   return (
@@ -9,6 +10,7 @@ export default function App() {
         {/* Launch directly into ANWAR AL-HASSAN Plus + Pharmacy Management Dashboard */}
         <Dashboard />
         <PWAPrompt />
+        <DialogHost />
       </div>
     </ErrorBoundary>
   );
