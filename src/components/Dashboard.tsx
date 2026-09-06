@@ -2417,9 +2417,9 @@ export default function Dashboard() {
     // خرائط ألوان ثابتة (Tailwind يحتاج أسماء أصناف كاملة وليست مركّبة ديناميكياً)
     const finAccent: Record<string, { badge: string; icon: string; profit: string; ring: string }> = {
       emerald: { badge: 'bg-money-50 text-money-700', icon: 'text-money-600', profit: 'text-money-700', ring: 'border-money-100' },
-      blue: { badge: 'bg-blue-50 text-blue-700', icon: 'text-blue-600', profit: 'text-blue-700', ring: 'border-blue-100' },
-      violet: { badge: 'bg-violet-50 text-violet-700', icon: 'text-violet-600', profit: 'text-violet-700', ring: 'border-violet-100' },
-      amber: { badge: 'bg-amber-50 text-amber-700', icon: 'text-amber-600', profit: 'text-amber-700', ring: 'border-amber-100' },
+      blue: { badge: 'bg-info-50 text-info-700', icon: 'text-info-600', profit: 'text-info-700', ring: 'border-info-100' },
+      violet: { badge: 'bg-special-50 text-special-700', icon: 'text-special-600', profit: 'text-special-700', ring: 'border-special-100' },
+      amber: { badge: 'bg-warn-50 text-warn-700', icon: 'text-warn-600', profit: 'text-warn-700', ring: 'border-warn-100' },
     };
     const financialPeriods = [
       { key: 'today', label: 'اليوم', sub: 'مبيعات هذا اليوم', stats: statsToday, accent: 'emerald' },
@@ -3844,20 +3844,20 @@ export default function Dashboard() {
 
   if (!currentUser && !bypassLogin) {
     return (
-      <div className="bg-gradient-to-br from-primary-50 via-slate-50 to-teal-50 min-h-screen flex items-center justify-center p-4" dir="rtl">
+      <div className="bg-gradient-to-br from-primary-50 via-slate-50 to-primary-50 min-h-screen flex items-center justify-center p-4" dir="rtl">
         <div className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-slate-100 p-8 text-center">
           <img src="/icon.svg" alt="" className="w-16 h-16 mx-auto mb-5 rounded-2xl shadow-sm" />
           <h1 className="text-xl font-bold text-slate-800 mb-1">صيدلية انوار الحسن</h1>
           <p className="text-sm text-slate-500 mb-6">نظام إدارة الصيدلية — تسجيل الدخول مطلوب</p>
 
           {authInitFailed && (
-            <div className="mb-4 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+            <div className="mb-4 text-xs text-warn-700 bg-warn-50 border border-warn-200 rounded-xl px-3 py-2">
               تعذّر الاتصال بخدمة الحسابات. تحقّق من اتصال الإنترنت ثم أعد المحاولة.
             </div>
           )}
 
           {signInError && (
-            <div className="mb-4 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-right font-semibold">
+            <div className="mb-4 text-xs text-danger-700 bg-danger-50 border border-danger-200 rounded-xl px-3 py-2 text-right font-semibold">
               {signInError}
             </div>
           )}
@@ -3909,13 +3909,13 @@ export default function Dashboard() {
                 value={bypassPinEntry}
                 onChange={(e) => { setBypassPinEntry(e.target.value); setBypassPinError(false); }}
                 placeholder="••••"
-                className={`w-full text-center text-lg tabular-nums tracking-[0.4em] bg-white border rounded-lg py-2 px-3 focus:outline-none focus:ring-2 transition ${bypassPinError ? 'border-rose-400 focus:ring-rose-200 bg-rose-50' : 'border-slate-200 focus:ring-primary-200 focus:border-primary-400'}`}
+                className={`w-full text-center text-lg tabular-nums tracking-[0.4em] bg-white border rounded-lg py-2 px-3 focus:outline-none focus:ring-2 transition ${bypassPinError ? 'border-danger-400 focus:ring-danger-200 bg-danger-50' : 'border-slate-200 focus:ring-primary-200 focus:border-primary-400'}`}
               />
               {bypassPinError && (
-                <p className="text-sm text-rose-600 font-bold text-center">كلمة المرور غير صحيحة</p>
+                <p className="text-sm text-danger-600 font-bold text-center">كلمة المرور غير صحيحة</p>
               )}
               {financialPin === '0000' && (
-                <p className="text-sm text-amber-600 font-semibold text-center">
+                <p className="text-sm text-warn-600 font-semibold text-center">
                   تنبيه: كلمة المرور ما زالت الافتراضية (0000) — غيّرها من تبويب الحسابات بعد الدخول.
                 </p>
               )}
@@ -3954,11 +3954,11 @@ export default function Dashboard() {
       {authInitFailed && (
         <div
           role="alert"
-          className="flex items-center justify-between gap-3 bg-amber-50 border-b border-amber-300 px-4 py-2.5 text-sm text-amber-800"
+          className="flex items-center justify-between gap-3 bg-warn-50 border-b border-warn-300 px-4 py-2.5 text-sm text-warn-800"
           dir="rtl"
         >
           <div className="flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0 text-amber-500" viewBox="0 0 20 20" fill="currentColor">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0 text-warn-500" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
             </svg>
             <span className="font-medium">تعذّر الاتصال بخدمة الحسابات — يعمل التطبيق بوضع محدود (بيانات محلية فقط)</span>
@@ -3966,7 +3966,7 @@ export default function Dashboard() {
           <button
             onClick={() => setAuthInitFailed(false)}
             aria-label="إغلاق التنبيه"
-            className="flex-shrink-0 rounded p-0.5 text-amber-600 hover:bg-amber-100 transition-colors"
+            className="flex-shrink-0 rounded p-0.5 text-warn-600 hover:bg-warn-100 transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
@@ -3990,15 +3990,15 @@ export default function Dashboard() {
 
       {/* شريط خطأ المزامنة — يظهر عند رفض الصلاحيات أو انقطاع الخادم (لم يعد مكتوماً في الـ console) */}
       {syncError && (
-        <div role="alert" className="flex items-center justify-between gap-2 bg-red-50 border-b border-red-300 px-4 py-2.5 text-sm text-red-800" dir="rtl">
+        <div role="alert" className="flex items-center justify-between gap-2 bg-danger-50 border-b border-danger-300 px-4 py-2.5 text-sm text-danger-800" dir="rtl">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse flex-shrink-0" />
+            <span className="w-2 h-2 bg-danger-500 rounded-full animate-pulse flex-shrink-0" />
             <span className="font-medium">تعذّرت المزامنة مع السحابة ({syncError}). بياناتك محفوظة على هذا الجهاز فقط ولم تُرفع بعد — تحقّق من الإنترنت ثم أعد المحاولة.</span>
           </div>
           <button
             onClick={() => setSyncError(null)}
             aria-label="إخفاء التنبيه"
-            className="flex-shrink-0 rounded px-2 py-0.5 text-red-600 hover:bg-red-100 transition-colors text-xs font-bold cursor-pointer border border-red-200 bg-white"
+            className="flex-shrink-0 rounded px-2 py-0.5 text-danger-600 hover:bg-danger-100 transition-colors text-xs font-bold cursor-pointer border border-danger-200 bg-white"
           >
             إخفاء
           </button>
@@ -4032,10 +4032,10 @@ export default function Dashboard() {
             ) : currentUser ? (
               <span className={`hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 h-8 rounded-full border ${
                 syncState === 'synced' ? 'bg-money-50 text-money-700 border-money-200'
-                : syncState === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200'
+                : syncState === 'pending' ? 'bg-warn-50 text-warn-700 border-warn-200'
                 : 'bg-danger-soft text-danger border-danger-line'}`}
                 title={syncState === 'synced' ? 'متزامن مع السحابة' : syncState === 'pending' ? 'جارٍ رفع التغييرات' : 'غير متصل — البيانات محلية حتى عودة الاتصال'}>
-                <span className={`w-1.5 h-1.5 rounded-full ${syncState === 'synced' ? 'bg-money-500' : syncState === 'pending' ? 'bg-amber-500 animate-pulse' : 'bg-red-500 animate-pulse'}`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${syncState === 'synced' ? 'bg-money-500' : syncState === 'pending' ? 'bg-warn-500 animate-pulse' : 'bg-danger-500 animate-pulse'}`} />
                 {syncState === 'synced' ? 'متزامن' : syncState === 'pending' ? 'جارٍ المزامنة' : 'غير متصل'}
               </span>
             ) : (
@@ -4078,7 +4078,7 @@ export default function Dashboard() {
                   inventory.some(m => m.availableQuantity <= (m.minStock ?? 15)) ||
                   payables.some(p => p.dueDate && new Date(p.dueDate) < new Date() && p.status !== 'paid')
                 ) && (
-                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white" />
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-danger-500 rounded-full border-2 border-white" />
                 )}
               </button>
               {showNotifDropdown && (
@@ -4094,22 +4094,22 @@ export default function Dashboard() {
                     return (
                       <>
                         {expired.slice(0, NOTIF_LIST_LIMIT).map(m => (
-                          <div key={m.id} className="text-sm text-rose-700 bg-rose-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
+                          <div key={m.id} className="text-sm text-danger-700 bg-danger-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
                             <AlertCircle className="w-3 h-3 shrink-0" />
                             <span>{m.nameAr} — منتهية الصلاحية</span>
                           </div>
                         ))}
                         {expired.length > NOTIF_LIST_LIMIT && (
-                          <p className="text-xs text-rose-400 font-bold text-center">+{fmtNum((expired.length - NOTIF_LIST_LIMIT))} مادة منتهية أخرى — راجع تبويب المخزون</p>
+                          <p className="text-xs text-danger-400 font-bold text-center">+{fmtNum((expired.length - NOTIF_LIST_LIMIT))} مادة منتهية أخرى — راجع تبويب المخزون</p>
                         )}
                         {lowStock.slice(0, NOTIF_LIST_LIMIT).map(m => (
-                          <div key={m.id} className="text-sm text-amber-700 bg-amber-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
+                          <div key={m.id} className="text-sm text-warn-700 bg-warn-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
                             <AlertCircle className="w-3 h-3 shrink-0" />
                             <span>{m.nameAr} — مخزون منخفض ({m.availableQuantity})</span>
                           </div>
                         ))}
                         {lowStock.length > NOTIF_LIST_LIMIT && (
-                          <p className="text-xs text-amber-500 font-bold text-center">+{fmtNum((lowStock.length - NOTIF_LIST_LIMIT))} مادة منخفضة أخرى — راجع تبويب المخزون</p>
+                          <p className="text-xs text-warn-500 font-bold text-center">+{fmtNum((lowStock.length - NOTIF_LIST_LIMIT))} مادة منخفضة أخرى — راجع تبويب المخزون</p>
                         )}
                       </>
                     );
@@ -4157,7 +4157,7 @@ export default function Dashboard() {
                       </p>
                       {currentUser?.email && <p className="text-xs text-muted truncate" dir="ltr">{currentUser.email}</p>}
                       {currentUser && (
-                        <p className={`text-xs font-semibold mt-1 ${syncState === 'synced' ? 'text-money-700' : syncState === 'pending' ? 'text-amber-700' : 'text-danger'}`}>
+                        <p className={`text-xs font-semibold mt-1 ${syncState === 'synced' ? 'text-money-700' : syncState === 'pending' ? 'text-warn-700' : 'text-danger'}`}>
                           {syncState === 'synced' ? 'متزامن مع السحابة' : syncState === 'pending' ? 'جارٍ المزامنة…' : 'غير متصل — محلي فقط'}
                         </p>
                       )}
@@ -4242,10 +4242,10 @@ export default function Dashboard() {
               {/* Inventory */}
               <button
                 onClick={() => setActiveTab('inventory')}
-                className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-amber-300 transition-all cursor-pointer text-right space-y-4 group"
+                className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-warn-300 transition-all cursor-pointer text-right space-y-4 group"
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-amber-100 transition">
+                  <div className="w-12 h-12 bg-warn-50 text-warn-600 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-warn-100 transition">
                     <Pill className="w-6 h-6" />
                   </div>
                   <div className="min-w-0">
@@ -4254,10 +4254,10 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm bg-amber-50 text-amber-700 px-2.5 py-1 rounded-full font-bold">
+                  <span className="text-sm bg-warn-50 text-warn-700 px-2.5 py-1 rounded-full font-bold">
                     {inventory.filter(m => (getDaysUntilExpiry(m.id) <= 30) || m.availableQuantity < 15).length} تنبيه نشط
                   </span>
-                  <span className="text-sm text-slate-500 font-bold group-hover:text-amber-600 transition">دخول ←</span>
+                  <span className="text-sm text-slate-500 font-bold group-hover:text-warn-600 transition">دخول ←</span>
                 </div>
               </button>
 
@@ -4265,10 +4265,10 @@ export default function Dashboard() {
               {currentRole !== 'cashier' && (
                 <button
                   onClick={() => setActiveTab('b2b')}
-                  className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-blue-300 transition-all cursor-pointer text-right space-y-4 group"
+                  className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-info-300 transition-all cursor-pointer text-right space-y-4 group"
                 >
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition">
+                    <div className="w-12 h-12 bg-info-50 text-info-600 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-info-100 transition">
                       <Truck className="w-6 h-6" />
                     </div>
                     <div className="min-w-0">
@@ -4277,10 +4277,10 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full font-bold">
+                    <span className="text-sm bg-info-50 text-info-700 px-2.5 py-1 rounded-full font-bold">
                       {b2bOrders.filter(o => o.status === 'pending' || o.status === 'preparing').length} طلبية نشطة
                     </span>
-                    <span className="text-sm text-slate-500 font-bold group-hover:text-blue-600 transition">دخول ←</span>
+                    <span className="text-sm text-slate-500 font-bold group-hover:text-info-600 transition">دخول ←</span>
                   </div>
                 </button>
               )}
@@ -4289,10 +4289,10 @@ export default function Dashboard() {
               {currentRole === 'admin' && (
                 <button
                   onClick={() => setActiveTab('financial')}
-                  className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-violet-300 transition-all cursor-pointer text-right space-y-4 group"
+                  className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-special-300 transition-all cursor-pointer text-right space-y-4 group"
                 >
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-violet-50 text-violet-600 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-violet-100 transition">
+                    <div className="w-12 h-12 bg-special-50 text-special-600 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-special-100 transition">
                       <BarChart3 className="w-6 h-6" />
                     </div>
                     <div className="min-w-0">
@@ -4301,10 +4301,10 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className={`text-sm px-2.5 py-1 rounded-full font-bold ${netProfitMonth >= 0 ? 'bg-money-50 text-money-700' : 'bg-rose-50 text-rose-700'}`}>
+                    <span className={`text-sm px-2.5 py-1 rounded-full font-bold ${netProfitMonth >= 0 ? 'bg-money-50 text-money-700' : 'bg-danger-50 text-danger-700'}`}>
                       صافي الشهر: {fmtNum(netProfitMonth)} د.ع
                     </span>
-                    <span className="text-sm text-slate-500 font-bold group-hover:text-violet-600 transition">دخول ←</span>
+                    <span className="text-sm text-slate-500 font-bold group-hover:text-special-600 transition">دخول ←</span>
                   </div>
                 </button>
               )}
@@ -4395,7 +4395,7 @@ export default function Dashboard() {
                       </div>
                       <button
                         onClick={() => setCurrentCart([])}
-                        className="text-slate-500 hover:text-rose-400 transition text-sm font-bold flex items-center gap-1 cursor-pointer"
+                        className="text-slate-500 hover:text-danger-400 transition text-sm font-bold flex items-center gap-1 cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                         <span>مسح</span>
@@ -4452,11 +4452,11 @@ export default function Dashboard() {
                           </select>
                           <label className="flex items-center gap-2 cursor-pointer select-none">
                             <input type="checkbox" checked={posOnCredit} onChange={(e) => setPosOnCredit(e.target.checked)}
-                              className="w-4 h-4 accent-amber-500 cursor-pointer" />
-                            <span className="text-sm font-bold text-amber-400">بيع بالآجل — تسجيل ذمّة</span>
+                              className="w-4 h-4 accent-warn-500 cursor-pointer" />
+                            <span className="text-sm font-bold text-warn-400">بيع بالآجل — تسجيل ذمّة</span>
                           </label>
                           {posOnCredit && (
-                            <p className="text-sm text-amber-500 font-bold">سيُسجَّل على «{posCustomerName}» ولن يُضاف للكاش حتى التحصيل.</p>
+                            <p className="text-sm text-warn-500 font-bold">سيُسجَّل على «{posCustomerName}» ولن يُضاف للكاش حتى التحصيل.</p>
                           )}
                         </div>
 
@@ -4467,7 +4467,7 @@ export default function Dashboard() {
                             <span className="tabular-nums text-slate-200 text-base">{fmtNum(posSubtotal)} د.ع</span>
                           </div>
                           {posDiscountAmount > 0 && (
-                            <div className="flex justify-between text-rose-400">
+                            <div className="flex justify-between text-danger-400">
                               <span>الخصم</span>
                               <span className="tabular-nums text-base">−{fmtNum(posDiscountAmount)} د.ع</span>
                             </div>
@@ -4508,8 +4508,8 @@ export default function Dashboard() {
                         onClick={() => setShowVirtualPriceInPOS(!showVirtualPriceInPOS)}
                         className={`flex items-center gap-1.5 text-sm font-bold px-2.5 py-1.5 min-h-10 rounded-xl border transition cursor-pointer shadow-sm shrink-0 ${
                           showVirtualPriceInPOS
-                            ? 'bg-purple-600 border-purple-500 text-white'
-                            : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-purple-50 hover:border-purple-200'
+                            ? 'bg-special-600 border-special-500 text-white'
+                            : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-special-50 hover:border-special-200'
                         }`}
                       >
                         {showVirtualPriceInPOS ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
@@ -4523,14 +4523,14 @@ export default function Dashboard() {
                           title="قائمة نواقص الأدوية — أضف إليها بنقرة مزدوجة على أي علاج في سلة البيع"
                           className={`flex items-center gap-1.5 text-sm font-bold px-2.5 py-1.5 rounded-xl border transition cursor-pointer shadow-sm ${
                             showShortages
-                              ? 'bg-amber-500 border-amber-400 text-white'
-                              : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+                              ? 'bg-warn-500 border-warn-400 text-white'
+                              : 'bg-warn-50 border-warn-200 text-warn-700 hover:bg-warn-100'
                           }`}
                         >
                           <ClipboardList className="w-3.5 h-3.5" />
                           <span>نواقص الأدوية</span>
                           {shortages.length > 0 && (
-                            <span className={`text-xs font-bold px-1.5 py-px rounded-full ${showShortages ? 'bg-white/25 text-white' : 'bg-amber-200 text-amber-800'}`}>
+                            <span className={`text-xs font-bold px-1.5 py-px rounded-full ${showShortages ? 'bg-white/25 text-white' : 'bg-warn-200 text-warn-800'}`}>
                               {shortages.length}
                             </span>
                           )}
@@ -4538,7 +4538,7 @@ export default function Dashboard() {
                         </button>
                         {showShortages && (
                           <div className="absolute left-0 top-full mt-2 w-[333px] bg-white border border-slate-200 rounded-2xl shadow-xl z-20 overflow-hidden">
-                            <div className="px-3 py-2 border-b border-slate-100 bg-amber-50/60 text-sm font-bold text-amber-800">
+                            <div className="px-3 py-2 border-b border-slate-100 bg-warn-50/60 text-sm font-bold text-warn-800">
                               نواقص الأدوية ({shortages.length})
                             </div>
                             {shortages.length === 0 ? (
@@ -4556,7 +4556,7 @@ export default function Dashboard() {
                                         {/* مبيع آخر شهرين + كمية مقترحة للطلب (تغطية أسبوعين) + الرصيد الحالي */}
                                         <span className="text-xs font-bold text-slate-500 tabular-nums block">
                                           مبيع شهرين: <span className={st.sold > 0 ? 'text-primary-700' : 'text-slate-500'}>{st.sold}</span>
-                                          {st.sold > 0 ? <> · مقترح للطلب: <span className="text-violet-700">{st.suggested} شريط</span></> : ' · لم يُبَع خلال شهرين'}
+                                          {st.sold > 0 ? <> · مقترح للطلب: <span className="text-special-700">{st.suggested} شريط</span></> : ' · لم يُبَع خلال شهرين'}
                                           {st.stock !== null && <> · بالمخزن: {st.stock}</>}
                                         </span>
                                       </div>
@@ -4564,7 +4564,7 @@ export default function Dashboard() {
                                         type="button"
                                         onClick={() => removeFromShortages(s.id)}
                                         title="حذف من النواقص"
-                                        className="text-slate-300 hover:text-rose-500 transition cursor-pointer shrink-0"
+                                        className="text-slate-300 hover:text-danger-500 transition cursor-pointer shrink-0"
                                       >
                                         <X className="w-3.5 h-3.5" />
                                       </button>
@@ -4574,18 +4574,18 @@ export default function Dashboard() {
                                 {/* خط فاصل واضح ثم الجزء السفلي: ما تجاوز 5 أيام */}
                                 {staleShortages.length > 0 && (
                                   <>
-                                    <div className="flex items-center gap-2 px-3 py-1.5 border-y-2 border-rose-300 bg-rose-50">
-                                      <Clock className="w-3 h-3 text-rose-600 shrink-0" />
-                                      <span className="text-sm font-bold text-rose-700">
+                                    <div className="flex items-center gap-2 px-3 py-1.5 border-y-2 border-danger-300 bg-danger-50">
+                                      <Clock className="w-3 h-3 text-danger-600 shrink-0" />
+                                      <span className="text-sm font-bold text-danger-700">
                                         مضى عليها أكثر من 5 أيام ({staleShortages.length})
                                       </span>
                                     </div>
-                                    <div className="divide-y divide-slate-50 bg-rose-50/30">
+                                    <div className="divide-y divide-slate-50 bg-danger-50/30">
                                       {staleShortages.map(s => { const st = shortageStats(s); return (
-                                        <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-rose-50 group">
+                                        <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-danger-50 group">
                                           <div className="min-w-0">
-                                            <span className="text-sm font-semibold text-rose-900/70 truncate block">{s.name}</span>
-                                            <span className="text-xs font-bold text-rose-800/60 tabular-nums block">
+                                            <span className="text-sm font-semibold text-danger-900/70 truncate block">{s.name}</span>
+                                            <span className="text-xs font-bold text-danger-800/60 tabular-nums block">
                                               مبيع شهرين: {st.sold}
                                               {st.sold > 0 ? <> · مقترح للطلب: {st.suggested} شريط</> : ' · لم يُبَع خلال شهرين'}
                                               {st.stock !== null && <> · بالمخزن: {st.stock}</>}
@@ -4595,7 +4595,7 @@ export default function Dashboard() {
                                             type="button"
                                             onClick={() => removeFromShortages(s.id)}
                                             title="حذف من النواقص"
-                                            className="text-slate-300 hover:text-rose-500 transition cursor-pointer shrink-0"
+                                            className="text-slate-300 hover:text-danger-500 transition cursor-pointer shrink-0"
                                           >
                                             <X className="w-3.5 h-3.5" />
                                           </button>
@@ -4634,9 +4634,9 @@ export default function Dashboard() {
                     <div className="pt-4 border-t border-slate-100">
                       <button
                         onClick={() => setShowTodaySales(p => !p)}
-                        className="w-full font-semibold text-slate-800 text-xs flex items-center gap-2 cursor-pointer hover:text-blue-600 transition text-right"
+                        className="w-full font-semibold text-slate-800 text-xs flex items-center gap-2 cursor-pointer hover:text-info-600 transition text-right"
                       >
-                        <TrendingUp className="w-4 h-4 text-blue-500 shrink-0" />
+                        <TrendingUp className="w-4 h-4 text-info-500 shrink-0" />
                         <span className="flex-1">حركة مبيع اليوم</span>
                         <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
                           {salesLedger.filter(s => {
@@ -4681,7 +4681,7 @@ export default function Dashboard() {
                                   <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/60">
                                     <td className="text-right py-2 px-3 text-slate-700">{row.name}</td>
                                     <td className="text-center py-2 px-3">
-                                      <span className="bg-blue-50 text-blue-700 tabular-nums px-2 py-0.5 rounded-lg">{row.qty}</span>
+                                      <span className="bg-info-50 text-info-700 tabular-nums px-2 py-0.5 rounded-lg">{row.qty}</span>
                                     </td>
                                     <td className="text-center py-2 px-3 tabular-nums text-slate-500">{row.time}</td>
                                     <td className="text-center py-2 px-3 tabular-nums text-slate-500 text-xs">{row.invoiceId}</td>
@@ -4709,7 +4709,7 @@ export default function Dashboard() {
                         {salesLedger.map((s) => {
                           const isExpanded = expandedInvoiceId === s.invoiceId;
                           return (
-                            <div key={s.invoiceId} className={`rounded-xl border text-sm transition-all ${isExpanded ? 'border-blue-200 bg-blue-50/30' : 'border-slate-100 bg-slate-50/50'}`}>
+                            <div key={s.invoiceId} className={`rounded-xl border text-sm transition-all ${isExpanded ? 'border-info-200 bg-info-50/30' : 'border-slate-100 bg-slate-50/50'}`}>
                               {/* رأس الفاتورة — قابل للضغط للتوسيع */}
                               <div
                                 className="p-3 flex items-center justify-between cursor-pointer select-none"
@@ -4728,7 +4728,7 @@ export default function Dashboard() {
                                   <span className="text-slate-500">•</span>
                                   <span className="text-slate-600 font-medium truncate">العميل: {s.customerName}</span>
                                   {salesReturns.some(r => r.originalInvoiceId === s.invoiceId) && (
-                                    <span className="text-xs bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded shrink-0">مُرتجَع</span>
+                                    <span className="text-xs bg-warn-100 text-warn-800 font-bold px-1.5 py-0.5 rounded shrink-0">مُرتجَع</span>
                                   )}
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
@@ -4742,7 +4742,7 @@ export default function Dashboard() {
                                       setReturnRefundMethod('cash');
                                       setShowReturnModal(true);
                                     }}
-                                    className="text-xs font-bold px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg transition cursor-pointer"
+                                    className="text-xs font-bold px-2 py-1 bg-danger-50 hover:bg-danger-100 text-danger-700 border border-danger-200 rounded-lg transition cursor-pointer"
                                   >
                                     إرجاع
                                   </button>
@@ -4751,8 +4751,8 @@ export default function Dashboard() {
 
                               {/* تفاصيل الأصناف — قابلة للتعديل */}
                               {isExpanded && (
-                                <div className="px-3 pb-3 space-y-2 border-t border-blue-100">
-                                  <p className="text-xs text-blue-600 font-bold pt-2">المواد المباعة — يمكنك تعديل الكمية أو السعر ثم حفظ التغييرات</p>
+                                <div className="px-3 pb-3 space-y-2 border-t border-info-100">
+                                  <p className="text-xs text-info-600 font-bold pt-2">المواد المباعة — يمكنك تعديل الكمية أو السعر ثم حفظ التغييرات</p>
                                   <div className="space-y-1.5">
                                     {editingItems.map((it, idx) => (
                                       <div key={idx} className="flex items-center gap-2 bg-white border border-slate-100 rounded-lg px-3 py-2">
@@ -4784,7 +4784,7 @@ export default function Dashboard() {
                                           type="button"
                                           onClick={() => handleDeleteInvoiceItem(s.invoiceId, idx)}
                                           title="حذف هذا الصنف من الفاتورة وإرجاع عدده للمخزون"
-                                          className="shrink-0 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded p-1 transition cursor-pointer border-none bg-transparent flex items-center justify-center"
+                                          className="shrink-0 text-danger-400 hover:text-danger-600 hover:bg-danger-50 rounded p-1 transition cursor-pointer border-none bg-transparent flex items-center justify-center"
                                         >
                                           <Trash2 className="w-3.5 h-3.5" />
                                         </button>
@@ -4856,7 +4856,7 @@ export default function Dashboard() {
                     {/* Bulk import status banner */}
                     {bulkImportStatus !== 'idle' && (
                       <div className={`rounded-2xl p-4 text-right flex items-center gap-3 shadow-sm border ${
-                        bulkImportStatus === 'error' ? 'bg-red-50 border-red-200' :
+                        bulkImportStatus === 'error' ? 'bg-danger-50 border-danger-200' :
                         bulkImportStatus === 'done' ? 'bg-primary-50 border-primary-200' :
                         'bg-slate-50 border-slate-200'
                       }`}>
@@ -4864,10 +4864,10 @@ export default function Dashboard() {
                           <RefreshCw className="w-5 h-5 text-slate-600 animate-spin shrink-0" />
                         )}
                         {bulkImportStatus === 'done' && <CheckCircle2 className="w-5 h-5 text-primary-600 shrink-0" />}
-                        {bulkImportStatus === 'error' && <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />}
+                        {bulkImportStatus === 'error' && <AlertCircle className="w-5 h-5 text-danger-600 shrink-0" />}
                         <div className="flex-1">
                           <p className={`text-xs font-semibold ${
-                            bulkImportStatus === 'error' ? 'text-red-800' :
+                            bulkImportStatus === 'error' ? 'text-danger-800' :
                             bulkImportStatus === 'done' ? 'text-primary-800' : 'text-slate-800'
                           }`}>
                             {bulkImportStatus === 'writing'
@@ -4886,7 +4886,7 @@ export default function Dashboard() {
 
                     {/* Automatic Alert: Near Expiry Medicines (30 days) — collapsible */}
                     {getNearExpiryMeds().length > 0 && (
-                      <div className="bg-rose-50/50 border border-rose-100 rounded-2xl p-5 text-right space-y-3.5 shadow-sm">
+                      <div className="bg-danger-50/50 border border-danger-100 rounded-2xl p-5 text-right space-y-3.5 shadow-sm">
                         <button
                           type="button"
                           onClick={() => setShowNearExpiry30(!showNearExpiry30)}
@@ -4894,19 +4894,19 @@ export default function Dashboard() {
                         >
                           <div className="flex items-center space-x-reverse space-x-2.5">
                             <span className="flex h-3 w-3 relative">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-600"></span>
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-danger-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-3 w-3 bg-danger-600"></span>
                             </span>
                             <div>
-                              <h4 className="font-semibold text-xs text-rose-900">تنبيه تلقائي: مستحضرات قاربت صلاحيتها على الانتهاء (30 يوماً أو أقل)</h4>
-                              <p className="text-xs text-rose-500 font-bold mt-0.5 font-sans">يرجى اتخاذ تدابير الوقاية وتوريد كميات جديدة أو إبرام طلبية مرتجع مع المذخر المعني</p>
+                              <h4 className="font-semibold text-xs text-danger-900">تنبيه تلقائي: مستحضرات قاربت صلاحيتها على الانتهاء (30 يوماً أو أقل)</h4>
+                              <p className="text-xs text-danger-500 font-bold mt-0.5 font-sans">يرجى اتخاذ تدابير الوقاية وتوريد كميات جديدة أو إبرام طلبية مرتجع مع المذخر المعني</p>
                             </div>
                           </div>
                           <div className="flex items-center space-x-reverse space-x-2">
-                            <span className="text-sm bg-rose-100 text-rose-850 font-semibold px-3 py-0.5 rounded-full border border-rose-200/50">
+                            <span className="text-sm bg-danger-100 text-danger-800 font-semibold px-3 py-0.5 rounded-full border border-danger-200/50">
                               {getNearExpiryMeds().length} {getNearExpiryMeds().length === 1 ? "مستحضر حرج" : "مستحضرات حرجة"}
                             </span>
-                            <ChevronDown className={`w-4 h-4 text-rose-400 transition-transform ${showNearExpiry30 ? 'rotate-180' : ''}`} />
+                            <ChevronDown className={`w-4 h-4 text-danger-400 transition-transform ${showNearExpiry30 ? 'rotate-180' : ''}`} />
                           </div>
                         </button>
 
@@ -4917,22 +4917,22 @@ export default function Dashboard() {
                             const days = getDaysUntilExpiry(med.id);
                             const expDate = expiryDates[med.id] || '';
                             return (
-                              <div key={med.id} className="bg-white border border-rose-100/70 p-3.5 rounded-xl flex items-center justify-between text-xs transition hover:shadow-xs hover:border-rose-200">
+                              <div key={med.id} className="bg-white border border-danger-100/70 p-3.5 rounded-xl flex items-center justify-between text-xs transition hover:shadow-xs hover:border-danger-200">
                                 <div className="space-y-1">
                                   <strong className="font-semibold text-slate-950 block">{med.nameAr}</strong>
                                   <span className="text-sm text-slate-500 tabular-nums block">
                                     {med.nameEn} • {med.scientificName}
                                   </span>
                                   <div className="flex items-center space-x-reverse space-x-1.5 mt-1">
-                                    <Clock className="w-3.5 h-3.5 text-rose-600" />
-                                    <span className="text-sm font-bold text-rose-600 tabular-nums">
+                                    <Clock className="w-3.5 h-3.5 text-danger-600" />
+                                    <span className="text-sm font-bold text-danger-600 tabular-nums">
                                       انتهاء الصلاحية: {expDate}
                                     </span>
                                   </div>
                                 </div>
                                 
                                 <div className="flex flex-col items-end space-y-2.5">
-                                  <span className="px-2.5 py-0.5 bg-rose-50 text-rose-800 rounded-lg border border-rose-200/40 font-semibold text-sm tracking-wide">
+                                  <span className="px-2.5 py-0.5 bg-danger-50 text-danger-800 rounded-lg border border-danger-200/40 font-semibold text-sm tracking-wide">
                                     {days < 0 ? `منتهية منذ ${Math.abs(days)} يوم` : days === 0 ? 'تنتهي اليوم!' : `متبقي ${days} يوم`}
                                   </span>
                                   <button
@@ -4969,8 +4969,8 @@ export default function Dashboard() {
                           className="w-full flex items-center justify-between p-5 text-right hover:bg-slate-50/60 transition cursor-pointer"
                         >
                           <div className="flex items-center space-x-reverse space-x-2.5">
-                            <span className="flex items-center justify-center w-8 h-8 rounded-xl bg-amber-50 border border-amber-150">
-                              <CalendarClock className="w-4 h-4 text-amber-600" />
+                            <span className="flex items-center justify-center w-8 h-8 rounded-xl bg-warn-50 border border-warn-200">
+                              <CalendarClock className="w-4 h-4 text-warn-600" />
                             </span>
                             <div>
                               <h4 className="font-semibold text-xs text-slate-900">سجلّ الصلاحيات الموسّع — أفق 6 أشهر</h4>
@@ -4978,7 +4978,7 @@ export default function Dashboard() {
                             </div>
                           </div>
                           <div className="flex items-center space-x-reverse space-x-2">
-                            <span className="text-sm bg-amber-100 text-amber-800 font-semibold px-3 py-0.5 rounded-full border border-amber-200/50">
+                            <span className="text-sm bg-warn-100 text-warn-800 font-semibold px-3 py-0.5 rounded-full border border-warn-200/50">
                               {getHorizonExpiryMeds().length} مستحضر
                             </span>
                             <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${showExpiryHorizon ? 'rotate-180' : ''}`} />
@@ -5002,11 +5002,11 @@ export default function Dashboard() {
                                   type="button"
                                   disabled={mo.count === 0}
                                   onClick={() => setSelectedExpiryMonth(mo.key)}
-                                  className={`text-sm font-semibold px-3 py-1.5 rounded-lg border transition flex items-center gap-1.5 ${mo.count === 0 ? 'bg-slate-50/50 text-slate-300 border-slate-100 cursor-not-allowed' : selectedExpiryMonth === mo.key ? 'bg-amber-500 text-white border-amber-500 cursor-pointer' : 'bg-amber-50 text-amber-700 border-amber-200/60 hover:border-amber-300 cursor-pointer'}`}
+                                  className={`text-sm font-semibold px-3 py-1.5 rounded-lg border transition flex items-center gap-1.5 ${mo.count === 0 ? 'bg-slate-50/50 text-slate-300 border-slate-100 cursor-not-allowed' : selectedExpiryMonth === mo.key ? 'bg-warn-500 text-white border-warn-500 cursor-pointer' : 'bg-warn-50 text-warn-700 border-warn-200/60 hover:border-warn-300 cursor-pointer'}`}
                                 >
                                   <span>{mo.label}</span>
                                   {mo.count > 0 && (
-                                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${selectedExpiryMonth === mo.key ? 'bg-white/25' : 'bg-amber-200/70'}`}>{mo.count}</span>
+                                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${selectedExpiryMonth === mo.key ? 'bg-white/25' : 'bg-warn-200/70'}`}>{mo.count}</span>
                                   )}
                                 </button>
                               ))}
@@ -5026,9 +5026,9 @@ export default function Dashboard() {
                                   const days = getDaysUntilExpiry(med.id);
                                   const sev = expirySeverity(days);
                                   const tone = sev === 'expired' || sev === 'critical'
-                                    ? { card: 'border-rose-100/70 hover:border-rose-200', icon: 'text-rose-600', badge: 'bg-rose-50 text-rose-700 border-rose-200/50' }
+                                    ? { card: 'border-danger-100/70 hover:border-danger-200', icon: 'text-danger-600', badge: 'bg-danger-50 text-danger-700 border-danger-200/50' }
                                     : sev === 'warning'
-                                    ? { card: 'border-amber-100/70 hover:border-amber-200', icon: 'text-amber-600', badge: 'bg-amber-50 text-amber-700 border-amber-200/50' }
+                                    ? { card: 'border-warn-100/70 hover:border-warn-200', icon: 'text-warn-600', badge: 'bg-warn-50 text-warn-700 border-warn-200/50' }
                                     : { card: 'border-slate-200/70 hover:border-slate-300', icon: 'text-slate-500', badge: 'bg-slate-50 text-slate-600 border-slate-200/50' };
                                   return (
                                     <div key={med.id} className={`bg-white border ${tone.card} p-3.5 rounded-xl flex items-center justify-between text-xs transition hover:shadow-xs`}>
@@ -5124,7 +5124,7 @@ export default function Dashboard() {
                                       <p className="text-sm font-semibold text-slate-800 truncate">{med.nameAr}</p>
                                       <p className="text-xs font-bold text-slate-500 tabular-nums">
                                         بالمخزن: {fmtNum(med.availableQuantity)} · {lastSale ? `آخر بيع: ${lastSale}` : 'لم يُبَع منذ التسجيل'}
-                                        {exp && <> · ينتهي: <span className={exp < todayLocalISO() ? 'text-rose-600' : 'text-amber-700'}>{exp.slice(0, 7)}</span></>}
+                                        {exp && <> · ينتهي: <span className={exp < todayLocalISO() ? 'text-danger-600' : 'text-warn-700'}>{exp.slice(0, 7)}</span></>}
                                       </p>
                                     </div>
                                     <span className="text-xs tabular-nums font-bold text-slate-700 shrink-0">{fmtNum(capital)} <span className="text-xs font-bold text-slate-500">د.ع</span></span>
@@ -5263,8 +5263,8 @@ export default function Dashboard() {
                   {/* ===================================================== */}
                   <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
                     <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-                      <div className="w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
-                        <RefreshCw className="w-4 h-4 text-indigo-600" />
+                      <div className="w-8 h-8 rounded-xl bg-accent-50 flex items-center justify-center shrink-0">
+                        <RefreshCw className="w-4 h-4 text-accent-600" />
                       </div>
                       <div>
                         <h4 className="font-semibold text-slate-900 text-sm">حركة المادة — سجل الوارد والصادر</h4>
@@ -5290,7 +5290,7 @@ export default function Dashboard() {
                               onFocus={() => setMovementDropdownOpen(true)}
                               onBlur={() => setTimeout(() => setMovementDropdownOpen(false), 150)}
                               placeholder="اكتب اسم الدواء أو امسح الباركود..."
-                              className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-8 py-2.5 text-xs font-bold text-slate-700 focus:outline-indigo-400 placeholder:text-slate-500 placeholder:font-medium"
+                              className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-8 py-2.5 text-xs font-bold text-slate-700 focus:outline-accent-400 placeholder:text-slate-500 placeholder:font-medium"
                             />
                             {movementSearch && (
                               <button
@@ -5307,7 +5307,7 @@ export default function Dashboard() {
                           <button
                             type="button"
                             onClick={() => startScanning('movement')}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl px-3 py-2 cursor-pointer transition flex items-center justify-center shrink-0 border-none"
+                            className="bg-accent-600 hover:bg-accent-700 text-white rounded-xl px-3 py-2 cursor-pointer transition flex items-center justify-center shrink-0 border-none"
                             title="مسح الباركود بالكاميرا"
                           >
                             <Barcode className="w-4 h-4" />
@@ -5342,7 +5342,7 @@ export default function Dashboard() {
                                     setMovementSearch(`${m.nameAr} (${m.nameEn})`);
                                     setMovementDropdownOpen(false);
                                   }}
-                                  className={`w-full text-right px-3 py-2 hover:bg-indigo-50 cursor-pointer border-none flex items-center justify-between gap-2 transition ${m.id === movementMedId ? 'bg-indigo-50' : 'bg-transparent'}`}
+                                  className={`w-full text-right px-3 py-2 hover:bg-accent-50 cursor-pointer border-none flex items-center justify-between gap-2 transition ${m.id === movementMedId ? 'bg-accent-50' : 'bg-transparent'}`}
                                 >
                                   <div className="min-w-0">
                                     <span className="block text-sm font-bold text-slate-800 truncate">{m.nameAr} <span className="text-slate-500 tabular-nums text-xs">{m.nameEn}</span></span>
@@ -5366,7 +5366,7 @@ export default function Dashboard() {
                           type="date"
                           value={movementFrom}
                           onChange={(e) => setMovementFrom(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-700 tabular-nums focus:outline-indigo-400"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-700 tabular-nums focus:outline-accent-400"
                         />
                       </div>
                       <div className="md:col-span-3 space-y-1">
@@ -5375,7 +5375,7 @@ export default function Dashboard() {
                           type="date"
                           value={movementTo}
                           onChange={(e) => setMovementTo(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-700 tabular-nums focus:outline-indigo-400"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-700 tabular-nums focus:outline-accent-400"
                         />
                       </div>
                       <div className="md:col-span-1">
@@ -5409,20 +5409,20 @@ export default function Dashboard() {
                               <strong className="text-lg font-bold text-money-700 tabular-nums block">{fmtNum(totalIn)} <span className="text-xs font-bold">علبة</span></strong>
                               <span className="text-xs text-money-600/70 font-bold tabular-nums">{fmtNum(valueIn)} د.ع</span>
                             </div>
-                            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
-                              <span className="text-xs text-blue-700 font-bold block mb-1">إجمالي الصادر (بيع)</span>
-                              <strong className="text-lg font-bold text-blue-700 tabular-nums block">{fmtNum(totalOut)} <span className="text-xs font-bold">علبة</span></strong>
-                              <span className="text-xs text-blue-600/70 font-bold tabular-nums">{fmtNum(valueOut)} د.ع</span>
+                            <div className="bg-info-50 border border-info-100 rounded-2xl p-4">
+                              <span className="text-xs text-info-700 font-bold block mb-1">إجمالي الصادر (بيع)</span>
+                              <strong className="text-lg font-bold text-info-700 tabular-nums block">{fmtNum(totalOut)} <span className="text-xs font-bold">علبة</span></strong>
+                              <span className="text-xs text-info-600/70 font-bold tabular-nums">{fmtNum(valueOut)} د.ع</span>
                             </div>
                             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
                               <span className="text-xs text-slate-500 font-bold block mb-1">صافي الحركة</span>
-                              <strong className={`text-lg font-bold tabular-nums block ${net >= 0 ? 'text-money-700' : 'text-rose-600'}`}>{net >= 0 ? '+' : ''}{fmtNum(net)} <span className="text-xs font-bold">علبة</span></strong>
+                              <strong className={`text-lg font-bold tabular-nums block ${net >= 0 ? 'text-money-700' : 'text-danger-600'}`}>{net >= 0 ? '+' : ''}{fmtNum(net)} <span className="text-xs font-bold">علبة</span></strong>
                               <span className="text-xs text-slate-500 font-bold">وارد − صادر</span>
                             </div>
-                            <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4">
-                              <span className="text-xs text-indigo-700 font-bold block mb-1">الرصيد الحالي بالمخزن</span>
-                              <strong className="text-lg font-bold text-indigo-700 tabular-nums block">{fmtNum((med?.availableQuantity ?? 0))} <span className="text-xs font-bold">علبة</span></strong>
-                              <span className="text-xs text-indigo-600/70 font-bold">{med?.nameAr}</span>
+                            <div className="bg-accent-50 border border-accent-100 rounded-2xl p-4">
+                              <span className="text-xs text-accent-700 font-bold block mb-1">الرصيد الحالي بالمخزن</span>
+                              <strong className="text-lg font-bold text-accent-700 tabular-nums block">{fmtNum((med?.availableQuantity ?? 0))} <span className="text-xs font-bold">علبة</span></strong>
+                              <span className="text-xs text-accent-600/70 font-bold">{med?.nameAr}</span>
                             </div>
                           </div>
 
@@ -5450,11 +5450,11 @@ export default function Dashboard() {
                                     <tr key={mv.ref + '-' + i} className="border-b border-slate-100/70 hover:bg-slate-50/50 transition">
                                       <td className="py-2.5 px-3 tabular-nums text-slate-500 whitespace-nowrap">{mv.date}</td>
                                       <td className="py-2.5 px-3 text-center">
-                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-bold ${mv.type === 'in' ? 'bg-primary-50 text-primary-700 border-primary-100' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>
+                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-bold ${mv.type === 'in' ? 'bg-primary-50 text-primary-700 border-primary-100' : 'bg-info-50 text-info-700 border-info-100'}`}>
                                           {mv.type === 'in' ? '↓ وارد (شراء)' : '↑ صادر (بيع)'}
                                         </span>
                                       </td>
-                                      <td className={`py-2.5 px-3 text-center tabular-nums font-bold ${mv.type === 'in' ? 'text-primary-700' : 'text-blue-700'}`}>
+                                      <td className={`py-2.5 px-3 text-center tabular-nums font-bold ${mv.type === 'in' ? 'text-primary-700' : 'text-info-700'}`}>
                                         {mv.type === 'in' ? '+' : '−'}{fmtNum(mv.qty)}
                                       </td>
                                       <td className="py-2.5 px-3 text-center tabular-nums text-slate-600">{fmtNum(mv.price)} د.ع</td>
@@ -5506,7 +5506,7 @@ export default function Dashboard() {
                     };
 
                     return (
-                      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">
+                      <div className="bg-warn-50 border border-warn-200 rounded-2xl p-4 space-y-3">
                         {/* رأس القسم — قابل للطي */}
                         <div className="flex items-center justify-between">
                           <button
@@ -5514,10 +5514,10 @@ export default function Dashboard() {
                             onClick={() => setShowLowStock(p => !p)}
                             className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition text-right"
                           >
-                            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                            <span className="text-xs font-bold text-amber-900">أصناف نفدت أو شارفت على النفاد</span>
-                            <span className="text-sm bg-amber-200 text-amber-900 font-semibold px-2.5 py-0.5 rounded-full">{lowItems.length} صنف</span>
-                            <ChevronDown className={`w-3.5 h-3.5 text-amber-600 transition-transform duration-200 ${showLowStock ? 'rotate-180' : ''}`} />
+                            <AlertCircle className="w-4 h-4 text-warn-600 shrink-0" />
+                            <span className="text-xs font-bold text-warn-900">أصناف نفدت أو شارفت على النفاد</span>
+                            <span className="text-sm bg-warn-200 text-warn-900 font-semibold px-2.5 py-0.5 rounded-full">{lowItems.length} صنف</span>
+                            <ChevronDown className={`w-3.5 h-3.5 text-warn-600 transition-transform duration-200 ${showLowStock ? 'rotate-180' : ''}`} />
                           </button>
                           {/* زر الطباعة */}
                           <button
@@ -5541,7 +5541,7 @@ export default function Dashboard() {
                               win.document.close();
                               win.print();
                             }}
-                            className="flex items-center gap-1.5 text-sm font-bold bg-amber-200 hover:bg-amber-300 text-amber-900 px-3 py-1.5 rounded-xl transition cursor-pointer border-none"
+                            className="flex items-center gap-1.5 text-sm font-bold bg-warn-200 hover:bg-warn-300 text-warn-900 px-3 py-1.5 rounded-xl transition cursor-pointer border-none"
                           >
                             <FileText className="w-3.5 h-3.5" />
                             طباعة القائمة
@@ -5554,10 +5554,10 @@ export default function Dashboard() {
                             const suggestedQty = getSuggestedQty(m);
                             const maxPast = getMaxPurchasedQty(m);
                             return (
-                              <div key={m.id} className="bg-white border border-amber-100 rounded-xl px-3 py-2.5 flex items-center justify-between text-xs gap-2">
+                              <div key={m.id} className="bg-white border border-warn-100 rounded-xl px-3 py-2.5 flex items-center justify-between text-xs gap-2">
                                 <div className="min-w-0 flex-1">
                                   <span className="font-bold text-slate-800 block">{m.nameAr}</span>
-                                  <span className={`tabular-nums font-bold text-sm ${m.availableQuantity === 0 ? 'text-rose-600' : 'text-amber-600'}`}>
+                                  <span className={`tabular-nums font-bold text-sm ${m.availableQuantity === 0 ? 'text-danger-600' : 'text-warn-600'}`}>
                                     {m.availableQuantity === 0 ? 'نفد المخزون' : `${m.availableQuantity} علبة متبقية`}
                                   </span>
                                 </div>
@@ -5598,7 +5598,7 @@ export default function Dashboard() {
                           <button
                             type="button"
                             onClick={() => setDismissedLowStock(new Set())}
-                            className="text-xs text-amber-700 font-bold underline cursor-pointer bg-transparent border-none"
+                            className="text-xs text-warn-700 font-bold underline cursor-pointer bg-transparent border-none"
                           >
                             إعادة عرض الأصناف المخفية ({dismissedLowStock.size})
                           </button>
@@ -5618,7 +5618,7 @@ export default function Dashboard() {
                         <button
                           type="button"
                           onClick={() => { invSearchRef.current?.setValue(''); }}
-                          className="text-sm font-bold text-slate-500 hover:text-rose-600 px-2 py-2 transition cursor-pointer"
+                          className="text-sm font-bold text-slate-500 hover:text-danger-600 px-2 py-2 transition cursor-pointer"
                         >
                           مسح ✕
                         </button>
@@ -5642,7 +5642,7 @@ export default function Dashboard() {
                       {/* زر مؤقت للاختبار */}
                       <button
                         onClick={handleSeedTestData}
-                        className="bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5"
+                        className="bg-warn-500 hover:bg-warn-600 text-white font-bold text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5"
                         title="إضافة 5 أدوية تجريبية"
                       >
                         <span className="inline-flex items-center gap-1"><FlaskConical className="w-3.5 h-3.5" />بيانات تجريبية</span>
@@ -5682,7 +5682,7 @@ export default function Dashboard() {
                               return (
                                 <React.Fragment key={med.id}>
                                 <tr
-                                  className={`transition border-b border-slate-100 ${isNearExpiry30 ? 'bg-rose-50/65 hover:bg-rose-100/70 text-rose-950' : 'hover:bg-slate-50/50'}`}
+                                  className={`transition border-b border-slate-100 ${isNearExpiry30 ? 'bg-danger-50/65 hover:bg-danger-100/70 text-danger-950' : 'hover:bg-slate-50/50'}`}
                                 >
                                   <td className="py-3 px-4 tabular-nums text-slate-500">REF-{1000 + idx}</td>
                                   <td className="py-3 px-4 space-y-0.5">
@@ -5729,14 +5729,14 @@ export default function Dashboard() {
                                     </>
                                   )}
                                   <td className="py-3 px-4 tabular-nums">
-                                    <span className={`px-2 py-0.5 rounded-full font-bold ${med.availableQuantity <= 0 ? 'bg-rose-100 text-rose-800 font-sans text-sm' : med.availableQuantity < 15 ? 'bg-amber-100 text-amber-800 font-sans text-sm' : 'text-slate-800'}`}>
+                                    <span className={`px-2 py-0.5 rounded-full font-bold ${med.availableQuantity <= 0 ? 'bg-danger-100 text-danger-800 font-sans text-sm' : med.availableQuantity < 15 ? 'bg-warn-100 text-warn-800 font-sans text-sm' : 'text-slate-800'}`}>
                                       {med.availableQuantity <= 0 ? 'نفذ بالكامل' : `${med.availableQuantity} علبة`}
                                     </span>
                                     {med.availableQuantity <= (med.minStock ?? 15) && med.availableQuantity > 0 && (
-                                      <span className="text-xs bg-amber-500 text-white font-bold px-1.5 py-0.5 rounded mr-1">طلب عاجل</span>
+                                      <span className="text-xs bg-warn-500 text-white font-bold px-1.5 py-0.5 rounded mr-1">طلب عاجل</span>
                                     )}
                                   </td>
-                                  <td className={`py-3 px-4 tabular-nums font-bold ${isNearExpiry30 ? 'text-rose-600' : 'text-slate-500'}`}>
+                                  <td className={`py-3 px-4 tabular-nums font-bold ${isNearExpiry30 ? 'text-danger-600' : 'text-slate-500'}`}>
                                     <div className="flex items-center space-x-reverse space-x-1">
                                       {isNearExpiry30 && <AlertCircle className="w-3.5 h-3.5" />}
                                       <span>{expDate}</span>
@@ -5759,7 +5759,7 @@ export default function Dashboard() {
                                       <div className="flex items-center justify-center space-x-reverse space-x-1.5">
                                         <button type="button" onClick={() => startEditingQty(med)} className="bg-primary-50 hover:bg-primary-100 text-primary-800 px-2.5 py-1 rounded-lg font-bold transition cursor-pointer text-sm flex items-center gap-1 border border-primary-100" title="تعديل الكمية يدوياً"><Pencil className="w-3 h-3" /><span>تعديل</span></button>
                                         <button onClick={() => adjustStockQty(med.id, 10)} className="bg-slate-100 hover:bg-primary-100 text-slate-600 hover:text-primary-800 px-3 py-2 min-h-10 rounded-lg font-bold transition cursor-pointer text-xs" title="إضافة 10 علب">+10</button>
-                                        <button onClick={() => adjustStockQty(med.id, -5)} className="bg-slate-100 hover:bg-rose-100 text-slate-600 hover:text-rose-800 px-3 py-2 min-h-10 rounded-lg font-bold transition cursor-pointer text-xs" title="تخفيض 5 علب">-5</button>
+                                        <button onClick={() => adjustStockQty(med.id, -5)} className="bg-slate-100 hover:bg-danger-100 text-slate-600 hover:text-danger-800 px-3 py-2 min-h-10 rounded-lg font-bold transition cursor-pointer text-xs" title="تخفيض 5 علب">-5</button>
                                       </div>
                                     )}
                                   </td>
@@ -5768,7 +5768,7 @@ export default function Dashboard() {
                                       <button
                                         type="button"
                                         onClick={() => quickAuditId === med.id ? setQuickAuditId(null) : startQuickAudit(med)}
-                                        className={`px-2.5 py-1 rounded-lg text-sm font-bold transition cursor-pointer border ${quickAuditId === med.id ? 'bg-violet-600 text-white border-violet-600' : 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'}`}
+                                        className={`px-2.5 py-1 rounded-lg text-sm font-bold transition cursor-pointer border ${quickAuditId === med.id ? 'bg-special-600 text-white border-special-600' : 'bg-special-50 text-special-700 border-special-200 hover:bg-special-100'}`}
                                         title="جرد سريع"
                                       >
                                         جرد
@@ -5776,7 +5776,7 @@ export default function Dashboard() {
                                       <button
                                         type="button"
                                         onClick={() => setDeleteMedTarget(med)}
-                                        className="text-slate-500 hover:text-white hover:bg-rose-600 p-1.5 rounded-lg transition cursor-pointer border border-transparent hover:border-rose-600"
+                                        className="text-slate-500 hover:text-white hover:bg-danger-600 p-1.5 rounded-lg transition cursor-pointer border border-transparent hover:border-danger-600"
                                         title="حذف المادة نهائياً"
                                       >
                                         <Trash2 className="w-3.5 h-3.5" />
@@ -5787,43 +5787,43 @@ export default function Dashboard() {
 
                                 {/* صف الجرد السريع الموسّع */}
                                 {quickAuditId === med.id && (
-                                  <tr className="bg-violet-50/80 border-b border-violet-100">
+                                  <tr className="bg-special-50/80 border-b border-special-100">
                                     <td colSpan={8} className="px-4 py-4">
                                       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
                                         <div className="space-y-1">
-                                          <label className="block text-sm font-bold text-violet-700">الاسم عربي</label>
+                                          <label className="block text-sm font-bold text-special-700">الاسم عربي</label>
                                           <input value={qaNameAr} onChange={e => setQaNameAr(e.target.value)}
-                                            className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-800 focus:outline-violet-500" />
+                                            className="w-full bg-white border border-special-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-800 focus:outline-special-500" />
                                         </div>
                                         <div className="space-y-1">
-                                          <label className="block text-sm font-bold text-violet-700">الاسم إنجليزي</label>
+                                          <label className="block text-sm font-bold text-special-700">الاسم إنجليزي</label>
                                           <input value={qaNameEn} onChange={e => setQaNameEn(e.target.value)}
-                                            className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-800 focus:outline-violet-500" />
+                                            className="w-full bg-white border border-special-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-800 focus:outline-special-500" />
                                         </div>
                                         <div className="space-y-1">
-                                          <label className="block text-sm font-bold text-violet-700">سعر البيع (د.ع)</label>
+                                          <label className="block text-sm font-bold text-special-700">سعر البيع (د.ع)</label>
                                           <input type="number" min={0} step={250} value={qaPrice} onChange={e => setQaPrice(e.target.value)}
-                                            className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs tabular-nums font-bold text-slate-800 focus:outline-violet-500" />
+                                            className="w-full bg-white border border-special-200 rounded-lg px-2 py-1.5 text-xs tabular-nums font-bold text-slate-800 focus:outline-special-500" />
                                         </div>
                                         <div className="space-y-1">
-                                          <label className="block text-sm font-bold text-violet-700">سعر الشراء (د.ع)</label>
+                                          <label className="block text-sm font-bold text-special-700">سعر الشراء (د.ع)</label>
                                           <input type="number" min={0} step={250} value={qaCostPrice} onChange={e => setQaCostPrice(e.target.value)}
-                                            className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs tabular-nums font-bold text-slate-800 focus:outline-violet-500" />
+                                            className="w-full bg-white border border-special-200 rounded-lg px-2 py-1.5 text-xs tabular-nums font-bold text-slate-800 focus:outline-special-500" />
                                         </div>
                                         <div className="space-y-1">
-                                          <label className="block text-sm font-bold text-violet-700">الكمية الفعلية</label>
+                                          <label className="block text-sm font-bold text-special-700">الكمية الفعلية</label>
                                           <input type="number" min={0} value={qaQty} onChange={e => setQaQty(e.target.value)}
-                                            className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs tabular-nums font-bold text-slate-800 focus:outline-violet-500" />
+                                            className="w-full bg-white border border-special-200 rounded-lg px-2 py-1.5 text-xs tabular-nums font-bold text-slate-800 focus:outline-special-500" />
                                         </div>
                                         <div className="space-y-1">
-                                          <label className="block text-sm font-bold text-violet-700">انتهاء الصلاحية</label>
+                                          <label className="block text-sm font-bold text-special-700">انتهاء الصلاحية</label>
                                           <input type="date" value={qaExpiry} onChange={e => setQaExpiry(e.target.value)}
-                                            className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs tabular-nums font-bold text-slate-800 focus:outline-violet-500" />
+                                            className="w-full bg-white border border-special-200 rounded-lg px-2 py-1.5 text-xs tabular-nums font-bold text-slate-800 focus:outline-special-500" />
                                         </div>
                                       </div>
                                       <div className="flex items-center gap-2 mt-3">
                                         <button type="button" onClick={() => saveQuickAudit(med.id)}
-                                          className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5">
+                                          className="bg-special-600 hover:bg-special-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5">
                                           <Check className="w-3.5 h-3.5" />حفظ الجرد
                                         </button>
                                         <button type="button" onClick={() => setQuickAuditId(null)}
@@ -6020,7 +6020,7 @@ export default function Dashboard() {
                             <h4 className="font-semibold text-xs text-slate-900">تسجيل وإضافة دواء جديد كلياً 🆕</h4>
                           </div>
                           <span className={`text-sm font-bold px-2 py-0.5 rounded-full ${
-                            showPurchaseNewProdForm ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-500'
+                            showPurchaseNewProdForm ? 'bg-warn-100 text-warn-800' : 'bg-slate-100 text-slate-500'
                           }`}>
                             {showPurchaseNewProdForm ? 'إغلاق' : 'توسعة'}
                           </span>
@@ -6169,7 +6169,7 @@ export default function Dashboard() {
                       <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm space-y-5">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
                           <div className="space-y-0.5 text-right">
-                            <span className="text-xs bg-indigo-50 text-indigo-700 font-bold px-2.5 py-0.5 rounded-full inline-block">حالة المسودة: قيد التعديل والتخصيص</span>
+                            <span className="text-xs bg-accent-50 text-accent-700 font-bold px-2.5 py-0.5 rounded-full inline-block">حالة المسودة: قيد التعديل والتخصيص</span>
                             <h4 className="font-semibold text-sm text-slate-900 mt-1">مسودة قائمة الشراء والتوريد النشطة</h4>
                             <p className="text-sm text-slate-500 font-bold">قم بتعديل الأعداد، الأسعار، وحالات الصلاحية مباشرة في الجدول لتحديث رصيد المخزن تلقائياً</p>
                           </div>
@@ -6181,7 +6181,7 @@ export default function Dashboard() {
                                 confirmDialog({ title: 'تفريغ مسودة المشتريات بالكامل؟', confirmText: 'تفريغ', danger: true })
                                   .then(ok => { if (ok) setPurchaseDraft([]); });
                               }}
-                              className="text-sm text-rose-500 hover:text-rose-700 font-semibold bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-xl transition cursor-pointer border-none"
+                              className="text-sm text-danger-500 hover:text-danger-700 font-semibold bg-danger-50 hover:bg-danger-100 px-3 py-1.5 rounded-xl transition cursor-pointer border-none"
                             >
                               مسح المسودة
                             </button>
@@ -6228,7 +6228,7 @@ export default function Dashboard() {
                                                 else if (e.key === 'Escape') { draftEditCancelRef.current = true; (e.target as HTMLInputElement).blur(); }
                                               }}
                                               onBlur={saveDraftField}
-                                              className="text-slate-900 font-bold text-xs flex-1 min-w-0 bg-indigo-50 border border-indigo-300 rounded px-1 focus:outline-indigo-500 text-right"
+                                              className="text-slate-900 font-bold text-xs flex-1 min-w-0 bg-accent-50 border border-accent-300 rounded px-1 focus:outline-accent-500 text-right"
                                               title="اضغط Enter للحفظ أو Escape للإلغاء"
                                             />
                                           ) : (
@@ -6247,7 +6247,7 @@ export default function Dashboard() {
                                                 defaultValue={item.stockCorrection ?? liveQty}
                                                 onBlur={e => saveDraftStock(item.id, liveQty, e.target.value)}
                                                 onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingDraftStockId(null); }}
-                                                className="w-16 bg-white border border-blue-400 rounded-full px-2 py-0.5 text-xs font-bold text-blue-900 text-center focus:outline-blue-500"
+                                                className="w-16 bg-white border border-info-400 rounded-full px-2 py-0.5 text-xs font-bold text-info-900 text-center focus:outline-info-500"
                                               />
                                             ) : (() => {
                                               const effQty = item.stockCorrection ?? liveQty;
@@ -6255,13 +6255,13 @@ export default function Dashboard() {
                                               return (
                                                 <span
                                                   onDoubleClick={() => setEditingDraftStockId(item.id)}
-                                                  className={`text-xs font-bold px-1.5 py-0.5 rounded-full shrink-0 cursor-pointer ${corrected ? 'bg-amber-100 text-amber-800 border border-amber-300' : effQty <= 0 ? 'bg-rose-100 text-rose-700' : effQty < (liveMed.minStock ?? 15) ? 'bg-amber-100 text-amber-700' : 'bg-primary-50 text-primary-700'}`}
+                                                  className={`text-xs font-bold px-1.5 py-0.5 rounded-full shrink-0 cursor-pointer ${corrected ? 'bg-warn-100 text-warn-800 border border-warn-300' : effQty <= 0 ? 'bg-danger-100 text-danger-700' : effQty < (liveMed.minStock ?? 15) ? 'bg-warn-100 text-warn-700' : 'bg-primary-50 text-primary-700'}`}
                                                   title="الرصيد الحالي في المخزن — انقر مرتين لتصحيحه"
                                                 >بالمخزن: {effQty}{corrected ? ' ✎' : ''}</span>
                                               );
                                             })()
                                           ) : (
-                                            <span className="text-xs font-bold px-1.5 py-0.5 rounded-full shrink-0 bg-blue-50 text-blue-700" title="صنف جديد غير موجود بالمخزن بعد">جديد</span>
+                                            <span className="text-xs font-bold px-1.5 py-0.5 rounded-full shrink-0 bg-info-50 text-info-700" title="صنف جديد غير موجود بالمخزن بعد">جديد</span>
                                           )}
                                         </div>
                                         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
@@ -6280,7 +6280,7 @@ export default function Dashboard() {
                                                 else if (e.key === 'Escape') { draftEditCancelRef.current = true; (e.target as HTMLInputElement).blur(); }
                                               }}
                                               onBlur={saveDraftField}
-                                              className="text-xs text-slate-500 tabular-nums bg-indigo-50 border border-indigo-300 rounded px-1 w-24 text-right focus:outline-indigo-500"
+                                              className="text-xs text-slate-500 tabular-nums bg-accent-50 border border-accent-300 rounded px-1 w-24 text-right focus:outline-accent-500"
                                               title="اضغط Enter للحفظ أو Escape للإلغاء"
                                             />
                                           ) : (
@@ -6302,7 +6302,7 @@ export default function Dashboard() {
                                           onClick={() => {
                                             setPurchaseDraft(prev => prev.filter(d => d.id !== item.id));
                                           }}
-                                          className="text-slate-500 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition cursor-pointer border-none"
+                                          className="text-slate-500 hover:text-danger-600 p-1.5 rounded-lg hover:bg-danger-50 transition cursor-pointer border-none"
                                           title="حذف هذا الدواء"
                                         >
                                           <Trash2 className="w-4 h-4" />
@@ -6366,7 +6366,7 @@ export default function Dashboard() {
 
                                       {/* سعر البيع للجمهور — يُحدّث inventory.price مباشرة */}
                                       <div>
-                                        <label className={`${labelCls} text-blue-700`}>البيع للجمهور (د.ع)</label>
+                                        <label className={`${labelCls} text-info-700`}>البيع للجمهور (د.ع)</label>
                                         <input
                                           type="number"
                                           step="250"
@@ -6377,13 +6377,13 @@ export default function Dashboard() {
                                             setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, retailPrice: val } : d));
                                             setInventory(prev => prev.map(m => m.id === item.medicineId ? { ...m, price: val } : m));
                                           }}
-                                          className={`${fieldCls} bg-blue-50 border-blue-200 text-blue-900 focus:outline-blue-400`}
+                                          className={`${fieldCls} bg-info-50 border-info-200 text-info-900 focus:outline-info-400`}
                                         />
                                       </div>
 
                                       {/* سعر البيع الرسمي — يُحدّث inventory.secondaryPrice مباشرة */}
                                       <div>
-                                        <label className={`${labelCls} text-violet-700`}>البيع الرسمي (د.ع)</label>
+                                        <label className={`${labelCls} text-special-700`}>البيع الرسمي (د.ع)</label>
                                         <input
                                           type="number"
                                           step="250"
@@ -6394,7 +6394,7 @@ export default function Dashboard() {
                                             setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, officialPrice: val } : d));
                                             setInventory(prev => prev.map(m => m.id === item.medicineId ? { ...m, secondaryPrice: val } : m));
                                           }}
-                                          className={`${fieldCls} bg-violet-50 border-violet-200 text-violet-900 focus:outline-violet-400`}
+                                          className={`${fieldCls} bg-special-50 border-special-200 text-special-900 focus:outline-special-400`}
                                         />
                                       </div>
 
@@ -6445,12 +6445,12 @@ export default function Dashboard() {
                                       type="checkbox"
                                       checked={purchaseOnCredit}
                                       onChange={(e) => setPurchaseOnCredit(e.target.checked)}
-                                      className="w-4 h-4 accent-rose-600 cursor-pointer"
+                                      className="w-4 h-4 accent-danger-600 cursor-pointer"
                                     />
-                                    <span className="text-sm font-bold text-rose-700">شراء بالآجل (على حساب المذخر)</span>
+                                    <span className="text-sm font-bold text-danger-700">شراء بالآجل (على حساب المذخر)</span>
                                   </label>
                                   {purchaseOnCredit && (
-                                    <p className="text-xs text-rose-500 font-bold leading-normal">* لن تُخصم القيمة من الصندوق، وستُسجَّل كذمّة مستحقة في دفتر ديون الموردين باسم المورّد المحدّد أعلاه.</p>
+                                    <p className="text-xs text-danger-500 font-bold leading-normal">* لن تُخصم القيمة من الصندوق، وستُسجَّل كذمّة مستحقة في دفتر ديون الموردين باسم المورّد المحدّد أعلاه.</p>
                                   )}
                                 </div>
                               </div>
@@ -6481,7 +6481,7 @@ export default function Dashboard() {
                       <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm space-y-4">
                         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                           <div className="flex items-center gap-2">
-                            <ClipboardList className="w-5 h-5 text-indigo-600" />
+                            <ClipboardList className="w-5 h-5 text-accent-600" />
                             <h4 className="font-semibold text-xs text-slate-900">سجل قوائم المشتريات والطلبيات السابقة</h4>
                           </div>
                           <span className="text-sm text-slate-500 font-bold">حالة تدفق الفواتير: موثقة بكامل القيود</span>
@@ -6495,7 +6495,7 @@ export default function Dashboard() {
                             value={b2bOrderSearch}
                             onChange={e => setB2bOrderSearch(e.target.value)}
                             placeholder="ابحث برقم القائمة (مثال: CAP-28109) أو اسم المورد..."
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-8 pl-3 py-2 text-sm font-bold text-slate-700 placeholder:text-slate-500 placeholder:font-normal focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 transition"
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-8 pl-3 py-2 text-sm font-bold text-slate-700 placeholder:text-slate-500 placeholder:font-normal focus:outline-none focus:border-accent-400 focus:ring-1 focus:ring-accent-200 transition"
                           />
                           {b2bOrderSearch && (
                             <button
@@ -6545,8 +6545,8 @@ export default function Dashboard() {
                               <div key={order.id} className="bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs transition">
                                 <div className="space-y-1 text-right">
                                   <div className="flex items-center gap-2 mb-1">
-                                    <span className="flex items-center gap-1.5 bg-indigo-50 text-indigo-800 border border-indigo-150 px-2.5 py-1 rounded-lg font-semibold text-sm">
-                                      <Truck className="w-3.5 h-3.5 text-indigo-600" />
+                                    <span className="flex items-center gap-1.5 bg-accent-50 text-accent-800 border border-accent-200 px-2.5 py-1 rounded-lg font-semibold text-sm">
+                                      <Truck className="w-3.5 h-3.5 text-accent-600" />
                                       <span>المورد: {supplierLabel}</span>
                                     </span>
                                   </div>
@@ -6584,7 +6584,7 @@ export default function Dashboard() {
                                       type="button"
                                       onClick={() => reopenPurchaseOrderForEdit(order.id)}
                                       title="إعادة فتح الطلبية للتعديل — يُعكس أثرها على المخزون والحسابات وتعود بنودها إلى المسودة"
-                                      className="px-3 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl font-semibold text-sm flex items-center justify-center gap-1 transition cursor-pointer"
+                                      className="px-3 py-1 bg-warn-50 hover:bg-warn-100 text-warn-800 border border-warn-200 rounded-xl font-semibold text-sm flex items-center justify-center gap-1 transition cursor-pointer"
                                     >
                                       <Pencil className="w-3 h-3" />
                                       <span>تعديل القائمة</span>
@@ -6619,8 +6619,8 @@ export default function Dashboard() {
                   className="flex items-center justify-center min-h-[60vh]"
                 >
                   <div className="bg-white border border-slate-200 rounded-3xl shadow-lg p-8 w-full max-w-sm space-y-6 text-center">
-                    <div className="w-16 h-16 bg-violet-50 rounded-2xl flex items-center justify-center mx-auto">
-                      <ShieldCheck className="w-8 h-8 text-violet-600" />
+                    <div className="w-16 h-16 bg-special-50 rounded-2xl flex items-center justify-center mx-auto">
+                      <ShieldCheck className="w-8 h-8 text-special-600" />
                     </div>
                     <div>
                       <h3 className="font-bold text-slate-800 text-base">الحسابات المالية</h3>
@@ -6649,15 +6649,15 @@ export default function Dashboard() {
                           onChange={(e) => { setPinEntry(e.target.value); setPinError(false); }}
                           placeholder="••••"
                           autoFocus
-                          className={`w-full text-center text-2xl tabular-nums tracking-[0.5em] bg-slate-50 border rounded-xl py-3 px-4 focus:outline-none focus:ring-2 transition ${pinError ? 'border-rose-400 focus:ring-rose-200 bg-rose-50' : 'border-slate-200 focus:ring-violet-200 focus:border-violet-400'}`}
+                          className={`w-full text-center text-2xl tabular-nums tracking-[0.5em] bg-slate-50 border rounded-xl py-3 px-4 focus:outline-none focus:ring-2 transition ${pinError ? 'border-danger-400 focus:ring-danger-200 bg-danger-50' : 'border-slate-200 focus:ring-special-200 focus:border-special-400'}`}
                         />
                         {pinError && (
-                          <p className="text-sm text-rose-600 font-bold mt-1.5 text-center">كلمة المرور غير صحيحة</p>
+                          <p className="text-sm text-danger-600 font-bold mt-1.5 text-center">كلمة المرور غير صحيحة</p>
                         )}
                       </div>
                       <button
                         type="submit"
-                        className="w-full bg-violet-600 hover:bg-violet-700 text-white font-bold py-3 rounded-xl cursor-pointer transition border-none font-sans text-sm"
+                        className="w-full bg-special-600 hover:bg-special-700 text-white font-bold py-3 rounded-xl cursor-pointer transition border-none font-sans text-sm"
                       >
                         دخول
                       </button>
@@ -6701,7 +6701,7 @@ export default function Dashboard() {
                         </button>
                         <button
                           onClick={restoreFromBrowserBackup}
-                          className="bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
+                          className="bg-warn-600 hover:bg-warn-700 text-white font-bold py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
                           title={lastAutoBackupAt ? `استعادة آخر نسخة محفوظة تلقائياً في المتصفح (${fmtDateTime(new Date(lastAutoBackupAt))})` : 'استعادة من النسخة المحفوظة تلقائياً في المتصفح'}
                         >
                           <RefreshCw className="w-4 h-4" />
@@ -6709,7 +6709,7 @@ export default function Dashboard() {
                         </button>
                         <button
                           onClick={() => restoreFileRef.current?.click()}
-                          className="bg-white border border-slate-300 hover:border-amber-400 text-slate-700 font-bold py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
+                          className="bg-white border border-slate-300 hover:border-warn-400 text-slate-700 font-bold py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
                           title="استعادة من ملف نسخة احتياطية (.json) محفوظ على اللابتوب"
                         >
                           <Upload className="w-4 h-4" />
@@ -6732,7 +6732,7 @@ export default function Dashboard() {
                             window.print();
                             setTimeout(() => document.body.classList.remove('printing-financial'), 1000);
                           }}
-                          className="bg-violet-600 hover:bg-violet-700 text-white font-bold py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
+                          className="bg-special-600 hover:bg-special-700 text-white font-bold py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
                         >
                           <FileText className="w-4 h-4" />
                           <span>طباعة / PDF</span>
@@ -6760,18 +6760,18 @@ export default function Dashboard() {
                             {fmtNum(dailySalesRevenue)} <span className="text-xs text-slate-500 font-sans font-semibold">د.ع</span>
                           </span>
                         </div>
-                        <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
+                        <div className="w-10 h-10 bg-info-50 text-info-600 rounded-xl flex items-center justify-center">
                           <TrendingUp className="w-5 h-5" />
                         </div>
                       </div>
                       <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center justify-between">
                         <div className="space-y-1">
                           <span className="text-sm text-slate-500 font-bold tracking-wider block">ذمم المذاخر المتبقية</span>
-                          <span className="text-xl font-bold text-rose-700 tracking-tight tabular-nums">
+                          <span className="text-xl font-bold text-danger-700 tracking-tight tabular-nums">
                             {fmtNum(totalDebts)} <span className="text-xs text-slate-500 font-sans font-semibold">د.ع</span>
                           </span>
                         </div>
-                        <div className="w-10 h-10 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center">
+                        <div className="w-10 h-10 bg-danger-50 text-danger-600 rounded-xl flex items-center justify-center">
                           <ClipboardList className="w-5 h-5" />
                         </div>
                       </div>
@@ -6888,7 +6888,7 @@ export default function Dashboard() {
                         {/* أعلى المنتجات ربحية */}
                         <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
                           <div className="flex items-center gap-2 mb-3">
-                            <Trophy className="w-4 h-4 text-amber-500" />
+                            <Trophy className="w-4 h-4 text-warn-500" />
                             <span className="text-sm font-bold text-slate-700">أعلى المنتجات ربحية</span>
                           </div>
                           <div className="space-y-1.5">
@@ -6910,18 +6910,18 @@ export default function Dashboard() {
                         {/* الأكثر مبيعاً بالكمية */}
                         <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
                           <div className="flex items-center gap-2 mb-3">
-                            <TrendingUp className="w-4 h-4 text-blue-600" />
+                            <TrendingUp className="w-4 h-4 text-info-600" />
                             <span className="text-sm font-bold text-slate-700">الأكثر مبيعاً (بالكمية)</span>
                           </div>
                           <div className="space-y-1.5">
                             {topSelling.map((p, i) => (
                               <div key={p.name} className="flex items-center justify-between text-sm font-bold bg-slate-50 rounded-lg px-3 py-2">
                                 <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                                  <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold shrink-0">{i + 1}</span>
+                                  <span className="w-5 h-5 rounded-full bg-info-100 text-info-700 flex items-center justify-center font-bold shrink-0">{i + 1}</span>
                                   <span className="text-slate-700 truncate">{p.name}</span>
                                 </div>
                                 <div className="text-left shrink-0 mr-2">
-                                  <strong className="text-blue-700 tabular-nums">{fmtNum(p.qty)}</strong>
+                                  <strong className="text-info-700 tabular-nums">{fmtNum(p.qty)}</strong>
                                   <span className="text-slate-500 text-xs"> وحدة</span>
                                 </div>
                               </div>
@@ -6951,10 +6951,10 @@ export default function Dashboard() {
                                 <tr key={m.name} className="border-b border-slate-50 hover:bg-slate-50/60">
                                   <td className="text-right py-2 px-2 text-slate-700">{m.name}</td>
                                   <td className="text-center py-2 px-2">
-                                    <span className={`tabular-nums ${m.sold === 0 ? 'text-rose-600' : 'text-slate-600'}`}>{m.sold}</span>
+                                    <span className={`tabular-nums ${m.sold === 0 ? 'text-danger-600' : 'text-slate-600'}`}>{m.sold}</span>
                                   </td>
                                   <td className="text-center py-2 px-2 tabular-nums text-slate-600">{m.stock}</td>
-                                  <td className="text-left py-2 px-2 tabular-nums text-amber-700">{fmtNum(m.value)} د.ع</td>
+                                  <td className="text-left py-2 px-2 tabular-nums text-warn-700">{fmtNum(m.value)} د.ع</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -6977,11 +6977,11 @@ export default function Dashboard() {
                           <span className="text-xs text-money-700 font-bold block mb-1">الربح الإجمالي (الشهر)</span>
                           <strong className="text-base font-bold text-money-800 tabular-nums">{fmtNum(statsMonth.profit)} <span className="text-xs font-bold">د.ع</span></strong>
                         </div>
-                        <div className="bg-rose-50 border border-rose-100 rounded-xl p-3">
-                          <span className="text-xs text-rose-700 font-bold block mb-1">− إجمالي المصاريف (الشهر)</span>
-                          <strong className="text-base font-bold text-rose-700 tabular-nums">{fmtNum(expMonth)} <span className="text-xs font-bold">د.ع</span></strong>
+                        <div className="bg-danger-50 border border-danger-100 rounded-xl p-3">
+                          <span className="text-xs text-danger-700 font-bold block mb-1">− إجمالي المصاريف (الشهر)</span>
+                          <strong className="text-base font-bold text-danger-700 tabular-nums">{fmtNum(expMonth)} <span className="text-xs font-bold">د.ع</span></strong>
                         </div>
-                        <div className={`${netProfitMonth >= 0 ? 'bg-money-600' : 'bg-rose-600'} rounded-xl p-3`}>
+                        <div className={`${netProfitMonth >= 0 ? 'bg-money-600' : 'bg-danger-600'} rounded-xl p-3`}>
                           <span className="text-xs text-white/80 font-bold block mb-1">= صافي الربح (الشهر)</span>
                           <strong className="text-base font-bold text-white tabular-nums">{fmtNum(netProfitMonth)} <span className="text-xs font-bold">د.ع</span></strong>
                         </div>
@@ -7039,7 +7039,7 @@ export default function Dashboard() {
                                   <strong className="text-slate-800 block">{exp.category}</strong>
                                   <span className="text-slate-500 text-xs font-semibold">{exp.date} • {exp.paidBy}{exp.description ? ` • ${exp.description}` : ''}</span>
                                 </div>
-                                <strong className="text-rose-700 tabular-nums shrink-0 mr-2">−{fmtNum(exp.amount)} د.ع</strong>
+                                <strong className="text-danger-700 tabular-nums shrink-0 mr-2">−{fmtNum(exp.amount)} د.ع</strong>
                               </div>
                             ))}
                           </div>
@@ -7051,7 +7051,7 @@ export default function Dashboard() {
                     <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div className="flex items-center gap-2">
-                          <FileText className="w-4 h-4 text-violet-600" />
+                          <FileText className="w-4 h-4 text-special-600" />
                           <span className="text-sm text-slate-600 font-bold">قائمة الأرباح والخسائر (الدخل)</span>
                         </div>
                         <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
@@ -7059,7 +7059,7 @@ export default function Dashboard() {
                             <button
                               key={k}
                               onClick={() => setPlPeriod(k)}
-                              className={`text-sm font-bold px-3 py-1.5 rounded-lg transition cursor-pointer border-none font-sans ${plPeriod === k ? 'bg-white text-violet-700 shadow-sm' : 'bg-transparent text-slate-500'}`}
+                              className={`text-sm font-bold px-3 py-1.5 rounded-lg transition cursor-pointer border-none font-sans ${plPeriod === k ? 'bg-white text-special-700 shadow-sm' : 'bg-transparent text-slate-500'}`}
                             >
                               {lbl}
                             </button>
@@ -7075,7 +7075,7 @@ export default function Dashboard() {
                         </div>
                         <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100">
                           <span className="text-slate-500">(−) مرتجعات المبيعات{plReturns.count > 0 ? ` (${plReturns.count})` : ''}</span>
-                          <span className="tabular-nums text-rose-600">−{fmtNum(plReturns.value)} د.ع</span>
+                          <span className="tabular-nums text-danger-600">−{fmtNum(plReturns.value)} د.ع</span>
                         </div>
                         <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100 bg-slate-50/60">
                           <span className="text-slate-700 font-bold">= صافي المبيعات</span>
@@ -7084,7 +7084,7 @@ export default function Dashboard() {
                         {/* التكلفة */}
                         <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100">
                           <span className="text-slate-500">(−) تكلفة البضاعة المباعة (COGS)</span>
-                          <span className="tabular-nums text-rose-600">−{fmtNum(plNetCogs)} د.ع</span>
+                          <span className="tabular-nums text-danger-600">−{fmtNum(plNetCogs)} د.ع</span>
                         </div>
                         {/* مجمل الربح */}
                         <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 bg-primary-50">
@@ -7094,7 +7094,7 @@ export default function Dashboard() {
                         {/* المصاريف التشغيلية مفصّلة */}
                         <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100">
                           <span className="text-slate-700 font-bold">(−) المصاريف التشغيلية</span>
-                          <span className="tabular-nums text-rose-600">−{fmtNum(plTotalExpenses)} د.ع</span>
+                          <span className="tabular-nums text-danger-600">−{fmtNum(plTotalExpenses)} د.ع</span>
                         </div>
                         {plExpenseRows.length === 0 ? (
                           <div className="px-6 py-2 border-t border-slate-50 text-sm text-slate-500 font-bold">لا مصاريف مسجّلة في هذه الفترة</div>
@@ -7105,7 +7105,7 @@ export default function Dashboard() {
                           </div>
                         ))}
                         {/* صافي الربح */}
-                        <div className={`flex items-center justify-between px-4 py-3.5 border-t-2 ${plNetProfit >= 0 ? 'bg-money-600 border-money-700' : 'bg-rose-600 border-rose-700'}`}>
+                        <div className={`flex items-center justify-between px-4 py-3.5 border-t-2 ${plNetProfit >= 0 ? 'bg-money-600 border-money-700' : 'bg-danger-600 border-danger-700'}`}>
                           <span className="text-white font-bold">= صافي الربح <span className="text-xs text-white/75 font-bold">(هامش {plNetMargin}%)</span></span>
                           <span className="tabular-nums text-white font-bold text-sm">{fmtNum(plNetProfit)} د.ع</span>
                         </div>
@@ -7119,13 +7119,13 @@ export default function Dashboard() {
                     <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <Truck className="w-4 h-4 text-indigo-600" />
+                          <Truck className="w-4 h-4 text-accent-600" />
                           <span className="text-sm text-slate-600 font-bold">قائمة الموردين ومصادر التجهيز</span>
                         </div>
                         <button
                           type="button"
                           onClick={() => { setSupplierFormVisible(v => !v); setSelectedSupplierId(null); }}
-                          className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold px-3 py-1.5 rounded-xl transition cursor-pointer border-none"
+                          className="flex items-center gap-1.5 bg-accent-600 hover:bg-accent-700 text-white text-sm font-bold px-3 py-1.5 rounded-xl transition cursor-pointer border-none"
                         >
                           <Plus className="w-3.5 h-3.5" />
                           إضافة مورد جديد
@@ -7162,8 +7162,8 @@ export default function Dashboard() {
                             }}
                             className="overflow-hidden"
                           >
-                            <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 space-y-3 text-xs font-semibold">
-                              <span className="text-sm text-indigo-700 font-bold block">بيانات المورد الجديد</span>
+                            <div className="bg-accent-50 border border-accent-100 rounded-2xl p-4 space-y-3 text-xs font-semibold">
+                              <span className="text-sm text-accent-700 font-bold block">بيانات المورد الجديد</span>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div className="space-y-1 sm:col-span-2">
                                   <label className="block text-slate-500 text-sm">اسم المورد / المذخر *</label>
@@ -7195,7 +7195,7 @@ export default function Dashboard() {
                                 </div>
                               </div>
                               <div className="flex gap-2 pt-1">
-                                <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
+                                <button type="submit" className="flex-1 bg-accent-600 hover:bg-accent-700 text-white font-bold py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
                                   حفظ المورد
                                 </button>
                                 <button type="button" onClick={() => setSupplierFormVisible(false)} className="px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
@@ -7223,13 +7223,13 @@ export default function Dashboard() {
                               initial={{ opacity: 0, y: 8 }}
                               animate={{ opacity: 1, y: 0 }}
                               exit={{ opacity: 0, y: 8 }}
-                              className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 space-y-4"
+                              className="bg-accent-50 border border-accent-100 rounded-2xl p-4 space-y-4"
                             >
                               {/* Header */}
                               <div className="flex items-start justify-between gap-3">
                                 <div className="space-y-0.5">
                                   <div className="flex items-center gap-2">
-                                    <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center flex-shrink-0">
+                                    <div className="w-8 h-8 rounded-xl bg-accent-600 flex items-center justify-center flex-shrink-0">
                                       <Truck className="w-4 h-4 text-white" />
                                     </div>
                                     <h4 className="font-bold text-sm text-slate-900">{sup.name}</h4>
@@ -7257,7 +7257,7 @@ export default function Dashboard() {
                                       setNewSupPaymentTerms(sup.paymentTerms || 30);
                                       setNewSupNotes(sup.notes || '');
                                     }}
-                                    className="p-1.5 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-100 rounded-lg transition cursor-pointer bg-transparent border-none"
+                                    className="p-1.5 text-accent-500 hover:text-accent-700 hover:bg-accent-100 rounded-lg transition cursor-pointer bg-transparent border-none"
                                     title="تعديل بيانات المورد"
                                   >
                                     <Pencil className="w-4 h-4" />
@@ -7268,7 +7268,7 @@ export default function Dashboard() {
                                       confirmDialog({ title: `حذف المورد «${sup.name}»؟`, message: 'لن تتأثّر الذمم أو الفواتير المسجّلة سابقاً.', confirmText: 'حذف', danger: true })
                                         .then(ok => { if (ok) deleteSupplier(sup); });
                                     }}
-                                    className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-100 rounded-lg transition cursor-pointer bg-transparent border-none"
+                                    className="p-1.5 text-danger-400 hover:text-danger-600 hover:bg-danger-100 rounded-lg transition cursor-pointer bg-transparent border-none"
                                     title="حذف المورد"
                                   >
                                     <Trash2 className="w-4 h-4" />
@@ -7302,9 +7302,9 @@ export default function Dashboard() {
                                     });
                                     setEditingSupplierId(null);
                                   }}
-                                  className="bg-white border border-indigo-200 rounded-2xl p-4 space-y-3 text-xs font-semibold"
+                                  className="bg-white border border-accent-200 rounded-2xl p-4 space-y-3 text-xs font-semibold"
                                 >
-                                  <span className="text-sm text-indigo-700 font-bold block">تعديل بيانات المورد</span>
+                                  <span className="text-sm text-accent-700 font-bold block">تعديل بيانات المورد</span>
                                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div className="space-y-1 sm:col-span-2">
                                       <label className="block text-slate-500 text-sm">اسم المورد / المذخر *</label>
@@ -7336,7 +7336,7 @@ export default function Dashboard() {
                                     </div>
                                   </div>
                                   <div className="flex gap-2 pt-1">
-                                    <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
+                                    <button type="submit" className="flex-1 bg-accent-600 hover:bg-accent-700 text-white font-bold py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
                                       حفظ التعديلات
                                     </button>
                                     <button type="button" onClick={() => setEditingSupplierId(null)} className="px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
@@ -7348,20 +7348,20 @@ export default function Dashboard() {
 
                               {/* ملخص الحساب */}
                               <div className="grid grid-cols-3 gap-2">
-                                <div className="bg-rose-50 border border-rose-100 rounded-xl p-3 text-center">
-                                  <span className="text-xs text-rose-600 font-bold block mb-0.5">المتبقي للمورد</span>
-                                  <strong className="text-sm font-bold text-rose-700 tabular-nums">{fmtNum(totalOwed)}</strong>
-                                  <span className="text-xs text-rose-500 font-bold block">د.ع</span>
+                                <div className="bg-danger-50 border border-danger-100 rounded-xl p-3 text-center">
+                                  <span className="text-xs text-danger-600 font-bold block mb-0.5">المتبقي للمورد</span>
+                                  <strong className="text-sm font-bold text-danger-700 tabular-nums">{fmtNum(totalOwed)}</strong>
+                                  <span className="text-xs text-danger-500 font-bold block">د.ع</span>
                                 </div>
                                 <div className="bg-primary-50 border border-primary-100 rounded-xl p-3 text-center">
                                   <span className="text-xs text-primary-600 font-bold block mb-0.5">إجمالي المسدَّد</span>
                                   <strong className="text-sm font-bold text-money-700 tabular-nums">{fmtNum(totalPaid)}</strong>
                                   <span className="text-xs text-money-500 font-bold block">د.ع</span>
                                 </div>
-                                <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center">
-                                  <span className="text-xs text-blue-600 font-bold block mb-0.5">إجمالي الفواتير</span>
-                                  <strong className="text-sm font-bold text-blue-700 tabular-nums">{fmtNum(totalInvoiced)}</strong>
-                                  <span className="text-xs text-blue-500 font-bold block">د.ع</span>
+                                <div className="bg-info-50 border border-info-100 rounded-xl p-3 text-center">
+                                  <span className="text-xs text-info-600 font-bold block mb-0.5">إجمالي الفواتير</span>
+                                  <strong className="text-sm font-bold text-info-700 tabular-nums">{fmtNum(totalInvoiced)}</strong>
+                                  <span className="text-xs text-info-500 font-bold block">د.ع</span>
                                 </div>
                               </div>
 
@@ -7425,7 +7425,7 @@ export default function Dashboard() {
                                   ? <p className="text-sm text-slate-500 text-center py-3">لا توجد فواتير مسجّلة لهذا المورد</p>
                                   : supPayables.map(p => {
                                     const rem = Math.max(0, p.amount - p.paidAmount);
-                                    const stCls = p.status === 'paid' ? 'text-primary-700 bg-primary-50 border-primary-100' : p.status === 'partial' ? 'text-amber-700 bg-amber-50 border-amber-100' : 'text-rose-700 bg-rose-50 border-rose-100';
+                                    const stCls = p.status === 'paid' ? 'text-primary-700 bg-primary-50 border-primary-100' : p.status === 'partial' ? 'text-warn-700 bg-warn-50 border-warn-100' : 'text-danger-700 bg-danger-50 border-danger-100';
                                     const stLabel = p.status === 'paid' ? 'مسدّدة' : p.status === 'partial' ? 'جزئي' : 'مفتوحة';
                                     return (
                                       <div key={p.id} className="bg-white border border-slate-100 rounded-xl px-3 py-2 text-sm font-semibold flex items-center gap-2 justify-between">
@@ -7436,7 +7436,7 @@ export default function Dashboard() {
                                         <div className="flex items-center gap-2 shrink-0 text-right">
                                           <div>
                                             <span className="tabular-nums text-slate-700 font-bold block text-sm">{fmtNum(p.amount)} د.ع</span>
-                                            {rem > 0 && <span className="tabular-nums text-rose-600 text-xs font-bold">متبقّي {fmtNum(rem)}</span>}
+                                            {rem > 0 && <span className="tabular-nums text-danger-600 text-xs font-bold">متبقّي {fmtNum(rem)}</span>}
                                           </div>
                                           <span className={`px-2 py-0.5 rounded-full border text-xs font-bold ${stCls}`}>{stLabel}</span>
                                         </div>
@@ -7458,7 +7458,7 @@ export default function Dashboard() {
                                       </div>
                                       <div className="text-right">
                                         <span className="tabular-nums text-slate-700 font-bold block">{fmtNum(o.totalAmount)} د.ع</span>
-                                        <span className={`text-xs font-bold ${o.status === 'delivered' ? 'text-primary-600' : o.status === 'cancelled' ? 'text-rose-500' : 'text-amber-600'}`}>
+                                        <span className={`text-xs font-bold ${o.status === 'delivered' ? 'text-primary-600' : o.status === 'cancelled' ? 'text-danger-500' : 'text-warn-600'}`}>
                                           {o.status === 'delivered' ? 'مستلمة' : o.status === 'on_way' ? 'في الطريق' : o.status === 'preparing' ? 'تحضير' : o.status === 'cancelled' ? 'ملغاة' : 'معلّقة'}
                                         </span>
                                       </div>
@@ -7483,7 +7483,7 @@ export default function Dashboard() {
                                 key={sup.id}
                                 type="button"
                                 onClick={() => { setSelectedSupplierId(sup.id); setSupplierFormVisible(false); }}
-                                className="text-right bg-white border border-slate-100 hover:border-indigo-300 hover:bg-indigo-50 rounded-2xl p-4 transition cursor-pointer text-xs space-y-2 w-full"
+                                className="text-right bg-white border border-slate-100 hover:border-accent-300 hover:bg-accent-50 rounded-2xl p-4 transition cursor-pointer text-xs space-y-2 w-full"
                               >
                                 <div className="flex items-start justify-between gap-2">
                                   <div className="min-w-0">
@@ -7492,7 +7492,7 @@ export default function Dashboard() {
                                   </div>
                                   <div className="shrink-0 text-left">
                                     {totalOwed > 0
-                                      ? <span className="text-sm font-bold text-rose-600 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full tabular-nums">{fmtNum(totalOwed)} د.ع</span>
+                                      ? <span className="text-sm font-bold text-danger-600 bg-danger-50 border border-danger-100 px-2 py-0.5 rounded-full tabular-nums">{fmtNum(totalOwed)} د.ع</span>
                                       : <span className="text-sm font-bold text-primary-600 bg-primary-50 border border-primary-100 px-2 py-0.5 rounded-full">✓ مسوّى</span>
                                     }
                                   </div>
@@ -7500,7 +7500,7 @@ export default function Dashboard() {
                                 <div className="flex items-center gap-3 text-xs text-slate-500 font-bold">
                                   {sup.phone && <span className="inline-flex items-center gap-1"><Phone className="w-3 h-3" />{sup.phone}</span>}
                                   {sup.paymentTerms && <span className="inline-flex items-center gap-1"><Calendar className="w-3 h-3" />{sup.paymentTerms} يوم آجل</span>}
-                                  {openCount > 0 && <span className="text-amber-600 inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3" />{openCount} ذمّة مفتوحة</span>}
+                                  {openCount > 0 && <span className="text-warn-600 inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3" />{openCount} ذمّة مفتوحة</span>}
                                 </div>
                               </button>
                             );
@@ -7515,19 +7515,19 @@ export default function Dashboard() {
                     {/* --- ديون الموردين والذمم الدائنة --- */}
                     <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
                       <div className="flex items-center gap-2">
-                        <ClipboardList className="w-4 h-4 text-rose-600" />
+                        <ClipboardList className="w-4 h-4 text-danger-600" />
                         <span className="text-sm text-slate-600 font-bold">ديون الموردين والذمم الدائنة (المذاخر والمكاتب العلمية)</span>
                       </div>
 
                       {/* ملخص الذمم الدائنة */}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div className="bg-rose-50 border border-rose-100 rounded-xl p-3">
-                          <span className="text-xs text-rose-700 font-bold block mb-1">إجمالي الذمم المستحقة</span>
-                          <strong className="text-base font-bold text-rose-700 tabular-nums">{fmtNum(totalDebts)} <span className="text-xs font-bold">د.ع</span></strong>
+                        <div className="bg-danger-50 border border-danger-100 rounded-xl p-3">
+                          <span className="text-xs text-danger-700 font-bold block mb-1">إجمالي الذمم المستحقة</span>
+                          <strong className="text-base font-bold text-danger-700 tabular-nums">{fmtNum(totalDebts)} <span className="text-xs font-bold">د.ع</span></strong>
                         </div>
-                        <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
-                          <span className="text-xs text-amber-700 font-bold block mb-1">عدد الذمم المفتوحة</span>
-                          <strong className="text-base font-bold text-amber-700 tabular-nums">{payables.filter(p => p.status !== 'paid').length} <span className="text-xs font-bold">ذمّة</span></strong>
+                        <div className="bg-warn-50 border border-warn-100 rounded-xl p-3">
+                          <span className="text-xs text-warn-700 font-bold block mb-1">عدد الذمم المفتوحة</span>
+                          <strong className="text-base font-bold text-warn-700 tabular-nums">{payables.filter(p => p.status !== 'paid').length} <span className="text-xs font-bold">ذمّة</span></strong>
                         </div>
                         <div className="bg-primary-50 border border-primary-100 rounded-xl p-3">
                           <span className="text-xs text-primary-700 font-bold block mb-1">إجمالي المسدَّد</span>
@@ -7549,8 +7549,8 @@ export default function Dashboard() {
                               const statusCls = p.status === 'paid'
                                 ? 'bg-primary-50 text-primary-700 border-primary-100'
                                 : p.status === 'partial'
-                                  ? 'bg-amber-50 text-amber-700 border-amber-100'
-                                  : 'bg-rose-50 text-rose-700 border-rose-100';
+                                  ? 'bg-warn-50 text-warn-700 border-warn-100'
+                                  : 'bg-danger-50 text-danger-700 border-danger-100';
                               return (
                                 <div key={p.id} className="bg-white border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-bold space-y-2">
                                   <div className="flex items-start justify-between gap-2">
@@ -7563,7 +7563,7 @@ export default function Dashboard() {
                                   <div className="flex items-center justify-between gap-2 text-xs text-slate-500 font-bold">
                                     <span>الأصل: <span className="tabular-nums text-slate-700">{fmtNum(p.amount)}</span></span>
                                     <span>المسدَّد: <span className="tabular-nums text-money-700">{fmtNum(p.paidAmount)}</span></span>
-                                    <span>المتبقّي: <span className="tabular-nums text-rose-700">{fmtNum(remaining)} د.ع</span></span>
+                                    <span>المتبقّي: <span className="tabular-nums text-danger-700">{fmtNum(remaining)} د.ع</span></span>
                                   </div>
                                   {p.status !== 'paid' && (
                                     <div className="flex items-center gap-1.5 pt-1">
@@ -7602,19 +7602,19 @@ export default function Dashboard() {
                     {/* --- ذمم الزبائن والبيع بالآجل (الذمم المدينة) --- */}
                     <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
                       <div className="flex items-center gap-2">
-                        <ClipboardList className="w-4 h-4 text-amber-600" />
+                        <ClipboardList className="w-4 h-4 text-warn-600" />
                         <span className="text-sm text-slate-600 font-bold">ذمم الزبائن والبيع بالآجل (الذمم المدينة المستحقة لنا)</span>
                       </div>
 
                       {/* ملخص الذمم المدينة */}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
-                          <span className="text-xs text-amber-700 font-bold block mb-1">إجمالي الذمم المستحقة لنا</span>
-                          <strong className="text-base font-bold text-amber-700 tabular-nums">{fmtNum(totalReceivables)} <span className="text-xs font-bold">د.ع</span></strong>
+                        <div className="bg-warn-50 border border-warn-100 rounded-xl p-3">
+                          <span className="text-xs text-warn-700 font-bold block mb-1">إجمالي الذمم المستحقة لنا</span>
+                          <strong className="text-base font-bold text-warn-700 tabular-nums">{fmtNum(totalReceivables)} <span className="text-xs font-bold">د.ع</span></strong>
                         </div>
-                        <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
-                          <span className="text-xs text-blue-700 font-bold block mb-1">عدد الذمم المفتوحة</span>
-                          <strong className="text-base font-bold text-blue-700 tabular-nums">{receivables.filter(r => r.status !== 'paid').length} <span className="text-xs font-bold">ذمّة</span></strong>
+                        <div className="bg-info-50 border border-info-100 rounded-xl p-3">
+                          <span className="text-xs text-info-700 font-bold block mb-1">عدد الذمم المفتوحة</span>
+                          <strong className="text-base font-bold text-info-700 tabular-nums">{receivables.filter(r => r.status !== 'paid').length} <span className="text-xs font-bold">ذمّة</span></strong>
                         </div>
                         <div className="bg-primary-50 border border-primary-100 rounded-xl p-3">
                           <span className="text-xs text-primary-700 font-bold block mb-1">إجمالي المُحصَّل</span>
@@ -7642,7 +7642,7 @@ export default function Dashboard() {
                             <label className="block text-slate-500 text-sm">وصف (اختياري)</label>
                             <input type="text" value={newRecDesc} onChange={(e) => setNewRecDesc(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2" placeholder="مثال: أدوية ومستلزمات شهرية للعيادة" />
                           </div>
-                          <button type="submit" className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 rounded-xl cursor-pointer transition shadow-sm border-none font-sans text-xs">
+                          <button type="submit" className="w-full bg-warn-600 hover:bg-warn-700 text-white font-bold py-2.5 rounded-xl cursor-pointer transition shadow-sm border-none font-sans text-xs">
                             تسجيل ذمّة على زبون
                           </button>
                           {receivableSuccess && <p className="text-sm text-primary-700 font-bold text-center">✓ تم تسجيل الذمّة في دفتر ذمم الزبائن</p>}
@@ -7662,8 +7662,8 @@ export default function Dashboard() {
                               const statusCls = r.status === 'paid'
                                 ? 'bg-primary-50 text-primary-700 border-primary-100'
                                 : r.status === 'partial'
-                                  ? 'bg-blue-50 text-blue-700 border-blue-100'
-                                  : 'bg-amber-50 text-amber-700 border-amber-100';
+                                  ? 'bg-info-50 text-info-700 border-info-100'
+                                  : 'bg-warn-50 text-warn-700 border-warn-100';
                               return (
                                 <div key={r.id} className="bg-white border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-bold space-y-2">
                                   <div className="flex items-start justify-between gap-2">
@@ -7676,7 +7676,7 @@ export default function Dashboard() {
                                   <div className="flex items-center justify-between gap-2 text-xs text-slate-500 font-bold">
                                     <span>الأصل: <span className="tabular-nums text-slate-700">{fmtNum(r.amount)}</span></span>
                                     <span>المُحصَّل: <span className="tabular-nums text-money-700">{fmtNum(r.paidAmount)}</span></span>
-                                    <span>المتبقّي: <span className="tabular-nums text-amber-700">{fmtNum(remaining)} د.ع</span></span>
+                                    <span>المتبقّي: <span className="tabular-nums text-warn-700">{fmtNum(remaining)} د.ع</span></span>
                                   </div>
                                   {r.status !== 'paid' && (
                                     <div className="flex items-center gap-1.5 pt-1">
@@ -7722,7 +7722,7 @@ export default function Dashboard() {
                         <div className="space-y-2">
                           <p className="flex justify-between">
                             <span>إجمالي الذمم المستحقة للموردين:</span>
-                            <strong className="text-rose-700 tabular-nums text-sm">{fmtNum(totalDebts)} د.ع</strong>
+                            <strong className="text-danger-700 tabular-nums text-sm">{fmtNum(totalDebts)} د.ع</strong>
                           </p>
                           <p className="flex justify-between text-slate-500">
                             <span>الرصيد المتاح بالصندوق:</span>
@@ -7765,7 +7765,7 @@ export default function Dashboard() {
                                     {/* اسم المورد والمبلغ المستحق */}
                                     <div className="flex items-center justify-between">
                                       <span className="font-bold text-slate-800 text-sm">{sup.name}</span>
-                                      <span className="tabular-nums text-rose-600 font-bold text-sm">{fmtNum(sup.remaining)} د.ع</span>
+                                      <span className="tabular-nums text-danger-600 font-bold text-sm">{fmtNum(sup.remaining)} د.ع</span>
                                     </div>
                                     {/* حقل المبلغ + أزرار التسديد */}
                                     <div className="flex gap-1.5 items-center">
@@ -7785,7 +7785,7 @@ export default function Dashboard() {
                                           paySupplierDebt(supplierObj, payAmt);
                                           setDebtPayAmounts(prev => ({ ...prev, [sup.name]: 0 }));
                                         }}
-                                        className="shrink-0 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-bold px-3 py-1.5 rounded-lg text-sm cursor-pointer transition border-none"
+                                        className="shrink-0 bg-accent-600 hover:bg-accent-700 disabled:opacity-40 text-white font-bold px-3 py-1.5 rounded-lg text-sm cursor-pointer transition border-none"
                                       >
                                         دفعة
                                       </button>
@@ -7834,10 +7834,10 @@ export default function Dashboard() {
                     <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <RefreshCw className="w-4 h-4 text-rose-500" />
+                          <RefreshCw className="w-4 h-4 text-danger-500" />
                           <span className="text-sm text-slate-600 font-bold">مرتجعات المبيعات</span>
                         </div>
-                        <span className="text-xs bg-rose-50 text-rose-700 font-bold px-2.5 py-1 rounded-full border border-rose-100">
+                        <span className="text-xs bg-danger-50 text-danger-700 font-bold px-2.5 py-1 rounded-full border border-danger-100">
                           {salesReturns.length} مرتجع • {fmtNum(salesReturns.reduce((s, r) => s + r.total, 0))} د.ع
                         </span>
                       </div>
@@ -7850,15 +7850,15 @@ export default function Dashboard() {
                             <div key={r.returnId} className="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-bold space-y-1">
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                  <span className="tabular-nums text-rose-700 font-bold">{r.returnId}</span>
+                                  <span className="tabular-nums text-danger-700 font-bold">{r.returnId}</span>
                                   <span className="text-slate-500">←</span>
                                   <span className="tabular-nums text-slate-500">{r.originalInvoiceId}</span>
                                 </div>
-                                <strong className="text-rose-700 tabular-nums">−{fmtNum(r.total)} د.ع</strong>
+                                <strong className="text-danger-700 tabular-nums">−{fmtNum(r.total)} د.ع</strong>
                               </div>
                               <div className="flex items-center justify-between text-slate-500 text-xs">
                                 <span>{r.timestamp} • {r.customerName} • {r.reason}</span>
-                                <span className={`px-1.5 py-0.5 rounded font-bold ${r.refundMethod === 'cash' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'}`}>
+                                <span className={`px-1.5 py-0.5 rounded font-bold ${r.refundMethod === 'cash' ? 'bg-danger-100 text-danger-700' : 'bg-slate-100 text-slate-500'}`}>
                                   {r.refundMethod === 'cash' ? 'استرداد نقدي' : 'تصحيح فقط'}
                                 </span>
                               </div>
@@ -7884,7 +7884,7 @@ export default function Dashboard() {
 
                         {/* ---- كشف حساب المورد ---- */}
                         <div className="space-y-3">
-                          <span className="text-sm font-bold text-rose-600 flex items-center gap-1.5">
+                          <span className="text-sm font-bold text-danger-600 flex items-center gap-1.5">
                             <Truck className="w-3.5 h-3.5" /> كشف حساب المورد / المذخر
                           </span>
                           <select
@@ -7907,17 +7907,17 @@ export default function Dashboard() {
                             return (
                               <div className="space-y-2">
                                 <div className="grid grid-cols-3 gap-2">
-                                  <div className="bg-rose-50 rounded-xl p-2.5 text-center">
-                                    <span className="text-xs text-rose-600 font-bold block">إجمالي الدين</span>
-                                    <strong className="text-sm tabular-nums text-rose-700">{fmtNum(totalOwed)}</strong>
+                                  <div className="bg-danger-50 rounded-xl p-2.5 text-center">
+                                    <span className="text-xs text-danger-600 font-bold block">إجمالي الدين</span>
+                                    <strong className="text-sm tabular-nums text-danger-700">{fmtNum(totalOwed)}</strong>
                                   </div>
                                   <div className="bg-primary-50 rounded-xl p-2.5 text-center">
                                     <span className="text-xs text-primary-600 font-bold block">المدفوع</span>
                                     <strong className="text-sm tabular-nums text-money-700">{fmtNum(totalPaid)}</strong>
                                   </div>
-                                  <div className="bg-amber-50 rounded-xl p-2.5 text-center">
-                                    <span className="text-xs text-amber-600 font-bold block">المتبقي</span>
-                                    <strong className="text-sm tabular-nums text-amber-700">{fmtNum(balance)}</strong>
+                                  <div className="bg-warn-50 rounded-xl p-2.5 text-center">
+                                    <span className="text-xs text-warn-600 font-bold block">المتبقي</span>
+                                    <strong className="text-sm tabular-nums text-warn-700">{fmtNum(balance)}</strong>
                                   </div>
                                 </div>
                                 <div className="overflow-x-auto">
@@ -7938,9 +7938,9 @@ export default function Dashboard() {
                                           <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50">
                                             <td className="p-1.5 text-slate-500">{p.date}</td>
                                             <td className="p-1.5 text-slate-700">{p.description || 'فاتورة توريد'}</td>
-                                            <td className="p-1.5 tabular-nums text-rose-600 text-left">{fmtNum(p.amount)}</td>
+                                            <td className="p-1.5 tabular-nums text-danger-600 text-left">{fmtNum(p.amount)}</td>
                                             <td className="p-1.5 tabular-nums text-money-600 text-left">{p.paidAmount > 0 ? fmtNum(p.paidAmount) : '—'}</td>
-                                            <td className="p-1.5 tabular-nums text-amber-700 text-left">{fmtNum(running)}</td>
+                                            <td className="p-1.5 tabular-nums text-warn-700 text-left">{fmtNum(running)}</td>
                                           </tr>
                                         );
                                       })}
@@ -7948,9 +7948,9 @@ export default function Dashboard() {
                                     <tfoot>
                                       <tr className="bg-slate-50 font-bold">
                                         <td colSpan={2} className="p-1.5 text-slate-600">الرصيد النهائي</td>
-                                        <td className="p-1.5 tabular-nums text-rose-700 text-left">{fmtNum(totalOwed)}</td>
+                                        <td className="p-1.5 tabular-nums text-danger-700 text-left">{fmtNum(totalOwed)}</td>
                                         <td className="p-1.5 tabular-nums text-money-700 text-left">{fmtNum(totalPaid)}</td>
-                                        <td className="p-1.5 tabular-nums text-amber-800 text-left">{fmtNum(balance)}</td>
+                                        <td className="p-1.5 tabular-nums text-warn-800 text-left">{fmtNum(balance)}</td>
                                       </tr>
                                     </tfoot>
                                   </table>
@@ -7994,17 +7994,17 @@ export default function Dashboard() {
                             return (
                               <div className="space-y-2">
                                 <div className="grid grid-cols-3 gap-2">
-                                  <div className="bg-blue-50 rounded-xl p-2.5 text-center">
-                                    <span className="text-xs text-blue-600 font-bold block">إجمالي المبيعات</span>
-                                    <strong className="text-sm tabular-nums text-blue-700">{fmtNum((totalSales + totalRec))}</strong>
+                                  <div className="bg-info-50 rounded-xl p-2.5 text-center">
+                                    <span className="text-xs text-info-600 font-bold block">إجمالي المبيعات</span>
+                                    <strong className="text-sm tabular-nums text-info-700">{fmtNum((totalSales + totalRec))}</strong>
                                   </div>
                                   <div className="bg-primary-50 rounded-xl p-2.5 text-center">
                                     <span className="text-xs text-primary-600 font-bold block">المحصَّل</span>
                                     <strong className="text-sm tabular-nums text-money-700">{fmtNum((totalSales + totalCollected))}</strong>
                                   </div>
-                                  <div className="bg-amber-50 rounded-xl p-2.5 text-center">
-                                    <span className="text-xs text-amber-600 font-bold block">المتبقي (ذمّة)</span>
-                                    <strong className="text-sm tabular-nums text-amber-700">{fmtNum(balance)}</strong>
+                                  <div className="bg-warn-50 rounded-xl p-2.5 text-center">
+                                    <span className="text-xs text-warn-600 font-bold block">المتبقي (ذمّة)</span>
+                                    <strong className="text-sm tabular-nums text-warn-700">{fmtNum(balance)}</strong>
                                   </div>
                                 </div>
                                 <div className="overflow-x-auto">
@@ -8025,9 +8025,9 @@ export default function Dashboard() {
                                           <tr key={i} className="border-b border-slate-50 hover:bg-slate-50">
                                             <td className="p-1.5 text-slate-500">{row.date}</td>
                                             <td className="p-1.5 text-slate-700">{row.desc}</td>
-                                            <td className="p-1.5 tabular-nums text-rose-600 text-left">{row.debit > 0 ? fmtNum(row.debit) : '—'}</td>
+                                            <td className="p-1.5 tabular-nums text-danger-600 text-left">{row.debit > 0 ? fmtNum(row.debit) : '—'}</td>
                                             <td className="p-1.5 tabular-nums text-money-600 text-left">{row.credit > 0 ? fmtNum(row.credit) : '—'}</td>
-                                            <td className="p-1.5 tabular-nums text-amber-700 text-left">{fmtNum(running)}</td>
+                                            <td className="p-1.5 tabular-nums text-warn-700 text-left">{fmtNum(running)}</td>
                                           </tr>
                                         );
                                       })}
@@ -8036,7 +8036,7 @@ export default function Dashboard() {
                                       <tr className="bg-slate-50 font-bold">
                                         <td colSpan={2} className="p-1.5 text-slate-600">الرصيد النهائي</td>
                                         <td colSpan={2} className="p-1.5 text-slate-500 text-left text-xs">إجمالي الحركات</td>
-                                        <td className="p-1.5 tabular-nums text-amber-800 text-left">{fmtNum(balance)}</td>
+                                        <td className="p-1.5 tabular-nums text-warn-800 text-left">{fmtNum(balance)}</td>
                                       </tr>
                                     </tfoot>
                                   </table>
@@ -8131,9 +8131,9 @@ export default function Dashboard() {
                             <span className="block text-xs text-money-700 font-bold">إجمالي المبيعات</span>
                             <span className="block text-lg font-bold text-money-800 tabular-nums">{fmtNum(salesTotal)}</span>
                           </div>
-                          <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 text-center">
-                            <span className="block text-xs text-violet-700 font-bold">ربح المبيعات</span>
-                            <span className="block text-lg font-bold text-violet-800 tabular-nums">{fmtNum(salesProfit)}</span>
+                          <div className="bg-special-50 border border-special-100 rounded-xl p-3 text-center">
+                            <span className="block text-xs text-special-700 font-bold">ربح المبيعات</span>
+                            <span className="block text-lg font-bold text-special-800 tabular-nums">{fmtNum(salesProfit)}</span>
                           </div>
                         </div>
 
@@ -8141,14 +8141,14 @@ export default function Dashboard() {
                           {zRows.map(([label, val]) => (
                             <div key={label} className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-sm font-bold">
                               <span className="text-slate-600">{label}</span>
-                              <span className={`tabular-nums font-bold ${val < 0 ? 'text-rose-600' : 'text-primary-700'}`}>
+                              <span className={`tabular-nums font-bold ${val < 0 ? 'text-danger-600' : 'text-primary-700'}`}>
                                 {val < 0 ? '−' : '+'}{fmtNum(Math.abs(val))} د.ع
                               </span>
                             </div>
                           ))}
                           <div className="flex items-center justify-between bg-slate-900 rounded-xl px-3 py-2.5 text-sm font-bold">
                             <span className="text-white">صافي حركة النقد لليوم</span>
-                            <span className={`tabular-nums ${netCash < 0 ? 'text-rose-300' : 'text-money-300'}`}>
+                            <span className={`tabular-nums ${netCash < 0 ? 'text-danger-300' : 'text-money-300'}`}>
                               {netCash < 0 ? '−' : ''}{fmtNum(Math.abs(netCash))} د.ع
                             </span>
                           </div>
@@ -8174,17 +8174,17 @@ export default function Dashboard() {
                       {auditLog.slice(0, 50).map(entry => {
                         const actionMeta: Record<AuditEntry['action'], { label: string; color: string; bg: string }> = {
                           sale:               { label: 'بيع',       color: 'text-primary-700', bg: 'bg-primary-50' },
-                          purchase:           { label: 'شراء',      color: 'text-blue-700',   bg: 'bg-blue-50'   },
-                          expense:            { label: 'مصروف',     color: 'text-rose-700',   bg: 'bg-rose-50'   },
-                          payable_add:        { label: 'ذمّة مورّد', color: 'text-amber-700',  bg: 'bg-amber-50'  },
+                          purchase:           { label: 'شراء',      color: 'text-info-700',   bg: 'bg-info-50'   },
+                          expense:            { label: 'مصروف',     color: 'text-danger-700',   bg: 'bg-danger-50'   },
+                          payable_add:        { label: 'ذمّة مورّد', color: 'text-warn-700',  bg: 'bg-warn-50'  },
                           payable_settle:     { label: 'تسديد',     color: 'text-primary-700',bg: 'bg-primary-50'},
-                          receivable_add:     { label: 'ذمّة زبون', color: 'text-violet-700', bg: 'bg-violet-50' },
+                          receivable_add:     { label: 'ذمّة زبون', color: 'text-special-700', bg: 'bg-special-50' },
                           receivable_collect: { label: 'تحصيل',     color: 'text-primary-700',bg: 'bg-primary-50'},
-                          return:             { label: 'مرتجع',     color: 'text-rose-700',   bg: 'bg-rose-50'   },
+                          return:             { label: 'مرتجع',     color: 'text-danger-700',   bg: 'bg-danger-50'   },
                           inventory_import:   { label: 'استيراد مخزون', color: 'text-slate-700', bg: 'bg-slate-100' },
-                          inventory_edit:     { label: 'تعديل مخزون', color: 'text-blue-700',  bg: 'bg-blue-50'   },
-                          inventory_delete:   { label: 'حذف مادة',   color: 'text-rose-700',   bg: 'bg-rose-50'   },
-                          security:           { label: 'أمان',       color: 'text-amber-700',  bg: 'bg-amber-50'  },
+                          inventory_edit:     { label: 'تعديل مخزون', color: 'text-info-700',  bg: 'bg-info-50'   },
+                          inventory_delete:   { label: 'حذف مادة',   color: 'text-danger-700',   bg: 'bg-danger-50'   },
+                          security:           { label: 'أمان',       color: 'text-warn-700',  bg: 'bg-warn-50'  },
                         };
                         const meta = actionMeta[entry.action];
                         return (
@@ -8195,7 +8195,7 @@ export default function Dashboard() {
                             </div>
                             <div className="flex items-center gap-3 shrink-0 text-right">
                               {entry.amount > 0 && (
-                                <span className={`tabular-nums font-bold ${['expense','payable_settle','return'].includes(entry.action) ? 'text-rose-600' : 'text-primary-700'}`}>
+                                <span className={`tabular-nums font-bold ${['expense','payable_settle','return'].includes(entry.action) ? 'text-danger-600' : 'text-primary-700'}`}>
                                   {['expense','payable_settle','return'].includes(entry.action) ? '−' : '+'}{fmtNum(entry.amount)} د.ع
                                 </span>
                               )}
@@ -8217,7 +8217,7 @@ export default function Dashboard() {
                   {/* --- تغيير كلمة مرور التبويب المالي --- */}
                   <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
                     <div className="flex items-center gap-2">
-                      <ShieldCheck className="w-4 h-4 text-violet-600" />
+                      <ShieldCheck className="w-4 h-4 text-special-600" />
                       <span className="text-sm text-slate-600 font-bold">تغيير كلمة مرور الحسابات المالية</span>
                     </div>
                     <form
@@ -8254,7 +8254,7 @@ export default function Dashboard() {
                           value={changePinOld}
                           onChange={e => { setChangePinOld(e.target.value); setChangePinMsg(null); }}
                           placeholder="••••"
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center tabular-nums text-sm focus:outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-200 transition"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center tabular-nums text-sm focus:outline-none focus:border-special-400 focus:ring-1 focus:ring-special-200 transition"
                         />
                       </div>
                       <div className="space-y-1">
@@ -8264,7 +8264,7 @@ export default function Dashboard() {
                           value={changePinNew}
                           onChange={e => { setChangePinNew(e.target.value); setChangePinMsg(null); }}
                           placeholder="••••"
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center tabular-nums text-sm focus:outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-200 transition"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center tabular-nums text-sm focus:outline-none focus:border-special-400 focus:ring-1 focus:ring-special-200 transition"
                         />
                       </div>
                       <div className="space-y-1">
@@ -8274,18 +8274,18 @@ export default function Dashboard() {
                           value={changePinConfirm}
                           onChange={e => { setChangePinConfirm(e.target.value); setChangePinMsg(null); }}
                           placeholder="••••"
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center tabular-nums text-sm focus:outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-200 transition"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center tabular-nums text-sm focus:outline-none focus:border-special-400 focus:ring-1 focus:ring-special-200 transition"
                         />
                       </div>
                       <div className="sm:col-span-3 flex items-center gap-3">
                         <button
                           type="submit"
-                          className="bg-violet-600 hover:bg-violet-700 text-white font-bold px-6 py-2.5 rounded-xl text-xs cursor-pointer transition border-none font-sans"
+                          className="bg-special-600 hover:bg-special-700 text-white font-bold px-6 py-2.5 rounded-xl text-xs cursor-pointer transition border-none font-sans"
                         >
                           حفظ كلمة المرور الجديدة
                         </button>
                         {changePinMsg && (
-                          <span className={`text-sm font-bold ${changePinMsg.type === 'success' ? 'text-primary-700' : 'text-rose-600'}`}>
+                          <span className={`text-sm font-bold ${changePinMsg.type === 'success' ? 'text-primary-700' : 'text-danger-600'}`}>
                             {changePinMsg.text}
                           </span>
                         )}
@@ -8296,7 +8296,7 @@ export default function Dashboard() {
                   {/* --- إعداد نسبة تقدير التكلفة (C1) --- */}
                   <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
                     <div className="flex items-center gap-2">
-                      <Info className="w-4 h-4 text-amber-600" />
+                      <Info className="w-4 h-4 text-warn-600" />
                       <span className="text-sm text-slate-600 font-bold">نسبة تقدير التكلفة الافتراضية</span>
                     </div>
                     <p className="text-sm text-slate-500 font-semibold leading-relaxed">
@@ -8314,7 +8314,7 @@ export default function Dashboard() {
                             const v = Math.min(99, Math.max(1, Math.round(Number(e.target.value) || 0)));
                             setDefaultCostPercent(v);
                           }}
-                          className="w-20 bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center tabular-nums text-sm focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-200 transition"
+                          className="w-20 bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center tabular-nums text-sm focus:outline-none focus:border-warn-400 focus:ring-1 focus:ring-warn-200 transition"
                         />
                         <span className="text-xs text-slate-500 font-bold">% من سعر البيع</span>
                       </div>
@@ -8324,7 +8324,7 @@ export default function Dashboard() {
                           saveDefaultCostPercent(defaultCostPercent);
                           toast(`تم الحفظ: ستُقدَّر تكلفة المواد بلا سعر شراء بنسبة ${defaultCostPercent}% من سعر البيع.`, 'success');
                         }}
-                        className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs cursor-pointer transition border-none font-sans"
+                        className="bg-warn-500 hover:bg-warn-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs cursor-pointer transition border-none font-sans"
                       >
                         حفظ النسبة
                       </button>
@@ -8411,7 +8411,7 @@ export default function Dashboard() {
                 {/* Billing sums */}
                 <div className="border-t border-dashed border-slate-200/80 pt-3 mt-3 spacing-y-2">
                   {lastPrintedInvoice.discount > 0 && (
-                    <p className="flex justify-between text-rose-700 text-xs py-0.5">
+                    <p className="flex justify-between text-danger-700 text-xs py-0.5">
                       <span>الخصم المطبق:</span>
                       <span className="tabular-nums">-{fmtNum((lastPrintedInvoice.discount))} د.ع</span>
                     </p>
@@ -8470,7 +8470,7 @@ export default function Dashboard() {
               {/* Header */}
               <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                 <div>
-                  <span className="text-sm font-bold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-full uppercase">مرتجع مبيعات</span>
+                  <span className="text-sm font-bold text-danger-600 bg-danger-50 px-2.5 py-1 rounded-full uppercase">مرتجع مبيعات</span>
                   <h3 className="font-semibold text-slate-900 text-sm mt-2">إرجاع فاتورة {returnTarget.invoiceId}</h3>
                   <p className="text-sm text-slate-500 font-bold mt-0.5">الزبون: {returnTarget.customerName} • المبلغ الأصلي: {fmtNum(returnTarget.total)} د.ع</p>
                 </div>
@@ -8504,7 +8504,7 @@ export default function Dashboard() {
 
                 {/* Running total */}
                 {Object.values(returnQtys).some(q => q > 0) && (
-                  <div className="bg-rose-50 border border-rose-100 rounded-xl px-3 py-2 text-sm font-bold text-rose-700 flex justify-between">
+                  <div className="bg-danger-50 border border-danger-100 rounded-xl px-3 py-2 text-sm font-bold text-danger-700 flex justify-between">
                     <span>إجمالي مبلغ الاسترداد:</span>
                     <span className="tabular-nums">
                       {fmtNum(returnTarget.items.reduce((s, it, idx) => s + it.price * (returnQtys[idx] ?? 0), 0))} د.ع
@@ -8539,7 +8539,7 @@ export default function Dashboard() {
                 <button
                   type="submit"
                   disabled={!Object.values(returnQtys).some(q => q > 0)}
-                  className="w-full bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white font-bold text-xs py-3 rounded-xl cursor-pointer transition shadow-sm"
+                  className="w-full bg-danger-600 hover:bg-danger-700 disabled:opacity-40 text-white font-bold text-xs py-3 rounded-xl cursor-pointer transition shadow-sm"
                 >
                   تأكيد المرتجع وتحديث المخزون
                 </button>
@@ -8670,15 +8670,15 @@ export default function Dashboard() {
 
                   {/* Scan Error Overlay */}
                   {scanError && (
-                    <div className="absolute inset-0 bg-rose-950/80 backdrop-blur-xs flex flex-col items-center justify-center text-center p-4 z-20 font-sans">
-                      <div className="w-14 h-14 bg-rose-500 text-white rounded-full flex items-center justify-center mb-3 shadow-[0_0_20px_#ef4444]">
+                    <div className="absolute inset-0 bg-danger-950/80 backdrop-blur-xs flex flex-col items-center justify-center text-center p-4 z-20 font-sans">
+                      <div className="w-14 h-14 bg-danger-500 text-white rounded-full flex items-center justify-center mb-3 shadow-[0_0_20px_#ef4444]">
                         <X className="w-7 h-7" strokeWidth={3} />
                       </div>
                       <p className="text-white font-bold text-xs leading-relaxed max-w-xs">{scanError}</p>
                       <button
                         type="button"
                         onClick={() => startScanning(scanTarget)}
-                        className="mt-3 bg-white hover:bg-slate-100 text-rose-950 font-bold text-sm px-4 py-2 rounded-lg transition"
+                        className="mt-3 bg-white hover:bg-slate-100 text-danger-950 font-bold text-sm px-4 py-2 rounded-lg transition"
                       >
                         إعادة محاولة الاتصال
                       </button>
@@ -8730,7 +8730,7 @@ export default function Dashboard() {
                 اختر ملف المخزون <strong className="text-slate-900">(JSON)</strong> من جهازك — مثل ملف تصدير ES-PRO — وسيُستبدل مخزونك بالكامل بأصنافه، مع الباركود والأسعار (شراء وبيع) والكميات.
                 الكميات السالبة ستُحوَّل إلى صفر. {currentUser ? 'ستُرفع إلى حسابك السحابي.' : 'ستُحفظ محلياً (غير مسجّل الدخول).'}
               </p>
-              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-sm text-rose-800 font-bold">
+              <div className="bg-danger-50 border border-danger-200 rounded-xl p-3 text-sm text-danger-800 font-bold">
                 <AlertTriangle className="inline w-4 h-4 -mt-0.5 ml-1" />تنبيه: سيتم <strong>حذف كل المواد الحالية</strong> (بما فيها التجريبية) واستبدالها بمواد الملف. لن تتأثّر الفواتير أو المبيعات السابقة. قد تستغرق العملية دقيقة — لا تغلق الصفحة.
               </div>
               <div className="flex gap-2">
@@ -8739,7 +8739,7 @@ export default function Dashboard() {
                   إلغاء
                 </button>
                 <button onClick={() => bulkImportFileRef.current?.click()}
-                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white rounded-xl py-2.5 text-xs font-semibold transition cursor-pointer">
+                  className="flex-1 bg-danger-600 hover:bg-danger-700 text-white rounded-xl py-2.5 text-xs font-semibold transition cursor-pointer">
                   اختر الملف واستبدل المخزون
                 </button>
               </div>
@@ -8772,8 +8772,8 @@ export default function Dashboard() {
               dir="rtl"
             >
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 bg-rose-100 rounded-2xl flex items-center justify-center shrink-0">
-                  <Trash2 className="w-5 h-5 text-rose-600" />
+                <div className="w-11 h-11 bg-danger-100 rounded-2xl flex items-center justify-center shrink-0">
+                  <Trash2 className="w-5 h-5 text-danger-600" />
                 </div>
                 <div>
                   <h3 className="font-semibold text-sm text-slate-900">حذف مادة من المخزون</h3>
@@ -8783,11 +8783,11 @@ export default function Dashboard() {
               <p className="text-xs text-slate-600 font-medium leading-relaxed">
                 هل أنت متأكد من حذف <strong className="text-slate-900">{deleteMedTarget.nameAr}</strong> نهائياً؟
                 {deleteMedTarget.availableQuantity > 0 && (
-                  <span className="text-rose-700 font-bold"> (يوجد {deleteMedTarget.availableQuantity} علبة في المخزون حالياً)</span>
+                  <span className="text-danger-700 font-bold"> (يوجد {deleteMedTarget.availableQuantity} علبة في المخزون حالياً)</span>
                 )}
                 {' '}{currentUser ? 'سيُحذف من حسابك السحابي أيضاً.' : 'سيُحذف محلياً (غير مسجّل الدخول).'}
               </p>
-              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-sm text-rose-800 font-bold">
+              <div className="bg-danger-50 border border-danger-200 rounded-xl p-3 text-sm text-danger-800 font-bold">
                 <AlertTriangle className="inline w-4 h-4 -mt-0.5 ml-1" />لن تتأثّر الفواتير أو المبيعات السابقة المسجّلة لهذه المادة.
               </div>
               <div className="flex gap-2">
@@ -8796,7 +8796,7 @@ export default function Dashboard() {
                   إلغاء
                 </button>
                 <button onClick={confirmDeleteMedicine}
-                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white rounded-xl py-2.5 text-xs font-semibold transition cursor-pointer">
+                  className="flex-1 bg-danger-600 hover:bg-danger-700 text-white rounded-xl py-2.5 text-xs font-semibold transition cursor-pointer">
                   نعم، احذف المادة
                 </button>
               </div>

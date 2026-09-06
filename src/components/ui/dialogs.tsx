@@ -176,7 +176,7 @@ function ModalView({ modal }: { modal: Modal }) {
         )}
         <div className="flex gap-2 justify-start flex-row-reverse">
           <button ref={confirmRef} type="submit"
-            className={`flex-1 h-11 rounded-lg font-bold text-sm text-white transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 ${danger ? 'bg-danger hover:bg-red-800 focus:ring-danger-line' : 'bg-primary-600 hover:bg-primary-700 focus:ring-primary-200'}`}>
+            className={`flex-1 h-11 rounded-lg font-bold text-sm text-white transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 ${danger ? 'bg-danger hover:bg-danger-800 focus:ring-danger-line' : 'bg-primary-600 hover:bg-primary-700 focus:ring-primary-200'}`}>
             {opts.confirmText ?? 'موافق'}
           </button>
           {!opts.hideCancel && (

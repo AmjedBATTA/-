@@ -49,15 +49,102 @@
   --color-net-fg: #A7F3D0;
 
   /* الحالات */
-  --color-danger:      #B91C1C;
-  --color-danger-soft: #FEF2F2;
-  --color-danger-line: #FECACA;
-  --color-warn:        #C2410C;
-  --color-warn-soft:   #FFF7ED;
-  --color-warn-line:   #FED7AA;
-  --color-info:        #1D4ED8;
-  --color-info-soft:   #EFF6FF;
-  --color-info-line:   #BFDBFE;
+
+  /* ══════════════════════════════════════════════════════════
+     حالات إضافية — كل نطاق كامل (50-950) بنفس قيم Tailwind الأصلية
+     تماماً (oklch منسوخ حرفياً)، فلا يتغيّر أي لون فعلياً على الشاشة؛
+     الاسم فقط يصير دلالياً بدل اسم Tailwind الخام (rose/amber/blue/…).
+     ══════════════════════════════════════════════════════════ */
+  /* danger — كان يُكتب rose-* (الغالب) وred-* (أقلية) لنفس معنى الخطأ/الحذف؛
+     وُحِّد الاثنان في عائلة rose حتى لا يبقى لونا خطأ مختلفان في التطبيق. */
+  --color-danger-50:  oklch(96.9% 0.015 12.422);
+  --color-danger-100: oklch(94.1% 0.03 12.58);
+  --color-danger-200: oklch(89.2% 0.058 10.001);
+  --color-danger-300: oklch(81% 0.117 11.638);
+  --color-danger-400: oklch(71.2% 0.194 13.428);
+  --color-danger-500: oklch(64.5% 0.246 16.439);
+  --color-danger-600: oklch(58.6% 0.253 17.585);
+  --color-danger-700: oklch(51.4% 0.222 16.935);
+  --color-danger-800: oklch(45.5% 0.188 13.697);
+  --color-danger-900: oklch(41% 0.159 10.272);
+  --color-danger-950: oklch(27.1% 0.105 12.094);
+  --color-danger:      var(--color-danger-700);
+  --color-danger-soft: var(--color-danger-50);
+  --color-danger-line: var(--color-danger-200);
+
+  /* warn — كان amber-* (الغالب) وorange-* (أقلية) لنفس معنى التحذير/الانحراف؛
+     وُحِّد الاثنان في عائلة amber. */
+  --color-warn-50:  oklch(98.7% 0.022 95.277);
+  --color-warn-100: oklch(96.2% 0.059 95.617);
+  --color-warn-200: oklch(92.4% 0.12 95.746);
+  --color-warn-300: oklch(87.9% 0.169 91.605);
+  --color-warn-400: oklch(82.8% 0.189 84.429);
+  --color-warn-500: oklch(76.9% 0.188 70.08);
+  --color-warn-600: oklch(66.6% 0.179 58.318);
+  --color-warn-700: oklch(55.5% 0.163 48.998);
+  --color-warn-800: oklch(47.3% 0.137 46.201);
+  --color-warn-900: oklch(41.4% 0.112 45.904);
+  --color-warn-950: oklch(27.9% 0.077 45.635);
+  --color-warn:      var(--color-warn-700);
+  --color-warn-soft: var(--color-warn-50);
+  --color-warn-line: var(--color-warn-200);
+
+  /* info — كان blue-* بلا تغيير */
+  --color-info-50:  oklch(97% 0.014 254.604);
+  --color-info-100: oklch(93.2% 0.032 255.585);
+  --color-info-200: oklch(88.2% 0.059 254.128);
+  --color-info-300: oklch(80.9% 0.105 251.813);
+  --color-info-400: oklch(70.7% 0.165 254.624);
+  --color-info-500: oklch(62.3% 0.214 259.815);
+  --color-info-600: oklch(54.6% 0.245 262.881);
+  --color-info-700: oklch(48.8% 0.243 264.376);
+  --color-info-800: oklch(42.4% 0.199 265.638);
+  --color-info-900: oklch(37.9% 0.146 265.522);
+  --color-info-950: oklch(28.2% 0.091 267.935);
+  --color-info:      var(--color-info-700);
+  --color-info-soft: var(--color-info-50);
+  --color-info-line: var(--color-info-200);
+
+  /* accent — لوحات مساعدة (سجل الحركة)، كان indigo-* بلا تغيير */
+  --color-accent-50:  oklch(96.2% 0.018 272.314);
+  --color-accent-100: oklch(93% 0.034 272.788);
+  --color-accent-200: oklch(87% 0.065 274.039);
+  --color-accent-300: oklch(78.5% 0.115 274.713);
+  --color-accent-400: oklch(67.3% 0.182 276.935);
+  --color-accent-500: oklch(58.5% 0.233 277.117);
+  --color-accent-600: oklch(51.1% 0.262 276.966);
+  --color-accent-700: oklch(45.7% 0.24 277.023);
+  --color-accent-800: oklch(39.8% 0.195 277.366);
+  --color-accent-900: oklch(35.9% 0.144 278.697);
+  --color-accent-950: oklch(25.7% 0.09 281.288);
+
+  /* special — وضع السعر الرسمي / صلاحية المدير / تطابق محفوظ من الذاكرة؛
+     كان violet-* (الغالب) وpurple-* (أقلية) لنفس المعنى، وُحِّدا في violet. */
+  --color-special-50:  oklch(96.9% 0.016 293.756);
+  --color-special-100: oklch(94.3% 0.029 294.588);
+  --color-special-200: oklch(89.4% 0.057 293.283);
+  --color-special-300: oklch(81.1% 0.111 293.571);
+  --color-special-400: oklch(70.2% 0.183 293.541);
+  --color-special-500: oklch(60.6% 0.25 292.717);
+  --color-special-600: oklch(54.1% 0.281 293.009);
+  --color-special-700: oklch(49.1% 0.27 292.581);
+  --color-special-800: oklch(43.2% 0.232 292.759);
+  --color-special-900: oklch(38% 0.189 293.745);
+  --color-special-950: oklch(28.3% 0.141 291.089);
+
+  /* custom — سعر مخصّص يدوياً لسطر واحد في السلة (مختلف عن السعر الرسمي)؛
+     كان sky-* بلا تغيير */
+  --color-custom-50:  oklch(97.7% 0.013 236.62);
+  --color-custom-100: oklch(95.1% 0.026 236.824);
+  --color-custom-200: oklch(90.1% 0.058 230.902);
+  --color-custom-300: oklch(82.8% 0.111 230.318);
+  --color-custom-400: oklch(74.6% 0.16 232.661);
+  --color-custom-500: oklch(68.5% 0.169 237.323);
+  --color-custom-600: oklch(58.8% 0.158 241.966);
+  --color-custom-700: oklch(50% 0.134 242.749);
+  --color-custom-800: oklch(44.3% 0.11 240.79);
+  --color-custom-900: oklch(39.1% 0.09 240.876);
+  --color-custom-950: oklch(29.3% 0.066 243.157);
 }
 
 :root { color-scheme: light; }

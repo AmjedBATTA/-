@@ -103,7 +103,7 @@ export const InventorySearchBar = forwardRef<POSSearchHandle, InventorySearchBar
           <button
             type="button"
             onClick={() => { setInput(''); onQueryChange(''); }}
-            className="absolute left-2.5 top-2 text-slate-500 hover:text-rose-600 transition cursor-pointer"
+            className="absolute left-2.5 top-2 text-slate-500 hover:text-danger-600 transition cursor-pointer"
             title="مسح البحث"
           >
             <X className="w-4 h-4" />
