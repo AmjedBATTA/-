@@ -1,5 +1,6 @@
 import React, { useState, useReducer, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { X, Calculator as CalculatorIcon } from 'lucide-react';
+import { fmtNum } from '../../utils/format';
 
 // =========================================================
 // CALCULATOR — لوحة حساب سريعة بجانب سلة البيع، بنفس نمط عزل POSSearchBar
@@ -27,12 +28,12 @@ function calcApply(a: number, b: number, op: CalcOp): number {
   }
 }
 
-// يعرض الرقم بفواصل الآلاف (متّسق مع toLocaleString المستخدَم في كل مبالغ التطبيق)
+// يعرض الرقم بفواصل الآلاف وأرقام لاتينية (fmtNum الموحّد في كل مبالغ التطبيق)
 // مع الحفاظ على نقطة عشرية قيد الكتابة كما هي بدل حذفها.
 function formatCalcDisplay(s: string): string {
-  if (s.endsWith('.')) return Number(s.slice(0, -1)).toLocaleString() + '.';
+  if (s.endsWith('.')) return fmtNum(Number(s.slice(0, -1))) + '.';
   const n = Number(s);
-  return Number.isFinite(n) ? n.toLocaleString(undefined, { maximumFractionDigits: 6 }) : s;
+  return Number.isFinite(n) ? fmtNum(n, 6) : s;
 }
 
 // حالة الحاسبة كاملةً في مُخفِّض واحد: كل ضغطة (زر، مفتاح، أو قيمة مدفوعة من السلة) تُطبَّق
@@ -190,14 +191,14 @@ export const Calculator = React.memo(forwardRef<CalculatorHandle, CalculatorProp
   const displaySize = shown.length > 18 ? 'text-sm' : shown.length > 12 ? 'text-base' : 'text-xl';
   const expr = st.tokens.join(' ');
 
-  const base = 'h-11 sm:h-9 rounded-xl text-sm font-black flex items-center justify-center transition cursor-pointer select-none';
+  const base = 'h-11 sm:h-9 rounded-xl text-sm font-bold flex items-center justify-center transition cursor-pointer select-none';
   const digitCls = `${base} bg-slate-800 text-white hover:bg-slate-700`;
   const funcCls = `${base} bg-slate-700 text-white hover:bg-slate-600`;
-  const utilCls = `${base} h-8 sm:h-7 text-[11px] bg-slate-800/70 text-slate-300 hover:bg-slate-700 hover:text-white`;
+  const utilCls = `${base} h-8 sm:h-7 text-sm bg-slate-800/70 text-slate-300 hover:bg-slate-700 hover:text-white`;
   // زر العامل المعلَّق يُضاء ليعرف المستخدم ما الذي ينتظره
   const opCls = (op: CalcOp) => `${base} ${st.pendingOp === op && st.overwrite
-    ? 'bg-white text-emerald-700 ring-2 ring-emerald-400'
-    : 'bg-emerald-600 text-white hover:bg-emerald-500'}`;
+    ? 'bg-white text-primary-700 ring-2 ring-primary-400'
+    : 'bg-primary-600 text-white hover:bg-primary-500'}`;
   const digit = (d: string) => () => dispatch({ type: 'digit', d });
   const op = (o: CalcOp | null) => () => dispatch({ type: 'op', op: o });
 
@@ -207,7 +208,7 @@ export const Calculator = React.memo(forwardRef<CalculatorHandle, CalculatorProp
       <div className="flex items-center justify-between px-1 -m-1 p-1 rounded-lg touch-none"
         style={{ cursor: dragHandleProps ? 'grab' : undefined }}
         {...(dragHandleProps || {})}>
-        <span className="text-[10px] font-black text-slate-400 select-none">⠿ حاسبة سريعة</span>
+        <span className="text-sm font-bold text-slate-500 select-none">⠿ حاسبة سريعة</span>
         <button type="button" onClick={onClose} title="إغلاق الحاسبة" aria-label="إغلاق الحاسبة"
           className="text-slate-500 hover:text-rose-400 transition cursor-pointer">
           <X className="w-3.5 h-3.5" />
@@ -215,17 +216,17 @@ export const Calculator = React.memo(forwardRef<CalculatorHandle, CalculatorProp
       </div>
       {/* شاشة العرض: شريط التعبير الحي فوق الناتج */}
       <div className="text-left px-1 pb-1 overflow-hidden" dir="ltr">
-        <div className="font-mono text-[11px] text-slate-400 min-h-[16px] truncate" title={expr} aria-live="polite">
+        <div className="tabular-nums text-sm text-slate-500 min-h-[16px] truncate" title={expr} aria-live="polite">
           {expr || ' '}
         </div>
-        <span className={`font-mono font-black ${isError ? 'text-rose-400' : 'text-white'} ${displaySize} truncate block`} aria-live="polite">{shown}</span>
+        <span className={`tabular-nums font-bold ${isError ? 'text-rose-400' : 'text-white'} ${displaySize} truncate block`} aria-live="polite">{shown}</span>
       </div>
       {/* صف الأدوات: مسح خانة، تقريب للعملة، نسخ */}
       <div className="grid grid-cols-4 gap-1.5" dir="ltr">
         <button type="button" onClick={() => dispatch({ type: 'backspace' })} className={utilCls} aria-label="مسح آخر خانة" title="مسح آخر خانة (Backspace)">⌫</button>
         <button type="button" onClick={() => dispatch({ type: 'round', step: 250 })} className={utilCls} aria-label="تقريب لأقرب 250 دينار" title="تقريب لأقرب 250 د.ع">≈250</button>
         <button type="button" onClick={() => dispatch({ type: 'round', step: 500 })} className={utilCls} aria-label="تقريب لأقرب 500 دينار" title="تقريب لأقرب 500 د.ع">≈500</button>
-        <button type="button" onClick={copyResult} className={`${utilCls} ${copied ? 'text-emerald-400' : ''}`} aria-label="نسخ الناتج" title="نسخ الناتج">{copied ? '✓' : 'نسخ'}</button>
+        <button type="button" onClick={copyResult} className={`${utilCls} ${copied ? 'text-primary-400' : ''}`} aria-label="نسخ الناتج" title="نسخ الناتج">{copied ? '✓' : 'نسخ'}</button>
       </div>
       <div className="grid grid-cols-4 gap-1.5" dir="ltr">
         <button type="button" onClick={() => dispatch({ type: 'clear' })} className={`${funcCls} bg-rose-900/60 hover:bg-rose-800/70 text-rose-200`} aria-label="مسح الكل" title="مسح الكل (Escape)">AC</button>
@@ -244,7 +245,7 @@ export const Calculator = React.memo(forwardRef<CalculatorHandle, CalculatorProp
 
         <button type="button" onClick={digit('0')} className={`${digitCls} col-span-2`}>0</button>
         <button type="button" onClick={() => dispatch({ type: 'dot' })} className={digitCls} aria-label="فاصلة عشرية">.</button>
-        <button type="button" onClick={op(null)} className={`${base} bg-emerald-500 text-white hover:bg-emerald-400`} aria-label="يساوي" title="يساوي (Enter)">=</button>
+        <button type="button" onClick={op(null)} className={`${base} bg-primary-700 text-white hover:bg-primary-600`} aria-label="يساوي" title="يساوي (Enter)">=</button>
       </div>
     </div>
   );
@@ -325,7 +326,7 @@ export const DraggableCalculator = React.memo(forwardRef<CalculatorHandle, Dragg
         </div>
       ) : (
         <button type="button" title="حاسبة سريعة — اسحبها لتغيير مكانها" aria-label="حاسبة سريعة"
-          className={`w-11 h-11 bg-slate-900 border border-slate-700 rounded-2xl shadow-lg flex items-center justify-center text-slate-300 hover:text-emerald-400 hover:border-emerald-500 transition touch-none select-none ${dragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+          className={`w-11 h-11 bg-slate-900 border border-slate-700 rounded-2xl shadow-lg flex items-center justify-center text-slate-300 hover:text-primary-400 hover:border-primary-500 transition touch-none select-none ${dragging ? 'cursor-grabbing' : 'cursor-grab'}`}
           {...dragHandlers}>
           <CalculatorIcon className="w-5 h-5" />
         </button>

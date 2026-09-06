@@ -35,7 +35,7 @@ export const POSSearchBar = forwardRef<POSSearchHandle, POSSearchBarProps>(
     return (
       <div className="flex items-center gap-2 w-full sm:w-auto">
         <div className="relative flex-1 sm:flex-initial">
-          <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
+          <Search className="w-4 h-4 text-slate-500 absolute right-3 top-2.5" />
           <input
             ref={inputRef}
             type="text"
@@ -48,14 +48,14 @@ export const POSSearchBar = forwardRef<POSSearchHandle, POSSearchBarProps>(
                 if (onEnter(input)) { setInput(''); onQueryChange(''); }
               }
             }}
-            className="bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-3 py-[11px] text-xs text-slate-800 placeholder:text-slate-400 focus:outline-emerald-500 w-full sm:w-[27rem]"
+            className="bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-3 py-[11px] text-xs text-slate-800 placeholder:text-slate-500 focus:outline-primary-500 w-full sm:w-[27rem]"
             placeholder="امسح الباركود أو اكتب الاسم ثم Enter..."
           />
         </div>
         <button
           type="button"
           onClick={onScanClick}
-          className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-850 text-white rounded-xl px-3 py-1.5 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
+          className="bg-primary-600 hover:bg-primary-700 active:bg-primary-800 text-white rounded-xl px-3 py-1.5 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
           title="قراءة الباركود بالكاميرا (Scan Barcode)"
         >
           <Barcode className="w-3.5 h-3.5" />
@@ -89,21 +89,21 @@ export const InventorySearchBar = forwardRef<POSSearchHandle, InventorySearchBar
     }), [onQueryChange]);
     return (
       <div className="relative flex-1 min-w-[180px]">
-        <Search className="w-4 h-4 text-slate-400 absolute right-3 top-2.5" />
+        <Search className="w-4 h-4 text-slate-500 absolute right-3 top-2.5" />
         <input
           ref={inputRef}
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onFocus={() => { setInput(''); onQueryChange(''); }}
-          className="w-full bg-white border border-slate-200 rounded-xl pr-9 pl-8 py-2 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-emerald-500 font-medium"
+          className="w-full bg-white border border-slate-200 rounded-xl pr-9 pl-8 py-2 text-xs text-slate-800 placeholder:text-slate-500 focus:outline-primary-500 font-medium"
           placeholder="بحث بالاسم أو الباركود أو الفئة..."
         />
         {input && (
           <button
             type="button"
             onClick={() => { setInput(''); onQueryChange(''); }}
-            className="absolute left-2.5 top-2 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+            className="absolute left-2.5 top-2 text-slate-500 hover:text-rose-600 transition cursor-pointer"
             title="مسح البحث"
           >
             <X className="w-4 h-4" />

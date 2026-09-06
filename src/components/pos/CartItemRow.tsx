@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import type { Medicine } from '../../types';
 import type { POSItem } from '../dashboard/shared';
+import { fmtNum } from '../../utils/format';
 
 // =========================================================
 // CART ITEM ROW — مكوّن معزول بـ React.memo لصفوف السلة
@@ -52,21 +53,21 @@ export const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, o
           onDoubleClick={() => onAddShortage(item.medicine)}
           title="نقرة مزدوجة: إضافة إلى نواقص الأدوية — مسح الباركود مرة ثانية: بيع برصيد صفر">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="font-extrabold text-rose-200 text-xs truncate">{item.medicine.nameAr}</span>
-            <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-rose-900/60 text-rose-300 shrink-0">نفذ</span>
+            <span className="font-semibold text-rose-200 text-xs leading-snug line-clamp-2">{item.medicine.nameAr}</span>
+            <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-rose-900/60 text-rose-300 shrink-0">نفذ</span>
             {soldToday > 0 && (
-              <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-amber-900/50 text-amber-300 shrink-0">مبيع اليوم: {soldToday}</span>
+              <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-amber-900/50 text-amber-300 shrink-0">مبيع اليوم: {soldToday}</span>
             )}
           </div>
           <div className="flex items-baseline gap-2 flex-wrap">
-            <span className="text-[11px] text-rose-300/80 font-mono font-bold">{shownUnit.toLocaleString()} د.ع</span>
+            <span className="text-sm text-rose-300/80 tabular-nums font-bold">{fmtNum(shownUnit)} د.ع</span>
             {!showVirtualPrice && costUnit > 0 && (
-              <span className="text-[10px] text-rose-300/60 font-mono">شراء: {costUnit.toLocaleString()}</span>
+              <span className="text-sm text-rose-300/60 tabular-nums">شراء: {fmtNum(costUnit)}</span>
             )}
           </div>
         </div>
         <button type="button" onClick={() => onRemove(item.medicine.id)}
-          className="w-7 h-7 text-rose-700 hover:text-rose-300 flex items-center justify-center cursor-pointer transition shrink-0">
+          className="w-9 h-10 text-rose-700 hover:text-rose-300 flex items-center justify-center cursor-pointer transition shrink-0">
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -81,7 +82,7 @@ export const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, o
       {onAddToCalculator && (
         <button type="button" onClick={() => onAddToCalculator(shownTotal)}
           title="أضف إجمالي هذه المادة للحاسبة"
-          className="absolute top-1 left-1 w-4 h-4 bg-slate-700 hover:bg-emerald-600 text-slate-300 hover:text-white rounded flex items-center justify-center text-[10px] font-black leading-none cursor-pointer transition z-10">
+          className="absolute top-1 left-1 w-4 h-4 bg-slate-700 hover:bg-primary-600 text-slate-300 hover:text-white rounded flex items-center justify-center text-sm font-bold leading-none cursor-pointer transition z-10">
           +
         </button>
       )}
@@ -89,22 +90,22 @@ export const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, o
         onDoubleClick={() => onAddShortage(item.medicine)}
         title="نقرة مزدوجة: إضافة إلى نواقص الأدوية">
         <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-          <span className={`font-extrabold text-xs truncate ${item.zeroStock ? 'text-rose-100' : 'text-white'}`}>{item.medicine.nameAr}</span>
+          <span className={`font-semibold text-xs leading-snug line-clamp-2 ${item.zeroStock ? 'text-rose-100' : 'text-white'}`}>{item.medicine.nameAr}</span>
           {item.customPrice !== undefined && (
-            <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-sky-900/60 text-sky-300 shrink-0" title={`سعر المخزون ${item.medicine.price.toLocaleString()} د.ع`}>سعر مخصّص</span>
+            <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-sky-900/60 text-sky-300 shrink-0" title={`سعر المخزون ${fmtNum(item.medicine.price)} د.ع`}>سعر مخصّص</span>
           )}
           {/* بيع برصيد صفر: شارة تنبيه + مجموع ما بيع منها اليوم (السجل + هذه السلة) */}
           {item.zeroStock && (
             <>
-              <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-rose-900/60 text-rose-300 shrink-0">بيع بلا رصيد</span>
-              <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-amber-900/50 text-amber-300 shrink-0">مبيع اليوم: {soldToday + item.quantity}</span>
+              <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-rose-900/60 text-rose-300 shrink-0">بيع بلا رصيد</span>
+              <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-amber-900/50 text-amber-300 shrink-0">مبيع اليوم: {soldToday + item.quantity}</span>
             </>
           )}
         </div>
         {/* وضع «الرسمي»: الإجمالي الرسمي وحده بلا أي تفاصيل (سعر وحدة/عدد/شراء) — شاشة
             نظيفة تواجه الزبون. الوضع العادي: سعر الوحدة × العدد + الشراء على سطر واحد، والإجمالي بجانبها. */}
         <div className="flex items-baseline justify-between gap-2 flex-wrap">
-          <span className="text-[10px] text-slate-400 font-mono">
+          <span className="text-sm text-slate-500 tabular-nums">
             {editingPrice !== null ? (
               // حقل السعر المخصّص — يوقف النقر المزدوج للنواقص كي لا يتداخل مع التحرير
               <input
@@ -113,7 +114,7 @@ export const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, o
                 onChange={e => setEditingPrice(e.target.value)}
                 onBlur={commitPrice}
                 onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commitPrice(); } else if (e.key === 'Escape') setEditingPrice(null); }}
-                className="w-20 bg-white text-slate-900 font-mono font-bold text-xs rounded-md px-1.5 py-0.5 border border-sky-400 focus:outline-sky-500"
+                className="w-20 bg-white text-slate-900 tabular-nums font-bold text-xs rounded-md px-1.5 py-0.5 border border-sky-400 focus:outline-sky-500"
                 title="سعر الوحدة لهذا السطر — Enter للاعتماد، Escape للإلغاء، صفر أو نفس سعر المخزون يعيد الأصل"
               />
             ) : !showVirtualPrice ? (
@@ -121,12 +122,12 @@ export const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, o
                 <button type="button"
                   onClick={e => { e.stopPropagation(); setEditingPrice(String(shownUnit)); }}
                   title="انقر لبيع هذا السطر بسعر آخر"
-                  className={`font-bold cursor-pointer border-b border-dashed hover:text-white transition ${item.customPrice !== undefined ? 'text-sky-300 border-sky-500' : 'text-emerald-400 border-emerald-700'}`}>
-                  {shownUnit.toLocaleString()}
+                  className={`font-bold cursor-pointer border-b border-dashed hover:text-white transition ${item.customPrice !== undefined ? 'text-sky-300 border-sky-500' : 'text-primary-400 border-primary-700'}`}>
+                  {fmtNum(shownUnit)}
                 </button>
-                {item.customPrice !== undefined && <span className="line-through opacity-60 mr-1">{' '}{unitPrice.toLocaleString()}{' '}</span>}
+                {item.customPrice !== undefined && <span className="line-through opacity-60 mr-1">{' '}{fmtNum(unitPrice)}{' '}</span>}
                 <span> × {item.quantity}</span>
-                {item.medicine.costPrice ? <span> · شراء {(item.medicine.costPrice * item.quantity).toLocaleString()}</span> : null}
+                {item.medicine.costPrice ? <span> · شراء {fmtNum((item.medicine.costPrice * item.quantity))}</span> : null}
               </>
             ) : null}
           </span>
@@ -134,19 +135,19 @@ export const CartItemRow = React.memo(({ item, showVirtualPrice, onInc, onDec, o
           <span
             onClick={showVirtualPrice ? (e => { e.stopPropagation(); setEditingPrice(String(shownUnit)); }) : undefined}
             title={showVirtualPrice ? 'انقر لبيع هذا السطر بسعر آخر' : undefined}
-            className={`text-base font-mono font-black leading-none ${item.customPrice !== undefined ? 'text-sky-300' : showVirtualPrice ? 'text-purple-400' : 'text-amber-400'} ${showVirtualPrice ? 'cursor-pointer' : ''}`}>
-            {shownTotal.toLocaleString()}<span className={`text-[10px] font-bold mr-1 ${item.customPrice !== undefined ? 'text-sky-400/80' : showVirtualPrice ? 'text-purple-400' : 'text-amber-500/80'}`}>د.ع</span>
+            className={`text-base tabular-nums font-bold leading-none ${item.customPrice !== undefined ? 'text-sky-300' : showVirtualPrice ? 'text-purple-400' : 'text-amber-400'} ${showVirtualPrice ? 'cursor-pointer' : ''}`}>
+            {fmtNum(shownTotal)}<span className={`text-sm font-bold mr-1 ${item.customPrice !== undefined ? 'text-sky-400/80' : showVirtualPrice ? 'text-purple-400' : 'text-amber-500/80'}`}>د.ع</span>
           </span>
         </div>
       </div>
       <div className="flex items-center gap-1 shrink-0">
         <button type="button" onClick={() => onDec(item.medicine.id)}
-          className="w-7 h-7 bg-slate-700 hover:bg-slate-600 text-white rounded-lg flex items-center justify-center font-bold text-sm cursor-pointer transition">−</button>
-        <span className="font-black text-white font-mono w-6 text-center text-sm">{item.quantity}</span>
+          className="w-9 h-10 bg-slate-700 hover:bg-slate-600 text-white rounded-lg flex items-center justify-center font-bold text-base cursor-pointer transition" aria-label="إنقاص الكمية">−</button>
+        <span className="font-bold text-white tabular-nums w-8 text-center text-base">{item.quantity}</span>
         <button type="button" onClick={() => onInc(item.medicine.id)}
-          className="w-7 h-7 bg-slate-700 hover:bg-emerald-700 text-white rounded-lg flex items-center justify-center font-bold text-sm cursor-pointer transition">+</button>
+          className="w-9 h-10 bg-slate-700 hover:bg-primary-700 text-white rounded-lg flex items-center justify-center font-bold text-base cursor-pointer transition" aria-label="زيادة الكمية">+</button>
         <button type="button" onClick={() => onRemove(item.medicine.id)}
-          className="w-7 h-7 text-slate-600 hover:text-rose-400 flex items-center justify-center cursor-pointer transition">
+          className="w-9 h-10 text-slate-600 hover:text-rose-400 flex items-center justify-center cursor-pointer transition" aria-label="حذف من السلة">
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>

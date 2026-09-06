@@ -1,40 +1,77 @@
-@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,500;0,700;1,500&display=swap');
 @import "tailwindcss";
 
-@theme {
-  --font-sans: "Cairo", system-ui, -apple-system, sans-serif;
-  --font-display: "Playfair Display", serif;
-}
-
 /* ══════════════════════════════════════════════════════════
-   LUXURY DESERT GOLD — انوار الحسن Premium Theme
-   Warm Peach × Sand Gold × Cream Glassmorphism
-   Inspired by luxury car / desert sunset aesthetic
+   نظام الألوان الدلالي — الخيار B «الحبر والتركواز السريري»
+   ──────────────────────────────────────────────────────────
+   قاعدة واحدة: اللون يُكتب باسمه الدلالي ويظهر كما كُتب.
+   - primary  : تركوازي عميق للأفعال والتبويبات والعلامة (primary-600 = #0F766E، أبيض عليه 5.47:1 AA)
+   - money    : أخضر محجوز للمال والنجاح فقط (ربح، نقد، مبيعات، «متزامن»)
+   - ink/muted: حبر كحلي للنصوص بدل الأسود الصافي (أقل إجهاداً تحت إضاءة LED)
+   - danger/warn/info: حالات الخطأ والتحذير والمعلومة
+   لا زجاجية، لا علامات مائية، لا !important. الظلال والحدود تأتي من فئات Tailwind نفسها.
    ══════════════════════════════════════════════════════════ */
+@theme {
+  --font-sans: "IBM Plex Sans Arabic", "Noto Sans Arabic", system-ui, -apple-system, "Segoe UI", sans-serif;
 
-:root {
-  --lux-cream:       #FDF6EE;
-  --lux-peach-pale:  #FFE8D4;
-  --lux-peach:       #FFC9A0;
-  --lux-peach-deep:  #EDA878;
-  --lux-gold:        #B8862A;
-  --lux-gold-light:  #DFB060;
-  --lux-gold-pale:   #F5DAAC;
-  --lux-bronze:      #8A6020;
-  --lux-warm-dark:   #2A1500;
-  --lux-warm-mid:    #5C3A1E;
-  --lux-warm-light:  #9A7050;
-  --lux-glass:       rgba(255, 250, 242, 0.86);
-  --lux-glass-border:rgba(184, 134, 42, 0.22);
-  --lux-shadow:      0 24px 64px rgba(120, 68, 12, 0.18), 0 4px 24px rgba(120, 68, 12, 0.10);
-  --lux-shadow-sm:   0 4px 16px rgba(120, 68, 12, 0.12);
+  /* الأساسي — سلّم مزاح درجةً واحدة عن teal في Tailwind حتى يبقى «600» هو لون الزر الرئيسي بتباين AA */
+  --color-primary-50:  #F0FDFA;
+  --color-primary-100: #CCFBF1;
+  --color-primary-200: #99F6E4;
+  --color-primary-300: #5EEAD4;
+  --color-primary-400: #2DD4BF;
+  --color-primary-500: #0D9488;
+  --color-primary-600: #0F766E;
+  --color-primary-700: #115E59;
+  --color-primary-800: #134E4A;
+  --color-primary-900: #042F2E;
+  --color-primary-950: #021F1E;
+
+  /* المال والنجاح — أخضر فقط هنا */
+  --color-money-50:  #F0FDF4;
+  --color-money-100: #DCFCE7;
+  --color-money-200: #BBF7D0;
+  --color-money-300: #86EFAC;
+  --color-money-400: #4ADE80;
+  --color-money-500: #22C55E;
+  --color-money-600: #15803D;
+  --color-money-700: #166534;
+  --color-money-800: #14532D;
+  --color-money-900: #052E16;
+  --color-money-950: #03210F;
+
+  /* الأسطح والنصوص */
+  --color-page:   #F4F7FA;
+  --color-ink:    #0B1F33;
+  --color-ink-2:  #3B5166;
+  --color-muted:  #5F7285;
+  --color-line:   #DCE3EA;
+  --color-net:    #0B1F33;
+  --color-net-fg: #A7F3D0;
+
+  /* الحالات */
+  --color-danger:      #B91C1C;
+  --color-danger-soft: #FEF2F2;
+  --color-danger-line: #FECACA;
+  --color-warn:        #C2410C;
+  --color-warn-soft:   #FFF7ED;
+  --color-warn-line:   #FED7AA;
+  --color-info:        #1D4ED8;
+  --color-info-soft:   #EFF6FF;
+  --color-info-line:   #BFDBFE;
 }
 
-/* ── Base body ── */
+:root { color-scheme: light; }
+
+/* ── الجسم ── */
 body {
   font-family: var(--font-sans);
-  font-size: 15px;
-  background-color: var(--lux-cream);
+  font-size: 16px; /* كان 15px — الحد الأدنى المريح للقراءة على بُعد ذراع */
+  line-height: 1.6;
+  background-color: var(--color-page);
+  color: var(--color-ink);
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* ── أندرويد edge-to-edge (تطبيق APK) — هوامش آمنة ──
@@ -55,7 +92,7 @@ body::before {
   left: 0;
   right: 0;
   height: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
-  background: var(--lux-cream);
+  background: var(--color-page);
   z-index: 9999;
   pointer-events: none;
 }
@@ -65,14 +102,21 @@ body::before {
   top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
 }
 
-/* ── Scrollbar — warm gold ── */
-::-webkit-scrollbar       { width: 7px; }
-::-webkit-scrollbar-track { background: #F0E0C8; }
-::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #DFB060, #B8862A);
-  border-radius: 6px;
+/* ── شريط التمرير — محايد ── */
+::-webkit-scrollbar       { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #E9EEF3; }
+::-webkit-scrollbar-thumb { background: #B7C3CF; border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: #93A3B3; }
+
+/* ── الأرقام: متساوية العرض دائماً حتى تصطف في الجداول والسلة ── */
+table, input[type="number"], input[inputmode="decimal"], input[inputmode="numeric"] {
+  font-variant-numeric: tabular-nums;
 }
-::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #C99830, #8A6020); }
+
+/* ── الحركة: احترام تفضيل تقليل الحركة ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
 
 /* ── Print — receipt + financial report ──
    ملاحظة: نستخدم visibility وليس display — العنصر المتداخل لا يستطيع الظهور
@@ -115,422 +159,11 @@ body::before {
 }
 .print-financial { display: none; }
 
-/* ══════════════════════════════════════════════════════════
-   PASTEL = LUXURY (the only theme — "pastel" class is kept
-   on <html> so no Dashboard logic needs rewiring)
-   ══════════════════════════════════════════════════════════ */
-
-/* ── Floating blob animations ── */
-@keyframes lux-float-a {
-  0%,100% { transform: translate(0,0)    scale(1);    border-radius: 46% 54% 52% 48% / 50% 46% 54% 50%; }
-  38%     { transform: translate(2%,4%)  scale(1.06); border-radius: 58% 42% 44% 56% / 60% 52% 48% 40%; }
-  72%     { transform: translate(-2%,2%) scale(0.96); border-radius: 62% 38% 60% 40% / 40% 62% 38% 62%; }
-}
-@keyframes lux-float-b {
-  0%,100% { transform: translate(0,0)    scale(1);    border-radius: 52% 48% 46% 54% / 54% 50% 50% 46%; }
-  42%     { transform: translate(-3%,3%) scale(1.08); border-radius: 44% 56% 58% 42% / 42% 58% 42% 58%; }
-  78%     { transform: translate(2%,-1%) scale(0.95); border-radius: 60% 40% 44% 56% / 56% 44% 60% 40%; }
-}
-@keyframes lux-shimmer {
-  0%   { background-position: -200% center; }
-  100% { background-position:  200% center; }
-}
-
-/* ── Body — warm peach gradient + Greek-pharmacy watermarks ── */
-.pastel body {
-  background-color: #FDF6EE;
-  background-image:
-    url('/wm-hygieia.svg'),
-    url('/wm-asclepius.svg'),
-    url('/wm-temple.svg'),
-    url('/wm-texture.svg'),
-    radial-gradient(ellipse 60% 48% at 90%  8%,  rgba(255,185,120,0.32) 0%, transparent 60%),
-    radial-gradient(ellipse 52% 44% at  8% 88%,  rgba(225,152, 80,0.22) 0%, transparent 60%),
-    radial-gradient(ellipse 38% 30% at 50% 48%,  rgba(255,210,160,0.14) 0%, transparent 65%),
-    linear-gradient(155deg, #FDF6EE 0%, #FFE8D4 35%, #FFD4B0 65%, #F5C090 100%);
-  background-position:
-    top 92px right 20px,
-    bottom 84px left 24px,
-    bottom -6px center,
-    top left,
-    0 0, 0 0, 0 0, 0 0;
-  background-size:
-    150px auto,
-    118px auto,
-    340px auto,
-    260px 260px,
-    auto, auto, auto, auto;
-  background-repeat:
-    no-repeat,
-    no-repeat,
-    no-repeat,
-    repeat,
-    no-repeat, no-repeat, no-repeat, no-repeat;
-  background-attachment:
-    fixed, fixed, fixed, fixed,
-    fixed, fixed, fixed, fixed;
-  color: var(--lux-warm-dark);
-  min-height: 100vh;
-  position: relative;
-  overflow-x: hidden;
-}
-
-/* Floating warm glow blob — top-right (peach) */
-.pastel body::before {
-  content: '';
-  position: fixed;
-  top: -28vh; right: -20vw;
-  width: 66vw; height: 76vh;
-  background: radial-gradient(ellipse at 45% 45%,
-    rgba(255, 185, 100, 0.22) 0%,
-    rgba(240, 150,  70, 0.12) 42%,
-    transparent 68%);
-  border-radius: 46% 54% 52% 48% / 50% 46% 54% 50%;
-  animation: lux-float-a 24s ease-in-out infinite;
-  pointer-events: none;
-  z-index: -1;
-}
-
-/* Floating warm glow blob — bottom-left (deep peach) */
-.pastel body::after {
-  content: '';
-  position: fixed;
-  bottom: -22vh; left: -16vw;
-  width: 56vw; height: 66vh;
-  background: radial-gradient(ellipse at 50% 50%,
-    rgba(220, 140,  60, 0.18) 0%,
-    rgba(200, 110,  40, 0.09) 42%,
-    transparent 68%);
-  border-radius: 52% 48% 46% 54% / 54% 50% 50% 46%;
-  animation: lux-float-b 30s ease-in-out infinite reverse;
-  pointer-events: none;
-  z-index: -1;
-}
-
-/* ══════════════════════════════════════════════════════════
-   CARDS & PANELS — Warm Glassmorphism
-   ══════════════════════════════════════════════════════════ */
-
-.pastel .bg-white {
-  background: var(--lux-glass) !important;
-  backdrop-filter: blur(22px) saturate(1.7) brightness(1.04);
-  -webkit-backdrop-filter: blur(22px) saturate(1.7) brightness(1.04);
-  border-color: var(--lux-glass-border) !important;
-  box-shadow:
-    var(--lux-shadow),
-    inset 0 1px 0 rgba(255, 255, 255, 0.95),
-    inset 0 -1px 0 rgba(184, 134, 42, 0.08);
-}
-
-.pastel .bg-slate-50  { background-color: rgba(253, 244, 230, 0.94) !important; }
-.pastel .bg-slate-100 { background-color: rgba(248, 234, 212, 0.90) !important; }
-.pastel .bg-slate-200 { background-color: rgba(238, 218, 188, 0.86) !important; }
-
-/* ── Dark panels (POS column) → warm luxury dark ── */
-.pastel .bg-slate-900 {
-  background: linear-gradient(160deg, rgba(52, 26, 6, 0.97) 0%, rgba(70, 38, 10, 0.97) 100%) !important;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow:
-    0 30px 80px rgba(30, 12, 0, 0.45),
-    0  4px 20px rgba(30, 12, 0, 0.32),
-    inset 0 1px 0 rgba(255, 180, 80, 0.10),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.30);
-}
-
-/* Tall POS panel — soft-gold Greek watermarks (Hygieia + Asclepius) */
-.pastel .lux-dark-panel {
-  background-image:
-    url('/wm-hygieia-gold.svg'),
-    url('/wm-asclepius-gold.svg'),
-    linear-gradient(160deg, rgba(52, 26, 6, 0.97) 0%, rgba(70, 38, 10, 0.97) 100%) !important;
-  background-position: top 18px right 16px, bottom 16px left 14px, 0 0 !important;
-  background-size: 130px auto, 96px auto, auto !important;
-  background-repeat: no-repeat, no-repeat, no-repeat !important;
-  background-color: transparent !important;
-}
-
-/* Wide compliance card — The Last Supper (العشاء الأخير) gold engraving */
-.pastel .lux-dark-panel-wide {
-  background-image:
-    url('/wm-last-supper-gold.svg'),
-    linear-gradient(160deg, rgba(52, 26, 6, 0.97) 0%, rgba(70, 38, 10, 0.97) 100%) !important;
-  background-position: center center, 0 0 !important;
-  background-size: auto 150%, auto !important;
-  background-repeat: no-repeat, no-repeat !important;
-  background-color: transparent !important;
-}
-.pastel .bg-slate-800 {
-  background-color: rgba(66, 36, 8, 0.94) !important;
-  border-color: rgba(255, 180, 80, 0.14) !important;
-}
-.pastel .bg-slate-700 { background-color: rgba(88, 52, 16, 0.90) !important; }
-.pastel .bg-slate-800\/40 { background-color: rgba(66, 36, 8, 0.40) !important; }
-.pastel .bg-slate-950 { background-color: rgba(30, 12, 2, 0.98) !important; }
-
-/* ── Header ── */
-.pastel header {
-  background: rgba(255, 250, 242, 0.88) !important;
-  backdrop-filter: blur(20px) saturate(1.6);
-  -webkit-backdrop-filter: blur(20px) saturate(1.6);
-  border-bottom-color: rgba(184, 134, 42, 0.28) !important;
-  box-shadow: 0 2px 24px rgba(120, 68, 12, 0.12);
-}
-
-/* ══════════════════════════════════════════════════════════
-   TEXT — Warm Brown Palette (large + bold)
-   ══════════════════════════════════════════════════════════ */
-
-.pastel .text-slate-900 { color: #2A1500 !important; }
-.pastel .text-slate-800 { color: #3D2010 !important; }
-.pastel .text-slate-700 { color: #5C3A1E !important; }
-.pastel .text-slate-600 { color: #7A5230 !important; }
-.pastel .text-slate-500 { color: #9A7248 !important; }
-.pastel .text-slate-400 { color: #BA9268 !important; }
-.pastel .text-slate-300 { color: #D4B898 !important; }
-
-/* White text stays white (on dark POS panels) */
-.pastel .text-white      { color: #FFFFFF !important; }
-.pastel .text-slate-200  { color: #F5E8D4 !important; }
-
-/* ── Accent text ── */
-.pastel .text-emerald-800 { color: #1A7A40 !important; }
-.pastel .text-emerald-700 { color: #1E9050 !important; }
-.pastel .text-emerald-600 { color: #22A060 !important; }
-.pastel .text-rose-700    { color: #C83050 !important; }
-.pastel .text-rose-600    { color: #D84060 !important; }
-.pastel .text-amber-800   { color: #A06010 !important; }
-.pastel .text-amber-700   { color: #B87020 !important; }
-.pastel .text-amber-600   { color: #C88030 !important; }
-.pastel .text-blue-700    { color: #2060B8 !important; }
-.pastel .text-blue-600    { color: #3070C8 !important; }
-.pastel .text-violet-700  { color: #6030A8 !important; }
-.pastel .text-violet-600  { color: #7040B8 !important; }
-
-/* ══════════════════════════════════════════════════════════
-   TYPOGRAPHY — Large, Bold, Luxury
-   ══════════════════════════════════════════════════════════ */
-
-.pastel .text-xs  { font-size: 0.80rem !important; font-weight: 600; }
-.pastel .text-sm  { font-size: 0.92rem !important; font-weight: 500; }
-.pastel .text-base{ font-size: 1.02rem !important; }
-.pastel .text-lg  { font-size: 1.18rem !important; font-weight: 600; }
-.pastel .text-xl  { font-size: 1.38rem !important; font-weight: 700; letter-spacing: -0.01em; }
-.pastel .text-2xl { font-size: 1.72rem !important; font-weight: 800; letter-spacing: -0.02em; }
-.pastel .text-3xl { font-size: 2.18rem !important; font-weight: 800; letter-spacing: -0.025em; }
-.pastel .text-4xl { font-size: 2.80rem !important; font-weight: 900; letter-spacing: -0.03em; }
-.pastel .text-5xl { font-size: 3.50rem !important; font-weight: 900; letter-spacing: -0.04em; }
-
-/* ══════════════════════════════════════════════════════════
-   BORDERS
-   ══════════════════════════════════════════════════════════ */
-
-.pastel .border-slate-100 { border-color: rgba(184, 134, 42, 0.15) !important; }
-.pastel .border-slate-200 { border-color: rgba(184, 134, 42, 0.24) !important; }
-.pastel .border-slate-300 { border-color: rgba(184, 134, 42, 0.36) !important; }
-.pastel .border-slate-700 { border-color: rgba(255, 160, 60, 0.18) !important; }
-.pastel .border-slate-800 { border-color: rgba(255, 160, 60, 0.12) !important; }
-
-.pastel .border-emerald-100 { border-color: rgba(34, 160, 96, 0.28) !important; }
-.pastel .border-emerald-200 { border-color: rgba(34, 160, 96, 0.42) !important; }
-.pastel .border-blue-100    { border-color: rgba(48, 112, 200, 0.24) !important; }
-.pastel .border-rose-100    { border-color: rgba(216, 64, 96, 0.28)  !important; }
-.pastel .border-amber-100   { border-color: rgba(200, 128, 48, 0.28) !important; }
-.pastel .border-amber-200   { border-color: rgba(200, 128, 48, 0.42) !important; }
-.pastel .border-violet-100  { border-color: rgba(112, 64, 184, 0.28) !important; }
-
-/* ══════════════════════════════════════════════════════════
-   BACKGROUND ACCENT TINTS — warm-tinted
-   ══════════════════════════════════════════════════════════ */
-
-.pastel .bg-emerald-50  { background-color: rgba(34, 160, 96, 0.10)  !important; }
-.pastel .bg-emerald-100 { background-color: rgba(34, 160, 96, 0.18)  !important; }
-.pastel .bg-blue-50     { background-color: rgba(48, 112, 200, 0.10) !important; }
-.pastel .bg-blue-100    { background-color: rgba(48, 112, 200, 0.18) !important; }
-.pastel .bg-rose-50     { background-color: rgba(216, 64, 96, 0.10)  !important; }
-.pastel .bg-rose-100    { background-color: rgba(216, 64, 96, 0.18)  !important; }
-.pastel .bg-amber-50    { background-color: rgba(200, 128, 48, 0.10) !important; }
-.pastel .bg-amber-100   { background-color: rgba(200, 128, 48, 0.18) !important; }
-.pastel .bg-violet-50   { background-color: rgba(112, 64, 184, 0.10) !important; }
-.pastel .bg-violet-100  { background-color: rgba(112, 64, 184, 0.18) !important; }
-.pastel .bg-yellow-50   { background-color: rgba(220, 160, 20, 0.10) !important; }
-
-/* ══════════════════════════════════════════════════════════
-   HOVER STATES
-   ══════════════════════════════════════════════════════════ */
-
-.pastel .hover\:bg-slate-50:hover   { background-color: rgba(248, 234, 212, 0.96) !important; }
-.pastel .hover\:bg-slate-100:hover  { background-color: rgba(238, 218, 188, 0.92) !important; }
-.pastel .hover\:bg-slate-200:hover  { background-color: rgba(225, 198, 158, 0.88) !important; }
-.pastel .hover\:bg-slate-800:hover  { background-color: rgba(80, 48, 12, 0.97)    !important; }
-.pastel .hover\:bg-slate-900:hover  { background-color: rgba(38, 18, 4, 0.99)     !important; }
-.pastel .hover\:bg-emerald-700:hover{ background-color: rgba(22, 130, 70, 0.18)   !important; }
-
-/* ══════════════════════════════════════════════════════════
-   TABLE DIVIDERS
-   ══════════════════════════════════════════════════════════ */
-
-.pastel .divide-slate-100 > :not([hidden]) ~ :not([hidden]) {
-  border-color: rgba(184, 134, 42, 0.14) !important;
-}
-.pastel .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
-  border-color: rgba(184, 134, 42, 0.22) !important;
-}
-
-/* ══════════════════════════════════════════════════════════
-   FORM ELEMENTS — warm glass fields
-   ══════════════════════════════════════════════════════════ */
-
-.pastel input,
-.pastel select,
-.pastel textarea {
-  background-color: rgba(255, 248, 238, 0.92) !important;
-  border-color: rgba(184, 134, 42, 0.30) !important;
-  color: #2A1500 !important;
-  font-size: 0.94rem;
-  font-weight: 500;
-}
-.pastel input::placeholder,
-.pastel textarea::placeholder {
-  color: #BA9268 !important;
-}
-/* Input on dark POS panel */
-.pastel .bg-slate-800 input,
-.pastel .bg-slate-900 input,
-.pastel .bg-slate-800 select {
-  background-color: rgba(90, 52, 16, 0.70) !important;
-  border-color: rgba(255, 180, 80, 0.20) !important;
-  color: #FDE8C4 !important;
-}
-
-/* ── Notification bell dot ── */
-.pastel .border-white { border-color: rgba(253, 246, 238, 0.95) !important; }
-
-/* ══════════════════════════════════════════════════════════
-   BUTTONS — Luxury Feel
-   ══════════════════════════════════════════════════════════ */
-
-/* Emerald buttons get a warmer green */
-.pastel .bg-emerald-600 {
-  background: linear-gradient(135deg, #22A060, #1A8048) !important;
-  box-shadow: 0 4px 16px rgba(34, 160, 96, 0.30), 0 1px 4px rgba(34, 160, 96, 0.20) !important;
-}
-.pastel .hover\:bg-emerald-700:hover,
-.pastel .bg-emerald-700 {
-  background: linear-gradient(135deg, #1A9055, #157840) !important;
-}
-
-/* ══════════════════════════════════════════════════════════
-   NAVIGATION TABS — Luxury Gold Active State
-   ══════════════════════════════════════════════════════════ */
-
-/* Active tab gold shimmer line under it via box-shadow */
-.pastel .border-b-2.border-emerald-600 {
-  border-bottom-color: var(--lux-gold) !important;
-}
-
-/* ══════════════════════════════════════════════════════════
-   POS CART PANEL — سطح «جوزي فاتح» (light walnut)
-   يخصّ لوحة السلة (.lux-dark-panel) وحدها — لا يمسّ بطاقة الامتثال العريضة.
-   يفتّح الإطار والبطاقات والإجماليات ويغمّق النصوص لتبقى واضحة.
-   ══════════════════════════════════════════════════════════ */
-.pastel .lux-dark-panel {
-  background-image: linear-gradient(160deg, #EFE0CB 0%, #E3CDAF 100%) !important;
-  background-color: transparent !important;
-  /* إعادة ضبط الحجم/الموضع/التكرار — القاعدة الأصلية كانت لثلاث طبقات (علامتان مائيتان
-     + تدرّج) فورّثت background-size:130px الذي حصر تدرّجنا الواحد في شريط وكشف ما خلفه */
-  background-position: 0 0 !important;
-  background-size: cover !important;
-  background-repeat: no-repeat !important;
-  border: 1px solid rgba(120, 74, 32, 0.30) !important;
-  box-shadow:
-    0 20px 60px rgba(120, 74, 20, 0.16),
-    inset 0 1px 0 rgba(255, 255, 255, 0.55) !important;
-}
-/* بطاقات الأصناف + صندوق الإجماليات + الحقول → جوزي أفتح */
-.pastel .lux-dark-panel .bg-slate-800 {
-  background-color: #F6EAD8 !important;
-  border-color: rgba(120, 74, 32, 0.20) !important;
-}
-/* أزرار الكمية → جوزي متوسط + حالات المرور */
-.pastel .lux-dark-panel .bg-slate-700 { background-color: #D8BE9A !important; }
-.pastel .lux-dark-panel .hover\:bg-slate-600:hover { background-color: #C9A87E !important; }
-.pastel .lux-dark-panel .hover\:bg-emerald-700:hover { background-color: #A9CBA6 !important; }
-/* حدود داخلية دافئة فاتحة */
-.pastel .lux-dark-panel .border-slate-700,
-.pastel .lux-dark-panel .border-slate-600 { border-color: rgba(120, 74, 32, 0.22) !important; }
-/* الحقول (بحث/باركود + اسم المريض) → فاتحة متناسقة (كانت تُصبّغ داكناً بقاعدة إدخالات اللوحة الداكنة) */
-.pastel .lux-dark-panel input {
-  background-color: #FBF3E6 !important;
-  border-color: rgba(120, 74, 32, 0.28) !important;
-  color: #3A1E0A !important;
-}
-.pastel .lux-dark-panel input::placeholder { color: #9A7248 !important; }
-
-/* النصوص: بيضاء/فاتحة → بنّي غامق واضح على الفاتح */
-.pastel .lux-dark-panel .text-white     { color: #3A1E0A !important; }
-.pastel .lux-dark-panel .text-slate-200 { color: #4A2C12 !important; }
-.pastel .lux-dark-panel .text-slate-300 { color: #6A4522 !important; }
-.pastel .lux-dark-panel .text-slate-400 { color: #7C5226 !important; }
-.pastel .lux-dark-panel .text-slate-500 { color: #8A5C2C !important; }
-.pastel .lux-dark-panel .text-slate-600 { color: #9A6A38 !important; }
-/* أرقام السعر والإجمالي بدرجات غامقة واضحة */
-.pastel .lux-dark-panel .text-emerald-400   { color: #067A45 !important; }
-.pastel .lux-dark-panel .text-amber-400     { color: #B4530A !important; }
-.pastel .lux-dark-panel .text-amber-500     { color: #B4530A !important; }
-.pastel .lux-dark-panel .text-amber-500\/80 { color: #C4700F !important; }
-.pastel .lux-dark-panel .text-purple-400    { color: #7A3FB0 !important; }
-.pastel .lux-dark-panel .text-rose-400      { color: #C0324E !important; }
-/* العناصر الخضراء (شارة العدد + زر الإتمام) تبقى بنصّ أبيض — بعد قاعدة text-white */
-.pastel .lux-dark-panel .bg-emerald-500,
-.pastel .lux-dark-panel button[type="submit"] { color: #FFFFFF !important; }
-
-/* ══════════════════════════════════════════════════════════
-   SPECIAL EFFECTS
-   ══════════════════════════════════════════════════════════ */
-
-/* Glass morphism glow on focused inputs */
-.pastel input:focus,
-.pastel select:focus,
-.pastel textarea:focus {
-  border-color: rgba(184, 134, 42, 0.55) !important;
-  box-shadow: 0 0 0 3px rgba(184, 134, 42, 0.12), 0 2px 12px rgba(184, 134, 42, 0.10) !important;
-  outline: none !important;
-}
-
-/* Gold shimmer on key stat cards */
-.pastel .bg-gradient-to-br {
-  position: relative;
-  overflow: hidden;
-}
-
-/* Luxury card hover lift */
-.pastel .bg-white:hover {
-  transform: translateY(-1px);
-  box-shadow:
-    0 32px 80px rgba(120, 68, 12, 0.22),
-    0  6px 28px rgba(120, 68, 12, 0.14),
-    inset 0 1px 0 rgba(255, 255, 255, 0.98) !important;
-  transition: transform 0.25s ease, box-shadow 0.25s ease;
-}
-
-/* ══════════════════════════════════════════════════════════
-   CUSTOM UTILITIES
-   ══════════════════════════════════════════════════════════ */
+/* ── أدوات مخصصة ── */
 .animate-pulse-slow {
   animation: pulse-slow 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 @keyframes pulse-slow {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.70; }
-}
-
-/* Gold shimmer text effect — apply to key headings */
-.lux-shimmer-text {
-  background: linear-gradient(90deg, #B8862A, #E8C070, #B8862A, #F0D090, #B8862A);
-  background-size: 300% auto;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  animation: lux-shimmer 4s linear infinite;
 }
