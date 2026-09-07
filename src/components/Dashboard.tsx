@@ -7,11 +7,12 @@ import {
   TrendingUp, FileText, Ban, DollarSign, Calendar, RefreshCw, BarChart3, Pill, ClipboardList, ShieldAlert, Heart,
   Barcode, X, Volume2, VolumeX, Camera, Download, Upload, Bell, Pencil, ScanLine, ChevronDown,
   Calculator as CalculatorIcon,
-  Snail, Trophy, Eye, EyeOff, Phone, User as UserIcon, CreditCard, AlertTriangle, LogOut
+  Snail, Trophy, Eye, EyeOff, Phone, User as UserIcon, CreditCard, AlertTriangle, LogOut, Sun, Moon
 } from 'lucide-react';
 import { Medicine, Order, Supplier, InvoiceImportDraft, SupplierMemory } from '../types';
 import { fmtNum, fmtDate, fmtDateTime } from '../utils/format';
 import { toast, confirmDialog, promptDialog, alertDialog, isDialogOpen } from './ui/dialogs';
+import { useTheme } from '../hooks/useTheme';
 
 type DeviceRole = 'admin' | 'pharmacist' | 'cashier';
 const ROLE_LABEL: Record<DeviceRole, string> = { admin: 'مدير', pharmacist: 'صيدلاني', cashier: 'كاشير' };
@@ -60,6 +61,7 @@ import type { CalculatorHandle } from './pos/Calculator';
 import { DraggableCalculator } from './pos/Calculator';
 
 export default function Dashboard() {
+  const { isDark: isDarkTheme, toggle: toggleTheme } = useTheme();
   // --- FIREBASE AUTH & SYNCHRONIZER METRIC REGISTERS ---
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
@@ -4086,6 +4088,16 @@ export default function Dashboard() {
                 <span className="sm:hidden">ربط</span>
               </button>
             )}
+
+            {/* الوضع الليلي */}
+            <button
+              onClick={toggleTheme}
+              aria-label={isDarkTheme ? 'التبديل إلى الوضع النهاري' : 'التبديل إلى الوضع الليلي'}
+              title={isDarkTheme ? 'الوضع النهاري' : 'الوضع الليلي'}
+              className="w-10 h-10 flex items-center justify-center bg-slate-100 hover:bg-slate-200 rounded-xl text-ink-2 transition cursor-pointer shrink-0"
+            >
+              {isDarkTheme ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
 
             {/* الجرس */}
             <div className="relative">
