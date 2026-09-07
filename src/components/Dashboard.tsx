@@ -7,7 +7,7 @@ import {
   TrendingUp, FileText, Ban, DollarSign, Calendar, RefreshCw, BarChart3, Pill, ClipboardList, ShieldAlert, Heart,
   Barcode, X, Volume2, VolumeX, Camera, Download, Upload, Bell, Pencil, ScanLine, ChevronDown,
   Calculator as CalculatorIcon,
-  Snail, Trophy, Eye, EyeOff, Phone, User as UserIcon, CreditCard, AlertTriangle, LogOut, Sun, Moon
+  Snail, Trophy, Phone, User as UserIcon, CreditCard, AlertTriangle, LogOut, Sun, Moon
 } from 'lucide-react';
 import { Medicine, Order, Supplier, InvoiceImportDraft, SupplierMemory } from '../types';
 import { fmtNum, fmtDate, fmtDateTime } from '../utils/format';
@@ -4548,7 +4548,7 @@ export default function Dashboard() {
                       <p className="text-sm text-slate-500 font-semibold mt-0.5">انقر على الدواء المتوفر لإضافته إلى فاتورة العميل مباشرة</p>
                     </div>
 
-                    {/* Price Mode Toggle — زر دائري بلا نص (بلون نواقص الأدوية) + زر «نواقص الأدوية» أقصى اليسار */}
+                    {/* Price Mode Toggle — دائرة لون بلا أيقونة ولا نص (بلون نواقص الأدوية) + زر «نواقص الأدوية» أقصى اليسار */}
                     <div className="flex justify-end items-center gap-2">
                       <button
                         type="button"
@@ -4556,14 +4556,12 @@ export default function Dashboard() {
                         aria-label={showVirtualPriceInPOS ? 'التبديل إلى السعر الجمهوري' : 'التبديل إلى السعر الرسمي'}
                         title={showVirtualPriceInPOS ? 'السلة تعرض السعر الرسمي وحده (المحاسبة تبقى بالجمهوري)' : 'عرض أسعار السلة بالسعر الرسمي'}
                         onClick={() => setShowVirtualPriceInPOS(!showVirtualPriceInPOS)}
-                        className={`w-10 h-10 flex items-center justify-center rounded-full border transition cursor-pointer shadow-sm shrink-0 ${
+                        className={`w-10 h-10 rounded-full border transition cursor-pointer shadow-sm shrink-0 ${
                           showVirtualPriceInPOS
-                            ? 'bg-warn-500 border-warn-400 text-white'
-                            : 'bg-warn-50 border-warn-200 text-warn-700 hover:bg-warn-100'
+                            ? 'bg-warn-500 border-warn-400'
+                            : 'bg-warn-50 border-warn-200 hover:bg-warn-100'
                         }`}
-                      >
-                        {showVirtualPriceInPOS ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                      </button>
+                      />
                       {/* نواقص الأدوية — قائمة منسدلة بأسماء فقط، تُملأ بالنقر المزدوج على عناصر السلة */}
                       <div className="relative">
                         <button
