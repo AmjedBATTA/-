@@ -42,6 +42,7 @@ export const POSSearchBar = forwardRef<POSSearchHandle, POSSearchBarProps>(
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onFocus={() => { setInput(''); onQueryChange(''); }}
+            onClick={() => { setInput(''); onQueryChange(''); }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
@@ -54,9 +55,14 @@ export const POSSearchBar = forwardRef<POSSearchHandle, POSSearchBarProps>(
         </div>
         <button
           type="button"
-          onClick={onScanClick}
+          onClick={() => {
+            setInput('');
+            onQueryChange('');
+            inputRef.current?.focus();
+            onScanClick();
+          }}
           className="bg-primary-600 hover:bg-primary-700 active:bg-primary-800 text-white rounded-xl px-3 py-1.5 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
-          title="قراءة الباركود بالكاميرا (Scan Barcode)"
+          title="تفريغ الحقل وفتح قارئ الباركود بالكاميرا (Scan Barcode)"
         >
           <Barcode className="w-3.5 h-3.5" />
           <span className="hidden md:inline">قارئ باركود</span>
