@@ -318,14 +318,16 @@ export interface ExtractOptions {
 
 // النماذج بالترتيب من الأخف/الأرخص إلى الأقوى. الانتقال للتالي يحدث في حالتين:
 // (1) النموذج غير متاح على الحساب (404)، أو (2) فشل التحليل/مخرجات فارغة — تصعيد لنموذج أقوى.
+// gemini-3.6-flash أُضيف أولاً بعد توقّف gemini-2.0-flash نهائياً من Google (رسالة الخطأ
+// الحية أوصت به مباشرةً)؛ يبقى أولاً لضمان نجاح أول محاولة دون إهدار طلبات على نماذج متوقفة.
 const MODEL_CANDIDATES = [
+  'gemini-3.6-flash',
   'gemini-3.1-flash-lite',
   'gemini-2.5-flash',
-  'gemini-2.0-flash',
 ];
 
 function isModelUnavailable(msg: string): boolean {
-  return /not found|404|not supported|unsupported/i.test(msg);
+  return /not found|404|not supported|unsupported|no longer available|deprecated/i.test(msg);
 }
 
 function parseJsonLoose(text: string): unknown {
