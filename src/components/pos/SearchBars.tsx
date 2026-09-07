@@ -42,6 +42,7 @@ export const POSSearchBar = forwardRef<POSSearchHandle, POSSearchBarProps>(
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onFocus={() => { setInput(''); onQueryChange(''); }}
+            onClick={() => { setInput(''); onQueryChange(''); }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
