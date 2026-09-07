@@ -4548,21 +4548,21 @@ export default function Dashboard() {
                       <p className="text-sm text-slate-500 font-semibold mt-0.5">انقر على الدواء المتوفر لإضافته إلى فاتورة العميل مباشرة</p>
                     </div>
 
-                    {/* Price Mode Toggle — مفتاح مسمّى «السعر الرسمي» + زر «نواقص الأدوية» أقصى اليسار */}
+                    {/* Price Mode Toggle — زر دائري بلا نص (بلون نواقص الأدوية) + زر «نواقص الأدوية» أقصى اليسار */}
                     <div className="flex justify-end items-center gap-2">
                       <button
                         type="button"
                         aria-pressed={showVirtualPriceInPOS}
+                        aria-label={showVirtualPriceInPOS ? 'التبديل إلى السعر الجمهوري' : 'التبديل إلى السعر الرسمي'}
                         title={showVirtualPriceInPOS ? 'السلة تعرض السعر الرسمي وحده (المحاسبة تبقى بالجمهوري)' : 'عرض أسعار السلة بالسعر الرسمي'}
                         onClick={() => setShowVirtualPriceInPOS(!showVirtualPriceInPOS)}
-                        className={`flex items-center gap-1.5 text-sm font-bold px-2.5 py-1.5 min-h-10 rounded-xl border transition cursor-pointer shadow-sm shrink-0 ${
+                        className={`w-10 h-10 flex items-center justify-center rounded-full border transition cursor-pointer shadow-sm shrink-0 ${
                           showVirtualPriceInPOS
-                            ? 'bg-special-600 border-special-500 text-white'
-                            : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-special-50 hover:border-special-200'
+                            ? 'bg-warn-500 border-warn-400 text-white'
+                            : 'bg-warn-50 border-warn-200 text-warn-700 hover:bg-warn-100'
                         }`}
                       >
-                        {showVirtualPriceInPOS ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                        <span>السعر الرسمي</span>
+                        {showVirtualPriceInPOS ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                       </button>
                       {/* نواقص الأدوية — قائمة منسدلة بأسماء فقط، تُملأ بالنقر المزدوج على عناصر السلة */}
                       <div className="relative">
