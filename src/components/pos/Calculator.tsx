@@ -210,7 +210,7 @@ export const Calculator = React.memo(forwardRef<CalculatorHandle, CalculatorProp
         {...(dragHandleProps || {})}>
         <span className="text-sm font-bold text-slate-500 select-none">⠿ حاسبة سريعة</span>
         <button type="button" onClick={onClose} title="إغلاق الحاسبة" aria-label="إغلاق الحاسبة"
-          className="text-slate-500 hover:text-rose-400 transition cursor-pointer">
+          className="text-slate-500 hover:text-danger-400 transition cursor-pointer">
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -219,7 +219,7 @@ export const Calculator = React.memo(forwardRef<CalculatorHandle, CalculatorProp
         <div className="tabular-nums text-sm text-slate-500 min-h-[16px] truncate" title={expr} aria-live="polite">
           {expr || ' '}
         </div>
-        <span className={`tabular-nums font-bold ${isError ? 'text-rose-400' : 'text-white'} ${displaySize} truncate block`} aria-live="polite">{shown}</span>
+        <span className={`tabular-nums font-bold ${isError ? 'text-danger-400' : 'text-white'} ${displaySize} truncate block`} aria-live="polite">{shown}</span>
       </div>
       {/* صف الأدوات: مسح خانة، تقريب للعملة، نسخ */}
       <div className="grid grid-cols-4 gap-1.5" dir="ltr">
@@ -229,7 +229,7 @@ export const Calculator = React.memo(forwardRef<CalculatorHandle, CalculatorProp
         <button type="button" onClick={copyResult} className={`${utilCls} ${copied ? 'text-primary-400' : ''}`} aria-label="نسخ الناتج" title="نسخ الناتج">{copied ? '✓' : 'نسخ'}</button>
       </div>
       <div className="grid grid-cols-4 gap-1.5" dir="ltr">
-        <button type="button" onClick={() => dispatch({ type: 'clear' })} className={`${funcCls} bg-rose-900/60 hover:bg-rose-800/70 text-rose-200`} aria-label="مسح الكل" title="مسح الكل (Escape)">AC</button>
+        <button type="button" onClick={() => dispatch({ type: 'clear' })} className={`${funcCls} bg-danger-900/60 hover:bg-danger-800/70 text-danger-200`} aria-label="مسح الكل" title="مسح الكل (Escape)">AC</button>
         <button type="button" onClick={() => dispatch({ type: 'sign' })} className={funcCls} aria-label="عكس الإشارة">+/−</button>
         <button type="button" onClick={() => dispatch({ type: 'percent' })} className={funcCls} aria-label="نسبة مئوية">%</button>
         <button type="button" onClick={op('÷')} className={opCls('÷')} aria-label="قسمة">÷</button>

@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* تفعيل dark: عبر صنف .dark على <html> بدل الاعتماد فقط على تفضيل النظام،
+   حتى يعمل مفتاح التبديل اليدوي في الرأس (انظر src/hooks/useTheme.ts) */
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* ══════════════════════════════════════════════════════════
    نظام الألوان الدلالي — الخيار B «الحبر والتركواز السريري»
    ──────────────────────────────────────────────────────────
@@ -49,18 +53,117 @@
   --color-net-fg: #A7F3D0;
 
   /* الحالات */
-  --color-danger:      #B91C1C;
-  --color-danger-soft: #FEF2F2;
-  --color-danger-line: #FECACA;
-  --color-warn:        #C2410C;
-  --color-warn-soft:   #FFF7ED;
-  --color-warn-line:   #FED7AA;
-  --color-info:        #1D4ED8;
-  --color-info-soft:   #EFF6FF;
-  --color-info-line:   #BFDBFE;
+
+  /* ══════════════════════════════════════════════════════════
+     حالات إضافية — كل نطاق كامل (50-950) بنفس قيم Tailwind الأصلية
+     تماماً (oklch منسوخ حرفياً)، فلا يتغيّر أي لون فعلياً على الشاشة؛
+     الاسم فقط يصير دلالياً بدل اسم Tailwind الخام (rose/amber/blue/…).
+     ══════════════════════════════════════════════════════════ */
+  /* danger — كان يُكتب rose-* (الغالب) وred-* (أقلية) لنفس معنى الخطأ/الحذف؛
+     وُحِّد الاثنان في عائلة rose حتى لا يبقى لونا خطأ مختلفان في التطبيق. */
+  --color-danger-50:  oklch(96.9% 0.015 12.422);
+  --color-danger-100: oklch(94.1% 0.03 12.58);
+  --color-danger-200: oklch(89.2% 0.058 10.001);
+  --color-danger-300: oklch(81% 0.117 11.638);
+  --color-danger-400: oklch(71.2% 0.194 13.428);
+  --color-danger-500: oklch(64.5% 0.246 16.439);
+  --color-danger-600: oklch(58.6% 0.253 17.585);
+  --color-danger-700: oklch(51.4% 0.222 16.935);
+  --color-danger-800: oklch(45.5% 0.188 13.697);
+  --color-danger-900: oklch(41% 0.159 10.272);
+  --color-danger-950: oklch(27.1% 0.105 12.094);
+  --color-danger:      var(--color-danger-700);
+  --color-danger-soft: var(--color-danger-50);
+  --color-danger-line: var(--color-danger-200);
+
+  /* warn — كان amber-* (الغالب) وorange-* (أقلية) لنفس معنى التحذير/الانحراف؛
+     وُحِّد الاثنان في عائلة amber. */
+  --color-warn-50:  oklch(98.7% 0.022 95.277);
+  --color-warn-100: oklch(96.2% 0.059 95.617);
+  --color-warn-200: oklch(92.4% 0.12 95.746);
+  --color-warn-300: oklch(87.9% 0.169 91.605);
+  --color-warn-400: oklch(82.8% 0.189 84.429);
+  --color-warn-500: oklch(76.9% 0.188 70.08);
+  --color-warn-600: oklch(66.6% 0.179 58.318);
+  --color-warn-700: oklch(55.5% 0.163 48.998);
+  --color-warn-800: oklch(47.3% 0.137 46.201);
+  --color-warn-900: oklch(41.4% 0.112 45.904);
+  --color-warn-950: oklch(27.9% 0.077 45.635);
+  --color-warn:      var(--color-warn-700);
+  --color-warn-soft: var(--color-warn-50);
+  --color-warn-line: var(--color-warn-200);
+
+  /* info — كان blue-* بلا تغيير */
+  --color-info-50:  oklch(97% 0.014 254.604);
+  --color-info-100: oklch(93.2% 0.032 255.585);
+  --color-info-200: oklch(88.2% 0.059 254.128);
+  --color-info-300: oklch(80.9% 0.105 251.813);
+  --color-info-400: oklch(70.7% 0.165 254.624);
+  --color-info-500: oklch(62.3% 0.214 259.815);
+  --color-info-600: oklch(54.6% 0.245 262.881);
+  --color-info-700: oklch(48.8% 0.243 264.376);
+  --color-info-800: oklch(42.4% 0.199 265.638);
+  --color-info-900: oklch(37.9% 0.146 265.522);
+  --color-info-950: oklch(28.2% 0.091 267.935);
+  --color-info:      var(--color-info-700);
+  --color-info-soft: var(--color-info-50);
+  --color-info-line: var(--color-info-200);
+
+  /* accent — لوحات مساعدة (سجل الحركة)، كان indigo-* بلا تغيير */
+  --color-accent-50:  oklch(96.2% 0.018 272.314);
+  --color-accent-100: oklch(93% 0.034 272.788);
+  --color-accent-200: oklch(87% 0.065 274.039);
+  --color-accent-300: oklch(78.5% 0.115 274.713);
+  --color-accent-400: oklch(67.3% 0.182 276.935);
+  --color-accent-500: oklch(58.5% 0.233 277.117);
+  --color-accent-600: oklch(51.1% 0.262 276.966);
+  --color-accent-700: oklch(45.7% 0.24 277.023);
+  --color-accent-800: oklch(39.8% 0.195 277.366);
+  --color-accent-900: oklch(35.9% 0.144 278.697);
+  --color-accent-950: oklch(25.7% 0.09 281.288);
+
+  /* special — وضع السعر الرسمي / صلاحية المدير / تطابق محفوظ من الذاكرة؛
+     كان violet-* (الغالب) وpurple-* (أقلية) لنفس المعنى، وُحِّدا في violet. */
+  --color-special-50:  oklch(96.9% 0.016 293.756);
+  --color-special-100: oklch(94.3% 0.029 294.588);
+  --color-special-200: oklch(89.4% 0.057 293.283);
+  --color-special-300: oklch(81.1% 0.111 293.571);
+  --color-special-400: oklch(70.2% 0.183 293.541);
+  --color-special-500: oklch(60.6% 0.25 292.717);
+  --color-special-600: oklch(54.1% 0.281 293.009);
+  --color-special-700: oklch(49.1% 0.27 292.581);
+  --color-special-800: oklch(43.2% 0.232 292.759);
+  --color-special-900: oklch(38% 0.189 293.745);
+  --color-special-950: oklch(28.3% 0.141 291.089);
+
+  /* custom — سعر مخصّص يدوياً لسطر واحد في السلة (مختلف عن السعر الرسمي)؛
+     كان sky-* بلا تغيير */
+  --color-custom-50:  oklch(97.7% 0.013 236.62);
+  --color-custom-100: oklch(95.1% 0.026 236.824);
+  --color-custom-200: oklch(90.1% 0.058 230.902);
+  --color-custom-300: oklch(82.8% 0.111 230.318);
+  --color-custom-400: oklch(74.6% 0.16 232.661);
+  --color-custom-500: oklch(68.5% 0.169 237.323);
+  --color-custom-600: oklch(58.8% 0.158 241.966);
+  --color-custom-700: oklch(50% 0.134 242.749);
+  --color-custom-800: oklch(44.3% 0.11 240.79);
+  --color-custom-900: oklch(39.1% 0.09 240.876);
+  --color-custom-950: oklch(29.3% 0.066 243.157);
 }
 
 :root { color-scheme: light; }
+.dark  { color-scheme: dark; }
+
+/* الوضع الليلي — قيم داكنة للأسطح والنصوص المحايدة الدلالية
+   (bg-page / text-ink / text-muted / border-line…)؛ أي عنصر يستخدم
+   هذه الأسماء (بدل ألوان Tailwind الخام) ينعكس تلقائياً دون أي تعديل JSX */
+.dark {
+  --color-page:   #0B1523;
+  --color-ink:    #EEF3F9;
+  --color-ink-2:  #C7D2E2;
+  --color-muted:  #8794AB;
+  --color-line:   #283B5C;
+}
 
 /* ── الجسم ── */
 body {
@@ -167,3 +270,186 @@ table, input[type="number"], input[inputmode="decimal"], input[inputmode="numeri
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.70; }
 }
+
+/* ══════════════════════════════════════════════════════════
+   الوضع الليلي — تراكيب فوق أصناف Tailwind الخام الموجودة فعلاً
+   في الشيفرة (بلا تعديل JSX): نعيد توجيه درجات محددة فقط —
+   الأسطح الفاتحة (bg-white/slate-50/100/200) والنصوص عليها،
+   وشرائح الحالة اللينة لكل عائلة لونية. الدرجات المتوسطة/الصلبة
+   (أزرار bg-{family}-500 وما فوق بنص أبيض) لا تُلمس — تعمل أصلاً
+   في الوضعين. مبني على مسح فعلي لكل استخدامات الألوان في src/.
+   ══════════════════════════════════════════════════════════ */
+/* أسطح محايدة (بطاقات/جداول بيضاء وبفاتح رمادي) */
+.dark .bg-white    { background-color: #111C2E; }
+.dark .bg-slate-50  { background-color: #0B1523; }
+.dark .bg-slate-100 { background-color: #182740; }
+.dark .bg-slate-200 { background-color: #223454; }
+.dark .hover\:bg-white:hover    { background-color: #182740; }
+.dark .hover\:bg-slate-50:hover  { background-color: #182740; }
+.dark .hover\:bg-slate-100:hover { background-color: #223454; }
+.dark .hover\:bg-slate-200:hover { background-color: #2B4066; }
+
+/* نصوص محايدة على تلك الأسطح */
+.dark .text-slate-900 { color: #EEF3F9; }
+.dark .text-slate-800 { color: #E1E9F2; }
+.dark .text-slate-700 { color: #C7D2E2; }
+.dark .text-slate-600 { color: #AAB8CD; }
+.dark .text-slate-500 { color: #8794AB; }
+.dark .text-slate-400 { color: #6C7B94; }
+.dark .hover\:text-slate-600:hover { color: #C7D2E2; }
+.dark .hover\:text-slate-700:hover { color: #E1E9F2; }
+.dark .placeholder\:text-slate-400::placeholder { color: #576480; }
+.dark .placeholder\:text-slate-500::placeholder { color: #6C7B94; }
+
+/* حدود محايدة */
+.dark .border-slate-50  { border-color: #182740; }
+.dark .border-slate-100 { border-color: #1E304C; }
+.dark .border-slate-200 { border-color: #283B5C; }
+.dark .border-slate-300 { border-color: #34496D; }
+.dark .border-slate-400 { border-color: #445A80; }
+.dark .hover\:border-slate-300:hover { border-color: #34496D; }
+.dark .hover\:border-slate-400:hover { border-color: #445A80; }
+.dark .divide-slate-50 > :not([hidden]) ~ :not([hidden])  { border-color: #182740; }
+.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) { border-color: #1E304C; }
+
+/* شريط التمرير */
+.dark ::-webkit-scrollbar-track { background: #0F1B2C; }
+.dark ::-webkit-scrollbar-thumb { background: #33496A; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #46608A; }
+/* شرائح الحالة اللينة (خلفية 50/100 + نص 600/700/800 + حدّ 100/200/300) —
+   في الوضع الليلي تُعاد توجيه كل درجة لنظيرتها الداكنة/الفاتحة من نفس العائلة،
+   فتنعكس الشريحة تلقائياً دون أي تعديل على JSX. الدرجات المتوسطة (400-900 كخلفية،
+   أو 500 فأعلى كنص) تبقى كما هي — أزرار صلبة بنص أبيض أصلاً تعمل في الوضعين. */
+.dark .bg-danger-50  { background-color: var(--color-danger-950); }
+.dark .bg-danger-100 { background-color: var(--color-danger-900); }
+.dark .text-danger-600 { color: var(--color-danger-300); }
+.dark .text-danger-700 { color: var(--color-danger-300); }
+.dark .text-danger-800 { color: var(--color-danger-200); }
+.dark .border-danger-100 { border-color: var(--color-danger-900); }
+.dark .border-danger-200 { border-color: var(--color-danger-800); }
+.dark .border-danger-300 { border-color: var(--color-danger-700); }
+
+.dark .bg-warn-50  { background-color: var(--color-warn-950); }
+.dark .bg-warn-100 { background-color: var(--color-warn-900); }
+.dark .text-warn-600 { color: var(--color-warn-300); }
+.dark .text-warn-700 { color: var(--color-warn-300); }
+.dark .text-warn-800 { color: var(--color-warn-200); }
+.dark .border-warn-100 { border-color: var(--color-warn-900); }
+.dark .border-warn-200 { border-color: var(--color-warn-800); }
+.dark .border-warn-300 { border-color: var(--color-warn-700); }
+
+.dark .bg-info-50  { background-color: var(--color-info-950); }
+.dark .bg-info-100 { background-color: var(--color-info-900); }
+.dark .text-info-600 { color: var(--color-info-300); }
+.dark .text-info-700 { color: var(--color-info-300); }
+.dark .text-info-800 { color: var(--color-info-200); }
+.dark .border-info-100 { border-color: var(--color-info-900); }
+.dark .border-info-200 { border-color: var(--color-info-800); }
+.dark .border-info-300 { border-color: var(--color-info-700); }
+
+.dark .bg-accent-50  { background-color: var(--color-accent-950); }
+.dark .bg-accent-100 { background-color: var(--color-accent-900); }
+.dark .text-accent-600 { color: var(--color-accent-300); }
+.dark .text-accent-700 { color: var(--color-accent-300); }
+.dark .text-accent-800 { color: var(--color-accent-200); }
+.dark .border-accent-100 { border-color: var(--color-accent-900); }
+.dark .border-accent-200 { border-color: var(--color-accent-800); }
+.dark .border-accent-300 { border-color: var(--color-accent-700); }
+
+.dark .bg-special-50  { background-color: var(--color-special-950); }
+.dark .bg-special-100 { background-color: var(--color-special-900); }
+.dark .text-special-600 { color: var(--color-special-300); }
+.dark .text-special-700 { color: var(--color-special-300); }
+.dark .text-special-800 { color: var(--color-special-200); }
+.dark .border-special-100 { border-color: var(--color-special-900); }
+.dark .border-special-200 { border-color: var(--color-special-800); }
+.dark .border-special-300 { border-color: var(--color-special-700); }
+
+.dark .bg-custom-50  { background-color: var(--color-custom-950); }
+.dark .bg-custom-100 { background-color: var(--color-custom-900); }
+.dark .text-custom-600 { color: var(--color-custom-300); }
+.dark .text-custom-700 { color: var(--color-custom-300); }
+.dark .text-custom-800 { color: var(--color-custom-200); }
+.dark .border-custom-100 { border-color: var(--color-custom-900); }
+.dark .border-custom-200 { border-color: var(--color-custom-800); }
+.dark .border-custom-300 { border-color: var(--color-custom-700); }
+
+.dark .bg-money-50  { background-color: var(--color-money-950); }
+.dark .bg-money-100 { background-color: var(--color-money-900); }
+.dark .text-money-600 { color: var(--color-money-300); }
+.dark .text-money-700 { color: var(--color-money-300); }
+.dark .text-money-800 { color: var(--color-money-200); }
+.dark .border-money-100 { border-color: var(--color-money-900); }
+.dark .border-money-200 { border-color: var(--color-money-800); }
+.dark .border-money-300 { border-color: var(--color-money-700); }
+
+.dark .bg-primary-50  { background-color: var(--color-primary-950); }
+.dark .bg-primary-100 { background-color: var(--color-primary-900); }
+.dark .text-primary-600 { color: var(--color-primary-300); }
+.dark .text-primary-700 { color: var(--color-primary-300); }
+.dark .text-primary-800 { color: var(--color-primary-200); }
+.dark .border-primary-100 { border-color: var(--color-primary-900); }
+.dark .border-primary-200 { border-color: var(--color-primary-800); }
+.dark .border-primary-300 { border-color: var(--color-primary-700); }
+
+/* نسخ الشفافية (bg-white/70 ونحوها) — Tailwind يولّد صنفاً مستقلاً لكل نسبة شفافية،
+   فتحتاج توجيهاً صريحاً بدل التوريث من الصنف الأساسي */
+.dark .bg-white\/15 { background-color: rgba(17,28,46,0.15); }
+.dark .bg-white\/20 { background-color: rgba(17,28,46,0.2); }
+.dark .bg-white\/25 { background-color: rgba(17,28,46,0.25); }
+.dark .bg-white\/60 { background-color: rgba(17,28,46,0.6); }
+.dark .bg-white\/70 { background-color: rgba(17,28,46,0.7); }
+.dark .bg-slate-50\/50 { background-color: rgba(11,21,35,0.5); }
+.dark .bg-slate-50\/60 { background-color: rgba(11,21,35,0.6); }
+.dark .bg-slate-50\/70 { background-color: rgba(11,21,35,0.7); }
+.dark .bg-slate-100\/50 { background-color: rgba(24,39,64,0.5); }
+.dark .bg-slate-100\/70 { background-color: rgba(24,39,64,0.7); }
+.dark .border-slate-200\/50 { border-color: rgba(40,59,92,0.5); }
+.dark .border-slate-200\/60 { border-color: rgba(40,59,92,0.6); }
+.dark .border-slate-200\/70 { border-color: rgba(40,59,92,0.7); }
+.dark .border-slate-200\/80 { border-color: rgba(40,59,92,0.8); }
+.dark .border-slate-100\/70 { border-color: rgba(30,48,76,0.7); }
+.dark .text-slate-500\/80 { color: rgba(135,148,171,0.8); }
+
+/* hover: + شفافية معاً (hover:bg-slate-50/60 ونحوها) */
+.dark .hover\:bg-white\/15:hover { background-color: rgba(17,28,46,0.15); }
+.dark .hover\:bg-white\/25:hover { background-color: rgba(17,28,46,0.25); }
+.dark .hover\:bg-white\/60:hover { background-color: rgba(17,28,46,0.6); }
+.dark .hover\:bg-slate-50\/50:hover { background-color: rgba(11,21,35,0.5); }
+.dark .hover\:bg-slate-50\/60:hover { background-color: rgba(11,21,35,0.6); }
+.dark .hover\:bg-slate-100\/50:hover { background-color: rgba(24,39,64,0.5); }
+.dark .hover\:bg-slate-100\/70:hover { background-color: rgba(24,39,64,0.7); }
+
+/* حالات hover/active/group-hover/selection على شرائح الحالة (soft chips) */
+.dark .active\:bg-primary-200:active { background-color: var(--color-primary-800); }
+.dark .group:hover .group-hover\:bg-info-100 { background-color: var(--color-info-900); }
+.dark .group:hover .group-hover\:bg-primary-100 { background-color: var(--color-primary-900); }
+.dark .group:hover .group-hover\:bg-special-100 { background-color: var(--color-special-900); }
+.dark .group:hover .group-hover\:bg-warn-100 { background-color: var(--color-warn-900); }
+.dark .group:hover .group-hover\:text-info-600 { color: var(--color-info-300); }
+.dark .group:hover .group-hover\:text-primary-600 { color: var(--color-primary-300); }
+.dark .group:hover .group-hover\:text-special-600 { color: var(--color-special-300); }
+.dark .group:hover .group-hover\:text-warn-600 { color: var(--color-warn-300); }
+.dark .hover\:bg-accent-50:hover { background-color: var(--color-accent-950); }
+.dark .hover\:bg-accent-100:hover { background-color: var(--color-accent-900); }
+.dark .hover\:bg-danger-50:hover { background-color: var(--color-danger-950); }
+.dark .hover\:bg-danger-100:hover { background-color: var(--color-danger-900); }
+.dark .hover\:bg-danger-100\/70:hover { background-color: var(--color-danger-900); }
+.dark .hover\:bg-primary-50:hover { background-color: var(--color-primary-950); }
+.dark .hover\:bg-primary-50\/50:hover { background-color: var(--color-primary-950); }
+.dark .hover\:bg-primary-100:hover { background-color: var(--color-primary-900); }
+.dark .hover\:bg-special-50:hover { background-color: var(--color-special-950); }
+.dark .hover\:bg-special-100:hover { background-color: var(--color-special-900); }
+.dark .hover\:bg-warn-100:hover { background-color: var(--color-warn-900); }
+.dark .hover\:border-danger-200:hover { border-color: var(--color-danger-800); }
+.dark .hover\:border-special-200:hover { border-color: var(--color-special-800); }
+.dark .hover\:border-warn-200:hover { border-color: var(--color-warn-800); }
+.dark .hover\:text-accent-700:hover { color: var(--color-accent-300); }
+.dark .hover\:text-danger-600:hover { color: var(--color-danger-300); }
+.dark .hover\:text-danger-700:hover { color: var(--color-danger-300); }
+.dark .hover\:text-danger-800:hover { color: var(--color-danger-200); }
+.dark .hover\:text-info-600:hover { color: var(--color-info-300); }
+.dark .hover\:text-primary-600:hover { color: var(--color-primary-300); }
+.dark .hover\:text-primary-700:hover { color: var(--color-primary-300); }
+.dark .hover\:text-primary-800:hover { color: var(--color-primary-200); }
+.dark .selection\:bg-primary-100::selection { background-color: var(--color-primary-900); }

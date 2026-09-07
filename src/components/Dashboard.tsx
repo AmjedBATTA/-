@@ -5,13 +5,14 @@ import {
   Truck, HelpCircle, PlusCircle, Search, Trash2, ArrowLeft, 
   MapPin, UserCheck, ShieldCheck, Users, Sparkles, Plus, Check,
   TrendingUp, FileText, Ban, DollarSign, Calendar, RefreshCw, BarChart3, Pill, ClipboardList, ShieldAlert, Heart,
-  Barcode, X, Volume2, VolumeX, Camera, Download, Upload, Bell, Pencil, ScanLine, ChevronDown, CalendarClock,
+  Barcode, X, Volume2, VolumeX, Camera, Download, Upload, Bell, Pencil, ScanLine, ChevronDown,
   Calculator as CalculatorIcon,
-  Snail, Factory, FlaskConical, Trophy, Eye, EyeOff, Phone, User as UserIcon, CreditCard, AlertTriangle, LogOut
+  Snail, Trophy, Eye, EyeOff, Phone, User as UserIcon, CreditCard, AlertTriangle, LogOut, Sun, Moon
 } from 'lucide-react';
 import { Medicine, Order, Supplier, InvoiceImportDraft, SupplierMemory } from '../types';
 import { fmtNum, fmtDate, fmtDateTime } from '../utils/format';
 import { toast, confirmDialog, promptDialog, alertDialog, isDialogOpen } from './ui/dialogs';
+import { useTheme } from '../hooks/useTheme';
 
 type DeviceRole = 'admin' | 'pharmacist' | 'cashier';
 const ROLE_LABEL: Record<DeviceRole, string> = { admin: 'مدير', pharmacist: 'صيدلاني', cashier: 'كاشير' };
@@ -30,6 +31,8 @@ function MenuItem({ icon: Icon, label, hint, danger, onClick }: { icon: React.Co
   );
 }
 import SupplierPicker from './SupplierPicker';
+import B2BScreen from './screens/B2BScreen';
+import InventoryScreen from './screens/InventoryScreen';
 // تحميل كسول: نافذة استيراد الفاتورة + مكتبة @google/genai (~305kB) لا تُحمَّل إلا عند فتحها
 const InvoiceImportModal = lazy(() => import('./InvoiceImportModal'));
 
@@ -49,15 +52,16 @@ import { normalizeName } from '../utils/normalizeName';
 // قواعد قائمة نواقص الأدوية: الترتيب بالأحدث أولاً، وتقسيمها على حدّ الـ 5 أيام
 import { compareShortagesNewestFirst, splitShortagesByAge } from '../utils/shortages';
 import type { POSItem, SaleRecord, Expense, Payable, Receivable, SalesReturn, AuditEntry } from './dashboard/shared';
-import { searchNorm, escapeHtml, POS_SHELF_LIMIT, MOVEMENT_DROPDOWN_LIMIT, NOTIF_LIST_LIMIT, EXPIRY_LIST_LIMIT, generateSeedExpenses, generateSeedPayables, generateSeedReceivables, generateSeedReturns, generateSeedAuditLog, generateHistoricalSales, generateSeedSuppliers } from './dashboard/shared';
+import { searchNorm, POS_SHELF_LIMIT, generateSeedExpenses, generateSeedPayables, generateSeedReceivables, generateSeedReturns, generateSeedAuditLog, generateHistoricalSales, generateSeedSuppliers } from './dashboard/shared';
 import type { POSSearchHandle } from './pos/SearchBars';
-import { POSSearchBar, InventorySearchBar } from './pos/SearchBars';
+import { POSSearchBar } from './pos/SearchBars';
 import { MedicineCard } from './pos/MedicineCard';
 import { CartItemRow } from './pos/CartItemRow';
 import type { CalculatorHandle } from './pos/Calculator';
 import { DraggableCalculator } from './pos/Calculator';
 
 export default function Dashboard() {
+  const { isDark: isDarkTheme, toggle: toggleTheme } = useTheme();
   // --- FIREBASE AUTH & SYNCHRONIZER METRIC REGISTERS ---
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
@@ -213,6 +217,9 @@ export default function Dashboard() {
 
   // --- POS CART STATES ---
   const [currentCart, setCurrentCart] = useState<POSItem[]>([]);
+  // ورقة السلة السفلية على الهاتف: تُغلق وحدها متى فرغت السلة (دُفعت الفاتورة أو مُسحت)
+  const [showMobileCart, setShowMobileCart] = useState(false);
+  useEffect(() => { if (currentCart.length === 0) setShowMobileCart(false); }, [currentCart.length]);
   // حاوية سلة البيع القابلة للتمرير — تُصعَّد لأعلاها كلما دخلت مادة جديدة إلى القمة
   // (بالباركود أو الاسم أو النقر)، حتى لو كان المستخدم مرّر لمنتصف/نهاية القائمة.
   const cartListRef = useRef<HTMLDivElement>(null);
@@ -2417,9 +2424,9 @@ export default function Dashboard() {
     // خرائط ألوان ثابتة (Tailwind يحتاج أسماء أصناف كاملة وليست مركّبة ديناميكياً)
     const finAccent: Record<string, { badge: string; icon: string; profit: string; ring: string }> = {
       emerald: { badge: 'bg-money-50 text-money-700', icon: 'text-money-600', profit: 'text-money-700', ring: 'border-money-100' },
-      blue: { badge: 'bg-blue-50 text-blue-700', icon: 'text-blue-600', profit: 'text-blue-700', ring: 'border-blue-100' },
-      violet: { badge: 'bg-violet-50 text-violet-700', icon: 'text-violet-600', profit: 'text-violet-700', ring: 'border-violet-100' },
-      amber: { badge: 'bg-amber-50 text-amber-700', icon: 'text-amber-600', profit: 'text-amber-700', ring: 'border-amber-100' },
+      blue: { badge: 'bg-info-50 text-info-700', icon: 'text-info-600', profit: 'text-info-700', ring: 'border-info-100' },
+      violet: { badge: 'bg-special-50 text-special-700', icon: 'text-special-600', profit: 'text-special-700', ring: 'border-special-100' },
+      amber: { badge: 'bg-warn-50 text-warn-700', icon: 'text-warn-600', profit: 'text-warn-700', ring: 'border-warn-100' },
     };
     const financialPeriods = [
       { key: 'today', label: 'اليوم', sub: 'مبيعات هذا اليوم', stats: statsToday, accent: 'emerald' },
@@ -2653,8 +2660,24 @@ export default function Dashboard() {
   const handlePOSScanClick = useCallback(() => startScanning('pos'), []);
 
   // مُثبّتتان بـ useCallback + functional update — هويتهما مستقرّة فلا تكسران React.memo على CartItemRow
+  // زر «تراجع» في الإشعار يعيد الصنف إلى موضعه الأصلي في السلة — حذف السلة يحدث عشرات المرات يومياً
+  // وأسهل خطأ هو حذف الصنف الخطأ بضغطة سريعة.
   const removeFromCart = useCallback((medId: string) => {
-    setCurrentCart(prev => prev.filter(item => item.medicine.id !== medId));
+    setCurrentCart(prev => {
+      const idx = prev.findIndex(item => item.medicine.id === medId);
+      if (idx === -1) return prev;
+      const removed = prev[idx];
+      toast(`حُذف «${removed.medicine.nameAr}» من السلة`, 'info', undefined, {
+        label: 'تراجع',
+        onClick: () => setCurrentCart(cur => {
+          if (cur.some(item => item.medicine.id === medId)) return cur; // أُعيد فعلاً أو أُضيف من جديد
+          const next = [...cur];
+          next.splice(Math.min(idx, next.length), 0, removed);
+          return next;
+        }),
+      });
+      return prev.filter(item => item.medicine.id !== medId);
+    });
   }, []);
 
   const updateCartQty = useCallback((medId: string, delta: number) => {
@@ -3844,20 +3867,20 @@ export default function Dashboard() {
 
   if (!currentUser && !bypassLogin) {
     return (
-      <div className="bg-gradient-to-br from-primary-50 via-slate-50 to-teal-50 min-h-screen flex items-center justify-center p-4" dir="rtl">
+      <div className="bg-gradient-to-br from-primary-50 via-slate-50 to-primary-50 min-h-screen flex items-center justify-center p-4" dir="rtl">
         <div className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-slate-100 p-8 text-center">
           <img src="/icon.svg" alt="" className="w-16 h-16 mx-auto mb-5 rounded-2xl shadow-sm" />
           <h1 className="text-xl font-bold text-slate-800 mb-1">صيدلية انوار الحسن</h1>
           <p className="text-sm text-slate-500 mb-6">نظام إدارة الصيدلية — تسجيل الدخول مطلوب</p>
 
           {authInitFailed && (
-            <div className="mb-4 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+            <div className="mb-4 text-xs text-warn-700 bg-warn-50 border border-warn-200 rounded-xl px-3 py-2">
               تعذّر الاتصال بخدمة الحسابات. تحقّق من اتصال الإنترنت ثم أعد المحاولة.
             </div>
           )}
 
           {signInError && (
-            <div className="mb-4 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-right font-semibold">
+            <div className="mb-4 text-xs text-danger-700 bg-danger-50 border border-danger-200 rounded-xl px-3 py-2 text-right font-semibold">
               {signInError}
             </div>
           )}
@@ -3909,13 +3932,13 @@ export default function Dashboard() {
                 value={bypassPinEntry}
                 onChange={(e) => { setBypassPinEntry(e.target.value); setBypassPinError(false); }}
                 placeholder="••••"
-                className={`w-full text-center text-lg tabular-nums tracking-[0.4em] bg-white border rounded-lg py-2 px-3 focus:outline-none focus:ring-2 transition ${bypassPinError ? 'border-rose-400 focus:ring-rose-200 bg-rose-50' : 'border-slate-200 focus:ring-primary-200 focus:border-primary-400'}`}
+                className={`w-full text-center text-lg tabular-nums tracking-[0.4em] bg-white border rounded-lg py-2 px-3 focus:outline-none focus:ring-2 transition ${bypassPinError ? 'border-danger-400 focus:ring-danger-200 bg-danger-50' : 'border-slate-200 focus:ring-primary-200 focus:border-primary-400'}`}
               />
               {bypassPinError && (
-                <p className="text-sm text-rose-600 font-bold text-center">كلمة المرور غير صحيحة</p>
+                <p className="text-sm text-danger-600 font-bold text-center">كلمة المرور غير صحيحة</p>
               )}
               {financialPin === '0000' && (
-                <p className="text-sm text-amber-600 font-semibold text-center">
+                <p className="text-sm text-warn-600 font-semibold text-center">
                   تنبيه: كلمة المرور ما زالت الافتراضية (0000) — غيّرها من تبويب الحسابات بعد الدخول.
                 </p>
               )}
@@ -3954,11 +3977,11 @@ export default function Dashboard() {
       {authInitFailed && (
         <div
           role="alert"
-          className="flex items-center justify-between gap-3 bg-amber-50 border-b border-amber-300 px-4 py-2.5 text-sm text-amber-800"
+          className="flex items-center justify-between gap-3 bg-warn-50 border-b border-warn-300 px-4 py-2.5 text-sm text-warn-800"
           dir="rtl"
         >
           <div className="flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0 text-amber-500" viewBox="0 0 20 20" fill="currentColor">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 flex-shrink-0 text-warn-500" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
             </svg>
             <span className="font-medium">تعذّر الاتصال بخدمة الحسابات — يعمل التطبيق بوضع محدود (بيانات محلية فقط)</span>
@@ -3966,7 +3989,7 @@ export default function Dashboard() {
           <button
             onClick={() => setAuthInitFailed(false)}
             aria-label="إغلاق التنبيه"
-            className="flex-shrink-0 rounded p-0.5 text-amber-600 hover:bg-amber-100 transition-colors"
+            className="flex-shrink-0 rounded p-0.5 text-warn-600 hover:bg-warn-100 transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
@@ -3990,15 +4013,15 @@ export default function Dashboard() {
 
       {/* شريط خطأ المزامنة — يظهر عند رفض الصلاحيات أو انقطاع الخادم (لم يعد مكتوماً في الـ console) */}
       {syncError && (
-        <div role="alert" className="flex items-center justify-between gap-2 bg-red-50 border-b border-red-300 px-4 py-2.5 text-sm text-red-800" dir="rtl">
+        <div role="alert" className="flex items-center justify-between gap-2 bg-danger-50 border-b border-danger-300 px-4 py-2.5 text-sm text-danger-800" dir="rtl">
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse flex-shrink-0" />
+            <span className="w-2 h-2 bg-danger-500 rounded-full animate-pulse flex-shrink-0" />
             <span className="font-medium">تعذّرت المزامنة مع السحابة ({syncError}). بياناتك محفوظة على هذا الجهاز فقط ولم تُرفع بعد — تحقّق من الإنترنت ثم أعد المحاولة.</span>
           </div>
           <button
             onClick={() => setSyncError(null)}
             aria-label="إخفاء التنبيه"
-            className="flex-shrink-0 rounded px-2 py-0.5 text-red-600 hover:bg-red-100 transition-colors text-xs font-bold cursor-pointer border border-red-200 bg-white"
+            className="flex-shrink-0 rounded px-2 py-0.5 text-danger-600 hover:bg-danger-100 transition-colors text-xs font-bold cursor-pointer border border-danger-200 bg-white"
           >
             إخفاء
           </button>
@@ -4032,10 +4055,10 @@ export default function Dashboard() {
             ) : currentUser ? (
               <span className={`hidden sm:inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 h-8 rounded-full border ${
                 syncState === 'synced' ? 'bg-money-50 text-money-700 border-money-200'
-                : syncState === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200'
+                : syncState === 'pending' ? 'bg-warn-50 text-warn-700 border-warn-200'
                 : 'bg-danger-soft text-danger border-danger-line'}`}
                 title={syncState === 'synced' ? 'متزامن مع السحابة' : syncState === 'pending' ? 'جارٍ رفع التغييرات' : 'غير متصل — البيانات محلية حتى عودة الاتصال'}>
-                <span className={`w-1.5 h-1.5 rounded-full ${syncState === 'synced' ? 'bg-money-500' : syncState === 'pending' ? 'bg-amber-500 animate-pulse' : 'bg-red-500 animate-pulse'}`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${syncState === 'synced' ? 'bg-money-500' : syncState === 'pending' ? 'bg-warn-500 animate-pulse' : 'bg-danger-500 animate-pulse'}`} />
                 {syncState === 'synced' ? 'متزامن' : syncState === 'pending' ? 'جارٍ المزامنة' : 'غير متصل'}
               </span>
             ) : (
@@ -4066,6 +4089,16 @@ export default function Dashboard() {
               </button>
             )}
 
+            {/* الوضع الليلي */}
+            <button
+              onClick={toggleTheme}
+              aria-label={isDarkTheme ? 'التبديل إلى الوضع النهاري' : 'التبديل إلى الوضع الليلي'}
+              title={isDarkTheme ? 'الوضع النهاري' : 'الوضع الليلي'}
+              className="w-10 h-10 flex items-center justify-center bg-slate-100 hover:bg-slate-200 rounded-xl text-ink-2 transition cursor-pointer shrink-0"
+            >
+              {isDarkTheme ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+
             {/* الجرس */}
             <div className="relative">
               <button
@@ -4078,7 +4111,7 @@ export default function Dashboard() {
                   inventory.some(m => m.availableQuantity <= (m.minStock ?? 15)) ||
                   payables.some(p => p.dueDate && new Date(p.dueDate) < new Date() && p.status !== 'paid')
                 ) && (
-                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full border-2 border-white" />
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-danger-500 rounded-full border-2 border-white" />
                 )}
               </button>
               {showNotifDropdown && (
@@ -4087,44 +4120,28 @@ export default function Dashboard() {
                     <span className="text-xs font-bold text-slate-800">مركز الإشعارات</span>
                     <button onClick={() => setShowNotifDropdown(false)} className="text-slate-500 hover:text-slate-600 cursor-pointer"><X className="w-4 h-4" /></button>
                   </div>
-                  {/* سقف العرض لكل فئة: مع ~7000 صنف قد تتطابق آلاف المواد فتجمّد فتح القائمة */}
+                  {/* مجموعات بعناوين وعدّاد لكل فئة بدل سرد كل صنف على حدة — أوضح مع ~7000 صنف
+                      وينقل مباشرة للتبويب المعني بدل تكديس القائمة */}
                   {(() => {
-                    const expired = inventory.filter(m => expiryDates[m.id] && new Date(expiryDates[m.id]) < new Date());
-                    const lowStock = inventory.filter(m => m.availableQuantity <= (m.minStock ?? 15) && m.availableQuantity > 0);
-                    return (
-                      <>
-                        {expired.slice(0, NOTIF_LIST_LIMIT).map(m => (
-                          <div key={m.id} className="text-sm text-rose-700 bg-rose-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
-                            <AlertCircle className="w-3 h-3 shrink-0" />
-                            <span>{m.nameAr} — منتهية الصلاحية</span>
-                          </div>
-                        ))}
-                        {expired.length > NOTIF_LIST_LIMIT && (
-                          <p className="text-xs text-rose-400 font-bold text-center">+{fmtNum((expired.length - NOTIF_LIST_LIMIT))} مادة منتهية أخرى — راجع تبويب المخزون</p>
-                        )}
-                        {lowStock.slice(0, NOTIF_LIST_LIMIT).map(m => (
-                          <div key={m.id} className="text-sm text-amber-700 bg-amber-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
-                            <AlertCircle className="w-3 h-3 shrink-0" />
-                            <span>{m.nameAr} — مخزون منخفض ({m.availableQuantity})</span>
-                          </div>
-                        ))}
-                        {lowStock.length > NOTIF_LIST_LIMIT && (
-                          <p className="text-xs text-amber-500 font-bold text-center">+{fmtNum((lowStock.length - NOTIF_LIST_LIMIT))} مادة منخفضة أخرى — راجع تبويب المخزون</p>
-                        )}
-                      </>
-                    );
+                    const expiredCount = inventory.filter(m => expiryDates[m.id] && new Date(expiryDates[m.id]) < new Date()).length;
+                    const lowStockCount = inventory.filter(m => m.availableQuantity <= (m.minStock ?? 15) && m.availableQuantity > 0).length;
+                    const overduePayables = payables.filter(p => p.dueDate && new Date(p.dueDate) < new Date() && p.status !== 'paid');
+                    const groups: { key: string; icon: typeof AlertCircle; label: string; count: number; cls: string; onClick: () => void }[] = [
+                      { key: 'expired', icon: AlertCircle, label: 'أصناف منتهية الصلاحية', count: expiredCount, cls: 'bg-danger-50 text-danger-700 hover:bg-danger-100', onClick: () => { setActiveTab('inventory'); setShowNotifDropdown(false); } },
+                      { key: 'low', icon: AlertCircle, label: 'أصناف بمخزون منخفض', count: lowStockCount, cls: 'bg-warn-50 text-warn-700 hover:bg-warn-100', onClick: () => { setActiveTab('inventory'); setShowNotifDropdown(false); } },
+                      { key: 'due', icon: Clock, label: 'ذمم متأخرة على المذاخر', count: overduePayables.length, cls: 'bg-slate-50 text-slate-700 hover:bg-slate-100', onClick: () => { setActiveTab('financial'); setShowNotifDropdown(false); } },
+                    ].filter(g => g.count > 0);
+                    if (groups.length === 0) return <p className="text-sm text-slate-500 text-center">لا توجد تنبيهات جديدة</p>;
+                    return groups.map(g => (
+                      <button key={g.key} type="button" onClick={g.onClick}
+                        className={`w-full text-sm font-bold rounded-lg px-3 py-2.5 flex items-center gap-2 transition cursor-pointer ${g.cls}`}>
+                        <g.icon className="w-3.5 h-3.5 shrink-0" />
+                        <span className="flex-1 text-right">{g.label}</span>
+                        <span className="text-xs font-black px-2 py-0.5 rounded-full bg-white/70 tabular-nums">{fmtNum(g.count)}</span>
+                        <ChevronDown className="w-3.5 h-3.5 shrink-0 -rotate-90" />
+                      </button>
+                    ));
                   })()}
-                  {payables.filter(p => p.dueDate && new Date(p.dueDate) < new Date() && p.status !== 'paid').map(p => (
-                    <div key={p.id} className="text-sm text-slate-700 bg-slate-50 rounded-lg px-3 py-2 font-bold flex items-center gap-2">
-                      <Clock className="w-3 h-3 shrink-0" />
-                      <span>{p.supplierName} — دين متأخر</span>
-                    </div>
-                  ))}
-                  {!inventory.some(m => expiryDates[m.id] && new Date(expiryDates[m.id]) < new Date()) &&
-                   !inventory.some(m => m.availableQuantity <= (m.minStock ?? 15)) &&
-                   !payables.some(p => p.dueDate && new Date(p.dueDate) < new Date() && p.status !== 'paid') && (
-                    <p className="text-sm text-slate-500 text-center">لا توجد تنبيهات جديدة</p>
-                  )}
                 </div>
               )}
             </div>
@@ -4157,7 +4174,7 @@ export default function Dashboard() {
                       </p>
                       {currentUser?.email && <p className="text-xs text-muted truncate" dir="ltr">{currentUser.email}</p>}
                       {currentUser && (
-                        <p className={`text-xs font-semibold mt-1 ${syncState === 'synced' ? 'text-money-700' : syncState === 'pending' ? 'text-amber-700' : 'text-danger'}`}>
+                        <p className={`text-xs font-semibold mt-1 ${syncState === 'synced' ? 'text-money-700' : syncState === 'pending' ? 'text-warn-700' : 'text-danger'}`}>
                           {syncState === 'synced' ? 'متزامن مع السحابة' : syncState === 'pending' ? 'جارٍ المزامنة…' : 'غير متصل — محلي فقط'}
                         </p>
                       )}
@@ -4242,10 +4259,10 @@ export default function Dashboard() {
               {/* Inventory */}
               <button
                 onClick={() => setActiveTab('inventory')}
-                className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-amber-300 transition-all cursor-pointer text-right space-y-4 group"
+                className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-warn-300 transition-all cursor-pointer text-right space-y-4 group"
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-amber-100 transition">
+                  <div className="w-12 h-12 bg-warn-50 text-warn-600 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-warn-100 transition">
                     <Pill className="w-6 h-6" />
                   </div>
                   <div className="min-w-0">
@@ -4254,10 +4271,10 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm bg-amber-50 text-amber-700 px-2.5 py-1 rounded-full font-bold">
+                  <span className="text-sm bg-warn-50 text-warn-700 px-2.5 py-1 rounded-full font-bold">
                     {inventory.filter(m => (getDaysUntilExpiry(m.id) <= 30) || m.availableQuantity < 15).length} تنبيه نشط
                   </span>
-                  <span className="text-sm text-slate-500 font-bold group-hover:text-amber-600 transition">دخول ←</span>
+                  <span className="text-sm text-slate-500 font-bold group-hover:text-warn-600 transition">دخول ←</span>
                 </div>
               </button>
 
@@ -4265,10 +4282,10 @@ export default function Dashboard() {
               {currentRole !== 'cashier' && (
                 <button
                   onClick={() => setActiveTab('b2b')}
-                  className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-blue-300 transition-all cursor-pointer text-right space-y-4 group"
+                  className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-info-300 transition-all cursor-pointer text-right space-y-4 group"
                 >
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-blue-100 transition">
+                    <div className="w-12 h-12 bg-info-50 text-info-600 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-info-100 transition">
                       <Truck className="w-6 h-6" />
                     </div>
                     <div className="min-w-0">
@@ -4277,10 +4294,10 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full font-bold">
+                    <span className="text-sm bg-info-50 text-info-700 px-2.5 py-1 rounded-full font-bold">
                       {b2bOrders.filter(o => o.status === 'pending' || o.status === 'preparing').length} طلبية نشطة
                     </span>
-                    <span className="text-sm text-slate-500 font-bold group-hover:text-blue-600 transition">دخول ←</span>
+                    <span className="text-sm text-slate-500 font-bold group-hover:text-info-600 transition">دخول ←</span>
                   </div>
                 </button>
               )}
@@ -4289,10 +4306,10 @@ export default function Dashboard() {
               {currentRole === 'admin' && (
                 <button
                   onClick={() => setActiveTab('financial')}
-                  className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-violet-300 transition-all cursor-pointer text-right space-y-4 group"
+                  className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm hover:shadow-md hover:border-special-300 transition-all cursor-pointer text-right space-y-4 group"
                 >
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-violet-50 text-violet-600 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-violet-100 transition">
+                    <div className="w-12 h-12 bg-special-50 text-special-600 rounded-xl flex items-center justify-center shrink-0 group-hover:bg-special-100 transition">
                       <BarChart3 className="w-6 h-6" />
                     </div>
                     <div className="min-w-0">
@@ -4301,10 +4318,10 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className={`text-sm px-2.5 py-1 rounded-full font-bold ${netProfitMonth >= 0 ? 'bg-money-50 text-money-700' : 'bg-rose-50 text-rose-700'}`}>
+                    <span className={`text-sm px-2.5 py-1 rounded-full font-bold ${netProfitMonth >= 0 ? 'bg-money-50 text-money-700' : 'bg-danger-50 text-danger-700'}`}>
                       صافي الشهر: {fmtNum(netProfitMonth)} د.ع
                     </span>
-                    <span className="text-sm text-slate-500 font-bold group-hover:text-violet-600 transition">دخول ←</span>
+                    <span className="text-sm text-slate-500 font-bold group-hover:text-special-600 transition">دخول ←</span>
                   </div>
                 </button>
               )}
@@ -4312,20 +4329,6 @@ export default function Dashboard() {
 
             </div>
 
-            {/* Compliance card — كان في الـ sidebar، يظهر في الصفحة الرئيسية فقط */}
-            <div className="bg-slate-900 text-white p-5 rounded-2xl border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-primary-400 font-semibold text-sm">
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>تفتيش نقابة صيادلة العراق</span>
-                </div>
-                <p className="text-sm text-slate-300 font-semibold">الصيدلية ممتثلة لكافة شروط نقابة صيادلة العراق ووزارة الصحة الاتحادية.</p>
-              </div>
-              <div className="flex gap-4 text-sm tabular-nums text-slate-500 shrink-0">
-                <span>ترخيص: مجاز رسمي</span>
-                <span>آخر مطابقة: اليوم</span>
-              </div>
-            </div>
           </div>
         ) : (
           /* ======================================================
@@ -4362,52 +4365,80 @@ export default function Dashboard() {
               {activeTab === 'pos' && (
                 <motion.div
                   key="pos"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  // بلا y (بخلاف بقية التبويبات): إبقاء الانتقال بلا transform حتى لا يصبح
+                  // هذا العنصر هو الحاوية المرجعية لكل fixed بداخله (ورقة السلة والشريط السفلي
+                  // على الهاتف) بدل نافذة العرض — وهي مشكلة CSS معروفة مع أي أب له transform.
                   className="grid grid-cols-1 lg:grid-cols-12 gap-6"
                 >
                   
-                  {/* Left Column: POS Register — dark theme */}
-                  <div className="lg:col-span-7 order-first lg:order-none bg-slate-900 rounded-3xl p-5 shadow-lg flex flex-col gap-3">
+                  {/* Left Column: POS Register — دائم الظهور على سطح المكتب؛ على الهاتف يبقى
+                      شريط البحث فقط هنا (لاصق أعلى الشاشة) وتنزلق السلة كورقة سفلية عند الحاجة
+                      كي يصل الكاشير للأصناف فوراً بدل أن تحجب السلة الشاشة أولاً. */}
+                  <div className="order-first lg:order-none lg:col-span-7 flex flex-col gap-3 lg:bg-slate-900 lg:rounded-3xl lg:p-5 lg:shadow-lg">
 
-                    {/* Search bar — فوق سلة البيع */}
-                    <POSSearchBar
-                      ref={posSearchRef}
-                      onQueryChange={handlePOSQueryChange}
-                      onEnter={handlePOSEnter}
-                      onScanClick={handlePOSScanClick}
-                    />
-
-                    {/* Header */}
-                    <div className="flex justify-between items-center border-b border-slate-700 pb-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 bg-primary-400 rounded-full animate-pulse" />
-                        <h3 className="font-semibold text-white text-sm">سلة البيع</h3>
-                        <span className="hidden lg:inline text-xs text-slate-500 font-bold mr-1" title="اختصارات لوحة المفاتيح (لا تعمل أثناء الكتابة في حقل، عدا F2 وF9)">
-                          F2 بحث · F4 خصم · F8 رسمي · F9 دفع · Esc مسح · ↑↓ كمية
-                        </span>
-                        {currentCart.length > 0 && (
-                          <span className="bg-primary-500 text-white text-sm font-bold px-2 py-0.5 rounded-full">
-                            {currentCart.length}
-                          </span>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => setCurrentCart([])}
-                        className="text-slate-500 hover:text-rose-400 transition text-sm font-bold flex items-center gap-1 cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        <span>مسح</span>
-                      </button>
+                    {/* شريط البحث لاصق أعلى الشاشة على الهاتف — في صندوق خاص به بخلفية ضبابية،
+                        منفصل عمداً عن الحاوية الخارجية: أي عنصر أب يحمل backdrop-blur أو transform
+                        يصبح هو المرجع لأبنائه من نوع fixed بدل نافذة العرض (مشكلة CSS قياسية)،
+                        وورقة السلة والشريط السفلي بالأسفل كلاهما fixed ويجب أن يبقيا نسبيين للشاشة. */}
+                    <div className="sticky top-14 z-20 -mx-4 px-4 py-2.5 bg-page/95 backdrop-blur lg:static lg:mx-0 lg:px-0 lg:py-0 lg:bg-transparent lg:backdrop-blur-none">
+                      <POSSearchBar
+                        ref={posSearchRef}
+                        onQueryChange={handlePOSQueryChange}
+                        onEnter={handlePOSEnter}
+                        onScanClick={handlePOSScanClick}
+                      />
                     </div>
 
-                    {currentCart.length === 0 ? (
-                      <div className="text-center py-14 space-y-3 flex-1 flex flex-col items-center justify-center">
-                        <ShoppingBag className="w-10 h-10 text-slate-600 mx-auto" />
-                        <p className="text-xs text-slate-500 font-semibold">السلة فارغة — اختر دواءً من اليمين</p>
+                    {/* خلفية شفافة تُغلق ورقة السلة عند النقر خارجها — على الهاتف فقط */}
+                    {showMobileCart && (
+                      <div className="fixed inset-0 z-30 bg-ink/50 lg:hidden" onClick={() => setShowMobileCart(false)} aria-hidden="true" />
+                    )}
+
+                    {/* محتوى السلة: عمود ثابت على سطح المكتب، ورقة سفلية منزلقة على الهاتف
+                        تُفتح وتُغلق بـ showMobileCart (تُغلق تلقائياً متى فرغت السلة). */}
+                    <div className={`${showMobileCart ? 'flex' : 'hidden'} lg:contents flex-col gap-3 fixed inset-x-0 bottom-0 z-40 max-h-[85vh] bg-slate-900 rounded-t-3xl shadow-2xl p-4 pb-[max(1rem,env(safe-area-inset-bottom))] overflow-y-auto`}>
+
+                      {/* مقبض السحب وزر الإغلاق — الهاتف فقط */}
+                      <div className="flex items-center justify-between lg:hidden -mt-1">
+                        <span className="w-10 h-1.5 rounded-full bg-slate-700 mx-auto" />
+                        <button type="button" onClick={() => setShowMobileCart(false)} aria-label="إغلاق السلة"
+                          className="absolute left-3 top-2 p-1.5 text-slate-500 hover:text-white cursor-pointer">
+                          <X className="w-4 h-4" />
+                        </button>
                       </div>
-                    ) : (
+
+                      {/* Header */}
+                      <div className="flex justify-between items-center border-b border-slate-700 pb-2">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-2 bg-primary-400 rounded-full animate-pulse" />
+                          <h3 className="font-semibold text-white text-sm">سلة البيع</h3>
+                          <span className="hidden lg:inline text-xs text-slate-500 font-bold mr-1" title="اختصارات لوحة المفاتيح (لا تعمل أثناء الكتابة في حقل، عدا F2 وF9)">
+                            F2 بحث · F4 خصم · F8 رسمي · F9 دفع · Esc مسح · ↑↓ كمية
+                          </span>
+                          {currentCart.length > 0 && (
+                            <span className="bg-primary-500 text-white text-sm font-bold px-2 py-0.5 rounded-full">
+                              {currentCart.length}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => setCurrentCart([])}
+                          className="text-slate-500 hover:text-danger-400 transition text-sm font-bold flex items-center gap-1 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>مسح</span>
+                        </button>
+                      </div>
+
+                      {currentCart.length === 0 ? (
+                        <div className="text-center py-14 space-y-3 flex-1 flex flex-col items-center justify-center">
+                          <ShoppingBag className="w-10 h-10 text-slate-600 mx-auto" />
+                          <p className="text-xs text-slate-500 font-semibold">السلة فارغة — اختر دواءً من القائمة</p>
+                        </div>
+                      ) : (
                       <form ref={posFormRef} onSubmit={handleCheckoutPOS} className="flex flex-col gap-4 flex-1">
 
                         {/* Cart Items */}
@@ -4420,6 +4451,7 @@ export default function Dashboard() {
                               soldToday={soldTodayByMed.get(item.medicine.id) || 0}
                               onSetPrice={setCartPrice}
                               showVirtualPrice={showVirtualPriceInPOS}
+                              showCost={currentRole !== 'cashier'}
                               onInc={incCartQty}
                               onDec={decCartQty}
                               onRemove={removeFromCart}
@@ -4452,11 +4484,11 @@ export default function Dashboard() {
                           </select>
                           <label className="flex items-center gap-2 cursor-pointer select-none">
                             <input type="checkbox" checked={posOnCredit} onChange={(e) => setPosOnCredit(e.target.checked)}
-                              className="w-4 h-4 accent-amber-500 cursor-pointer" />
-                            <span className="text-sm font-bold text-amber-400">بيع بالآجل — تسجيل ذمّة</span>
+                              className="w-4 h-4 accent-warn-500 cursor-pointer" />
+                            <span className="text-sm font-bold text-warn-400">بيع بالآجل — تسجيل ذمّة</span>
                           </label>
                           {posOnCredit && (
-                            <p className="text-sm text-amber-500 font-bold">سيُسجَّل على «{posCustomerName}» ولن يُضاف للكاش حتى التحصيل.</p>
+                            <p className="text-sm text-warn-500 font-bold">سيُسجَّل على «{posCustomerName}» ولن يُضاف للكاش حتى التحصيل.</p>
                           )}
                         </div>
 
@@ -4467,7 +4499,7 @@ export default function Dashboard() {
                             <span className="tabular-nums text-slate-200 text-base">{fmtNum(posSubtotal)} د.ع</span>
                           </div>
                           {posDiscountAmount > 0 && (
-                            <div className="flex justify-between text-rose-400">
+                            <div className="flex justify-between text-danger-400">
                               <span>الخصم</span>
                               <span className="tabular-nums text-base">−{fmtNum(posDiscountAmount)} د.ع</span>
                             </div>
@@ -4489,6 +4521,23 @@ export default function Dashboard() {
                         </button>
 
                       </form>
+                      )}
+                    </div>
+
+                    {/* شريط ملخّص ثابت أسفل الشاشة على الهاتف — يفتح ورقة السلة عند النقر.
+                        يظهر فقط والسلة مغلقة وفيها أصناف، حتى لا يتكرر مع زر الإتمام داخل الورقة. */}
+                    {!showMobileCart && currentCart.length > 0 && (
+                      <button type="button" onClick={() => setShowMobileCart(true)}
+                        className="lg:hidden fixed inset-x-3 bottom-3 z-30 bg-slate-900 text-white rounded-2xl shadow-2xl px-4 py-3 flex items-center justify-between gap-3 cursor-pointer">
+                        <span className="flex items-center gap-2 text-sm font-bold">
+                          <ShoppingBag className="w-4 h-4 text-primary-400" />
+                          {currentCart.length} صنف
+                        </span>
+                        <span className="flex items-center gap-2">
+                          <span className="text-money-400 font-bold tabular-nums text-base">{fmtNum(posTotal)} د.ع</span>
+                          <span className="bg-primary-600 text-white text-sm font-bold px-3 py-1.5 rounded-xl">إتمام</span>
+                        </span>
+                      </button>
                     )}
                   </div>
 
@@ -4508,8 +4557,8 @@ export default function Dashboard() {
                         onClick={() => setShowVirtualPriceInPOS(!showVirtualPriceInPOS)}
                         className={`flex items-center gap-1.5 text-sm font-bold px-2.5 py-1.5 min-h-10 rounded-xl border transition cursor-pointer shadow-sm shrink-0 ${
                           showVirtualPriceInPOS
-                            ? 'bg-purple-600 border-purple-500 text-white'
-                            : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-purple-50 hover:border-purple-200'
+                            ? 'bg-special-600 border-special-500 text-white'
+                            : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-special-50 hover:border-special-200'
                         }`}
                       >
                         {showVirtualPriceInPOS ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
@@ -4523,14 +4572,14 @@ export default function Dashboard() {
                           title="قائمة نواقص الأدوية — أضف إليها بنقرة مزدوجة على أي علاج في سلة البيع"
                           className={`flex items-center gap-1.5 text-sm font-bold px-2.5 py-1.5 rounded-xl border transition cursor-pointer shadow-sm ${
                             showShortages
-                              ? 'bg-amber-500 border-amber-400 text-white'
-                              : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+                              ? 'bg-warn-500 border-warn-400 text-white'
+                              : 'bg-warn-50 border-warn-200 text-warn-700 hover:bg-warn-100'
                           }`}
                         >
                           <ClipboardList className="w-3.5 h-3.5" />
                           <span>نواقص الأدوية</span>
                           {shortages.length > 0 && (
-                            <span className={`text-xs font-bold px-1.5 py-px rounded-full ${showShortages ? 'bg-white/25 text-white' : 'bg-amber-200 text-amber-800'}`}>
+                            <span className={`text-xs font-bold px-1.5 py-px rounded-full ${showShortages ? 'bg-white/25 text-white' : 'bg-warn-200 text-warn-800'}`}>
                               {shortages.length}
                             </span>
                           )}
@@ -4538,7 +4587,7 @@ export default function Dashboard() {
                         </button>
                         {showShortages && (
                           <div className="absolute left-0 top-full mt-2 w-[333px] bg-white border border-slate-200 rounded-2xl shadow-xl z-20 overflow-hidden">
-                            <div className="px-3 py-2 border-b border-slate-100 bg-amber-50/60 text-sm font-bold text-amber-800">
+                            <div className="px-3 py-2 border-b border-slate-100 bg-warn-50/60 text-sm font-bold text-warn-800">
                               نواقص الأدوية ({shortages.length})
                             </div>
                             {shortages.length === 0 ? (
@@ -4556,7 +4605,7 @@ export default function Dashboard() {
                                         {/* مبيع آخر شهرين + كمية مقترحة للطلب (تغطية أسبوعين) + الرصيد الحالي */}
                                         <span className="text-xs font-bold text-slate-500 tabular-nums block">
                                           مبيع شهرين: <span className={st.sold > 0 ? 'text-primary-700' : 'text-slate-500'}>{st.sold}</span>
-                                          {st.sold > 0 ? <> · مقترح للطلب: <span className="text-violet-700">{st.suggested} شريط</span></> : ' · لم يُبَع خلال شهرين'}
+                                          {st.sold > 0 ? <> · مقترح للطلب: <span className="text-special-700">{st.suggested} شريط</span></> : ' · لم يُبَع خلال شهرين'}
                                           {st.stock !== null && <> · بالمخزن: {st.stock}</>}
                                         </span>
                                       </div>
@@ -4564,7 +4613,7 @@ export default function Dashboard() {
                                         type="button"
                                         onClick={() => removeFromShortages(s.id)}
                                         title="حذف من النواقص"
-                                        className="text-slate-300 hover:text-rose-500 transition cursor-pointer shrink-0"
+                                        className="text-slate-300 hover:text-danger-500 transition cursor-pointer shrink-0"
                                       >
                                         <X className="w-3.5 h-3.5" />
                                       </button>
@@ -4574,18 +4623,18 @@ export default function Dashboard() {
                                 {/* خط فاصل واضح ثم الجزء السفلي: ما تجاوز 5 أيام */}
                                 {staleShortages.length > 0 && (
                                   <>
-                                    <div className="flex items-center gap-2 px-3 py-1.5 border-y-2 border-rose-300 bg-rose-50">
-                                      <Clock className="w-3 h-3 text-rose-600 shrink-0" />
-                                      <span className="text-sm font-bold text-rose-700">
+                                    <div className="flex items-center gap-2 px-3 py-1.5 border-y-2 border-danger-300 bg-danger-50">
+                                      <Clock className="w-3 h-3 text-danger-600 shrink-0" />
+                                      <span className="text-sm font-bold text-danger-700">
                                         مضى عليها أكثر من 5 أيام ({staleShortages.length})
                                       </span>
                                     </div>
-                                    <div className="divide-y divide-slate-50 bg-rose-50/30">
+                                    <div className="divide-y divide-slate-50 bg-danger-50/30">
                                       {staleShortages.map(s => { const st = shortageStats(s); return (
-                                        <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-rose-50 group">
+                                        <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-danger-50 group">
                                           <div className="min-w-0">
-                                            <span className="text-sm font-semibold text-rose-900/70 truncate block">{s.name}</span>
-                                            <span className="text-xs font-bold text-rose-800/60 tabular-nums block">
+                                            <span className="text-sm font-semibold text-danger-900/70 truncate block">{s.name}</span>
+                                            <span className="text-xs font-bold text-danger-800/60 tabular-nums block">
                                               مبيع شهرين: {st.sold}
                                               {st.sold > 0 ? <> · مقترح للطلب: {st.suggested} شريط</> : ' · لم يُبَع خلال شهرين'}
                                               {st.stock !== null && <> · بالمخزن: {st.stock}</>}
@@ -4595,7 +4644,7 @@ export default function Dashboard() {
                                             type="button"
                                             onClick={() => removeFromShortages(s.id)}
                                             title="حذف من النواقص"
-                                            className="text-slate-300 hover:text-rose-500 transition cursor-pointer shrink-0"
+                                            className="text-slate-300 hover:text-danger-500 transition cursor-pointer shrink-0"
                                           >
                                             <X className="w-3.5 h-3.5" />
                                           </button>
@@ -4619,6 +4668,7 @@ export default function Dashboard() {
                           key={med.id}
                           med={med}
                           showVirtualPrice={showVirtualPriceInPOS}
+                          showCost={currentRole !== 'cashier'}
                           daysUntilExpiry={getDaysUntilExpiry(med.id)}
                           onAdd={addToCart}
                         />
@@ -4634,9 +4684,9 @@ export default function Dashboard() {
                     <div className="pt-4 border-t border-slate-100">
                       <button
                         onClick={() => setShowTodaySales(p => !p)}
-                        className="w-full font-semibold text-slate-800 text-xs flex items-center gap-2 cursor-pointer hover:text-blue-600 transition text-right"
+                        className="w-full font-semibold text-slate-800 text-xs flex items-center gap-2 cursor-pointer hover:text-info-600 transition text-right"
                       >
-                        <TrendingUp className="w-4 h-4 text-blue-500 shrink-0" />
+                        <TrendingUp className="w-4 h-4 text-info-500 shrink-0" />
                         <span className="flex-1">حركة مبيع اليوم</span>
                         <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
                           {salesLedger.filter(s => {
@@ -4681,7 +4731,7 @@ export default function Dashboard() {
                                   <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/60">
                                     <td className="text-right py-2 px-3 text-slate-700">{row.name}</td>
                                     <td className="text-center py-2 px-3">
-                                      <span className="bg-blue-50 text-blue-700 tabular-nums px-2 py-0.5 rounded-lg">{row.qty}</span>
+                                      <span className="bg-info-50 text-info-700 tabular-nums px-2 py-0.5 rounded-lg">{row.qty}</span>
                                     </td>
                                     <td className="text-center py-2 px-3 tabular-nums text-slate-500">{row.time}</td>
                                     <td className="text-center py-2 px-3 tabular-nums text-slate-500 text-xs">{row.invoiceId}</td>
@@ -4696,7 +4746,7 @@ export default function Dashboard() {
 
                     {/* Historical sales log list below the shelf to see how money accumulated */}
                     <div className="pt-4 border-t border-slate-100">
-                      <h4 className="font-semibold text-slate-800 text-xs mb-3 flex items-center space-x-reverse space-x-2">
+                      <h4 className="font-semibold text-slate-800 text-xs mb-3 flex items-center gap-2">
                         <ClipboardList className="w-4 h-4 text-primary-500" />
                         <span>أحدث فواتير المبيعات الصادرة اليوم</span>
                       </h4>
@@ -4709,7 +4759,7 @@ export default function Dashboard() {
                         {salesLedger.map((s) => {
                           const isExpanded = expandedInvoiceId === s.invoiceId;
                           return (
-                            <div key={s.invoiceId} className={`rounded-xl border text-sm transition-all ${isExpanded ? 'border-blue-200 bg-blue-50/30' : 'border-slate-100 bg-slate-50/50'}`}>
+                            <div key={s.invoiceId} className={`rounded-xl border text-sm transition-all ${isExpanded ? 'border-info-200 bg-info-50/30' : 'border-slate-100 bg-slate-50/50'}`}>
                               {/* رأس الفاتورة — قابل للضغط للتوسيع */}
                               <div
                                 className="p-3 flex items-center justify-between cursor-pointer select-none"
@@ -4728,7 +4778,7 @@ export default function Dashboard() {
                                   <span className="text-slate-500">•</span>
                                   <span className="text-slate-600 font-medium truncate">العميل: {s.customerName}</span>
                                   {salesReturns.some(r => r.originalInvoiceId === s.invoiceId) && (
-                                    <span className="text-xs bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded shrink-0">مُرتجَع</span>
+                                    <span className="text-xs bg-warn-100 text-warn-800 font-bold px-1.5 py-0.5 rounded shrink-0">مُرتجَع</span>
                                   )}
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
@@ -4742,7 +4792,7 @@ export default function Dashboard() {
                                       setReturnRefundMethod('cash');
                                       setShowReturnModal(true);
                                     }}
-                                    className="text-xs font-bold px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg transition cursor-pointer"
+                                    className="text-xs font-bold px-2 py-1 bg-danger-50 hover:bg-danger-100 text-danger-700 border border-danger-200 rounded-lg transition cursor-pointer"
                                   >
                                     إرجاع
                                   </button>
@@ -4751,8 +4801,8 @@ export default function Dashboard() {
 
                               {/* تفاصيل الأصناف — قابلة للتعديل */}
                               {isExpanded && (
-                                <div className="px-3 pb-3 space-y-2 border-t border-blue-100">
-                                  <p className="text-xs text-blue-600 font-bold pt-2">المواد المباعة — يمكنك تعديل الكمية أو السعر ثم حفظ التغييرات</p>
+                                <div className="px-3 pb-3 space-y-2 border-t border-info-100">
+                                  <p className="text-xs text-info-600 font-bold pt-2">المواد المباعة — يمكنك تعديل الكمية أو السعر ثم حفظ التغييرات</p>
                                   <div className="space-y-1.5">
                                     {editingItems.map((it, idx) => (
                                       <div key={idx} className="flex items-center gap-2 bg-white border border-slate-100 rounded-lg px-3 py-2">
@@ -4784,7 +4834,7 @@ export default function Dashboard() {
                                           type="button"
                                           onClick={() => handleDeleteInvoiceItem(s.invoiceId, idx)}
                                           title="حذف هذا الصنف من الفاتورة وإرجاع عدده للمخزون"
-                                          className="shrink-0 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded p-1 transition cursor-pointer border-none bg-transparent flex items-center justify-center"
+                                          className="shrink-0 text-danger-400 hover:text-danger-600 hover:bg-danger-50 rounded p-1 transition cursor-pointer border-none bg-transparent flex items-center justify-center"
                                         >
                                           <Trash2 className="w-3.5 h-3.5" />
                                         </button>
@@ -4829,1780 +4879,69 @@ export default function Dashboard() {
                 =========================================================
               */}
               {activeTab === 'inventory' && (
-                <motion.div
-                  key="inventory"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="space-y-6"
-                >
-                  <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-6">
-                    <div className="flex items-start justify-between gap-3 flex-wrap">
-                      <div>
-                        <h3 className="font-semibold text-slate-900 text-sm">مستودع الأدوية والمخزون الداخلي</h3>
-                        <p className="text-sm text-slate-500 font-bold mt-0.5">تحرير الأسعار ونسب المخزون وإدارة فترات انتهاء صلاحية الأدوية العضوية والمبردة</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={exportInventoryToCSV}
-                        className="bg-primary-600 hover:bg-primary-700 text-white font-bold py-2 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-sm"
-                        title="تنزيل جرد المخزون الكامل كملف Excel/CSV"
-                      >
-                        <FileText className="w-4 h-4" />
-                        <span>تصدير الجرد CSV</span>
-                      </button>
-                    </div>
-
-                    {/* Bulk import status banner */}
-                    {bulkImportStatus !== 'idle' && (
-                      <div className={`rounded-2xl p-4 text-right flex items-center gap-3 shadow-sm border ${
-                        bulkImportStatus === 'error' ? 'bg-red-50 border-red-200' :
-                        bulkImportStatus === 'done' ? 'bg-primary-50 border-primary-200' :
-                        'bg-slate-50 border-slate-200'
-                      }`}>
-                        {(bulkImportStatus === 'loading' || bulkImportStatus === 'writing') && (
-                          <RefreshCw className="w-5 h-5 text-slate-600 animate-spin shrink-0" />
-                        )}
-                        {bulkImportStatus === 'done' && <CheckCircle2 className="w-5 h-5 text-primary-600 shrink-0" />}
-                        {bulkImportStatus === 'error' && <AlertCircle className="w-5 h-5 text-red-600 shrink-0" />}
-                        <div className="flex-1">
-                          <p className={`text-xs font-semibold ${
-                            bulkImportStatus === 'error' ? 'text-red-800' :
-                            bulkImportStatus === 'done' ? 'text-primary-800' : 'text-slate-800'
-                          }`}>
-                            {bulkImportStatus === 'writing'
-                              ? `جارٍ الرفع السحابي... ${fmtNum(bulkImportProgress.done)} / ${fmtNum(bulkImportProgress.total)}`
-                              : bulkImportMsg}
-                          </p>
-                          {bulkImportStatus === 'writing' && (
-                            <div className="mt-2 h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                              <div className="h-full bg-primary-500 transition-all duration-300"
-                                style={{ width: `${bulkImportProgress.total ? (bulkImportProgress.done / bulkImportProgress.total) * 100 : 0}%` }} />
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Automatic Alert: Near Expiry Medicines (30 days) — collapsible */}
-                    {getNearExpiryMeds().length > 0 && (
-                      <div className="bg-rose-50/50 border border-rose-100 rounded-2xl p-5 text-right space-y-3.5 shadow-sm">
-                        <button
-                          type="button"
-                          onClick={() => setShowNearExpiry30(!showNearExpiry30)}
-                          className="w-full flex items-center justify-between cursor-pointer text-right"
-                        >
-                          <div className="flex items-center space-x-reverse space-x-2.5">
-                            <span className="flex h-3 w-3 relative">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-3 w-3 bg-rose-600"></span>
-                            </span>
-                            <div>
-                              <h4 className="font-semibold text-xs text-rose-900">تنبيه تلقائي: مستحضرات قاربت صلاحيتها على الانتهاء (30 يوماً أو أقل)</h4>
-                              <p className="text-xs text-rose-500 font-bold mt-0.5 font-sans">يرجى اتخاذ تدابير الوقاية وتوريد كميات جديدة أو إبرام طلبية مرتجع مع المذخر المعني</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-reverse space-x-2">
-                            <span className="text-sm bg-rose-100 text-rose-850 font-semibold px-3 py-0.5 rounded-full border border-rose-200/50">
-                              {getNearExpiryMeds().length} {getNearExpiryMeds().length === 1 ? "مستحضر حرج" : "مستحضرات حرجة"}
-                            </span>
-                            <ChevronDown className={`w-4 h-4 text-rose-400 transition-transform ${showNearExpiry30 ? 'rotate-180' : ''}`} />
-                          </div>
-                        </button>
-
-                        {showNearExpiry30 && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
-                          {/* سقف العرض: القائمة قد تضم مئات المواد مع مخزون بحجم ~7000 صنف */}
-                          {getNearExpiryMeds().slice(0, EXPIRY_LIST_LIMIT).map(med => {
-                            const days = getDaysUntilExpiry(med.id);
-                            const expDate = expiryDates[med.id] || '';
-                            return (
-                              <div key={med.id} className="bg-white border border-rose-100/70 p-3.5 rounded-xl flex items-center justify-between text-xs transition hover:shadow-xs hover:border-rose-200">
-                                <div className="space-y-1">
-                                  <strong className="font-semibold text-slate-950 block">{med.nameAr}</strong>
-                                  <span className="text-sm text-slate-500 tabular-nums block">
-                                    {med.nameEn} • {med.scientificName}
-                                  </span>
-                                  <div className="flex items-center space-x-reverse space-x-1.5 mt-1">
-                                    <Clock className="w-3.5 h-3.5 text-rose-600" />
-                                    <span className="text-sm font-bold text-rose-600 tabular-nums">
-                                      انتهاء الصلاحية: {expDate}
-                                    </span>
-                                  </div>
-                                </div>
-                                
-                                <div className="flex flex-col items-end space-y-2.5">
-                                  <span className="px-2.5 py-0.5 bg-rose-50 text-rose-800 rounded-lg border border-rose-200/40 font-semibold text-sm tracking-wide">
-                                    {days < 0 ? `منتهية منذ ${Math.abs(days)} يوم` : days === 0 ? 'تنتهي اليوم!' : `متبقي ${days} يوم`}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      addToPurchaseDraft(med);
-                                      setActiveTab('b2b');
-                                    }}
-                                    className="text-xs bg-primary-50 hover:bg-primary-100 active:bg-primary-200 text-primary-800 font-bold px-2.5 py-1 rounded-lg transition border border-primary-100 cursor-pointer flex items-center gap-1"
-                                  >
-                                    <Plus className="w-3 h-3" />
-                                    <span>طلب توريد B2B</span>
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                          {getNearExpiryMeds().length > EXPIRY_LIST_LIMIT && (
-                            <div className="md:col-span-2 text-sm text-slate-500 font-bold text-center py-1">
-                              يُعرض {EXPIRY_LIST_LIMIT} من أصل {fmtNum(getNearExpiryMeds().length)} مستحضر — راجع سجلّ الصلاحيات الموسّع أدناه
-                            </div>
-                          )}
-                        </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* لوحة الصلاحيات الموسّعة: أفق 6 أشهر مع تصفية بالشهر وترتيب بالأولوية */}
-                    {getHorizonExpiryMeds().length > 0 && (
-                      <div className="bg-white border border-slate-200/70 rounded-2xl shadow-sm overflow-hidden">
-                        <button
-                          type="button"
-                          onClick={() => setShowExpiryHorizon(!showExpiryHorizon)}
-                          className="w-full flex items-center justify-between p-5 text-right hover:bg-slate-50/60 transition cursor-pointer"
-                        >
-                          <div className="flex items-center space-x-reverse space-x-2.5">
-                            <span className="flex items-center justify-center w-8 h-8 rounded-xl bg-amber-50 border border-amber-150">
-                              <CalendarClock className="w-4 h-4 text-amber-600" />
-                            </span>
-                            <div>
-                              <h4 className="font-semibold text-xs text-slate-900">سجلّ الصلاحيات الموسّع — أفق 6 أشهر</h4>
-                              <p className="text-xs text-slate-500 font-bold mt-0.5">اضغط شهراً لعرض كل المواد المنتهية فيه، مرتّبة بالأولوية (الأقرب انتهاءً أولاً)</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-reverse space-x-2">
-                            <span className="text-sm bg-amber-100 text-amber-800 font-semibold px-3 py-0.5 rounded-full border border-amber-200/50">
-                              {getHorizonExpiryMeds().length} مستحضر
-                            </span>
-                            <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${showExpiryHorizon ? 'rotate-180' : ''}`} />
-                          </div>
-                        </button>
-
-                        {showExpiryHorizon && (
-                          <div className="px-5 pb-5 space-y-4 border-t border-slate-100 pt-4">
-                            {/* شرائح اختيار الشهر */}
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedExpiryMonth(null)}
-                                className={`text-sm font-semibold px-3 py-1.5 rounded-lg border transition cursor-pointer ${selectedExpiryMonth === null ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'}`}
-                              >
-                                الكل ({getHorizonExpiryMeds().length})
-                              </button>
-                              {getExpiryMonths().map(mo => (
-                                <button
-                                  key={mo.key}
-                                  type="button"
-                                  disabled={mo.count === 0}
-                                  onClick={() => setSelectedExpiryMonth(mo.key)}
-                                  className={`text-sm font-semibold px-3 py-1.5 rounded-lg border transition flex items-center gap-1.5 ${mo.count === 0 ? 'bg-slate-50/50 text-slate-300 border-slate-100 cursor-not-allowed' : selectedExpiryMonth === mo.key ? 'bg-amber-500 text-white border-amber-500 cursor-pointer' : 'bg-amber-50 text-amber-700 border-amber-200/60 hover:border-amber-300 cursor-pointer'}`}
-                                >
-                                  <span>{mo.label}</span>
-                                  {mo.count > 0 && (
-                                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${selectedExpiryMonth === mo.key ? 'bg-white/25' : 'bg-amber-200/70'}`}>{mo.count}</span>
-                                  )}
-                                </button>
-                              ))}
-                            </div>
-
-                            {/* القائمة المرتّبة بالأولوية */}
-                            {/* سقف العرض: أفق 6 أشهر قد يضم آلاف المواد مع مخزون ~7000 صنف —
-                                نُظهر الأعلى أولوية (الأقرب انتهاءً) وتصفية الشهر تُظهر البقية */}
-                            {(() => {
-                              const horizonFiltered = getHorizonExpiryMeds()
-                                .filter(med => selectedExpiryMonth === null || (expiryDates[med.id] || '').substring(0, 7) === selectedExpiryMonth);
-                              return (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                              {horizonFiltered
-                                .slice(0, EXPIRY_LIST_LIMIT)
-                                .map(med => {
-                                  const days = getDaysUntilExpiry(med.id);
-                                  const sev = expirySeverity(days);
-                                  const tone = sev === 'expired' || sev === 'critical'
-                                    ? { card: 'border-rose-100/70 hover:border-rose-200', icon: 'text-rose-600', badge: 'bg-rose-50 text-rose-700 border-rose-200/50' }
-                                    : sev === 'warning'
-                                    ? { card: 'border-amber-100/70 hover:border-amber-200', icon: 'text-amber-600', badge: 'bg-amber-50 text-amber-700 border-amber-200/50' }
-                                    : { card: 'border-slate-200/70 hover:border-slate-300', icon: 'text-slate-500', badge: 'bg-slate-50 text-slate-600 border-slate-200/50' };
-                                  return (
-                                    <div key={med.id} className={`bg-white border ${tone.card} p-3.5 rounded-xl flex items-center justify-between text-xs transition hover:shadow-xs`}>
-                                      <div className="space-y-1">
-                                        <strong className="font-semibold text-slate-950 block">{med.nameAr}</strong>
-                                        <span className="text-sm text-slate-500 tabular-nums block">{med.nameEn} • {med.scientificName}</span>
-                                        <div className="flex items-center space-x-reverse space-x-1.5 mt-1">
-                                          <Clock className={`w-3.5 h-3.5 ${tone.icon}`} />
-                                          <span className={`text-sm font-bold tabular-nums ${tone.icon}`}>انتهاء الصلاحية: {expiryDates[med.id]}</span>
-                                        </div>
-                                      </div>
-                                      <div className="flex flex-col items-end space-y-2.5">
-                                        <span className={`px-2.5 py-0.5 rounded-lg border font-semibold text-sm tracking-wide ${tone.badge}`}>
-                                          {days < 0 ? `منتهية منذ ${Math.abs(days)} يوم` : days === 0 ? 'تنتهي اليوم!' : `متبقي ${days} يوم`}
-                                        </span>
-                                        <button
-                                          type="button"
-                                          onClick={() => { addToPurchaseDraft(med); setActiveTab('b2b'); }}
-                                          className="text-xs bg-primary-50 hover:bg-primary-100 active:bg-primary-200 text-primary-800 font-bold px-2.5 py-1 rounded-lg transition border border-primary-100 cursor-pointer flex items-center gap-1"
-                                        >
-                                          <Plus className="w-3 h-3" />
-                                          <span>طلب توريد B2B</span>
-                                        </button>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              {horizonFiltered.length > EXPIRY_LIST_LIMIT && (
-                                <div className="md:col-span-2 text-sm text-slate-500 font-bold text-center py-1">
-                                  يُعرض {EXPIRY_LIST_LIMIT} من أصل {fmtNum(horizonFiltered.length)} مستحضر (الأقرب انتهاءً أولاً) — اختر شهراً لتضييق القائمة
-                                </div>
-                              )}
-                            </div>
-                              );
-                            })()}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* المخزون الراكد: رصيد موجود بلا بيع منذ مدة — رأس مال محبوس يُفضَّل إرجاعه للمذخر قبل انتهائه */}
-                    <div className="bg-white border border-slate-200/70 rounded-2xl shadow-sm overflow-hidden">
-                      <button
-                        type="button"
-                        onClick={() => setShowDeadStock(!showDeadStock)}
-                        className="w-full flex items-center justify-between p-5 text-right hover:bg-slate-50/60 transition cursor-pointer"
-                      >
-                        <div className="flex items-center space-x-reverse space-x-2.5">
-                          <span className="flex items-center justify-center w-8 h-8 rounded-xl bg-slate-100 border border-slate-200">
-                            <Clock className="w-4 h-4 text-slate-600" />
-                          </span>
-                          <div>
-                            <h4 className="font-semibold text-xs text-slate-900">المخزون الراكد — لم يُبَع منذ {deadStockDays} يوماً</h4>
-                            <p className="text-xs text-slate-500 font-bold mt-0.5">مواد برصيد موجود بلا أي بيع خلال المدة، مرتّبة برأس المال المحبوس فيها — للإرجاع أو التصفية قبل الانتهاء</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-reverse space-x-2">
-                          <span className="text-sm bg-slate-100 text-slate-700 font-semibold px-3 py-0.5 rounded-full border border-slate-200">
-                            {fmtNum(deadStock.rows.length)} مادة · {fmtNum(deadStock.total)} د.ع
-                          </span>
-                          <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${showDeadStock ? 'rotate-180' : ''}`} />
-                        </div>
-                      </button>
-                      {showDeadStock && (
-                        <div className="px-5 pb-5 space-y-3 border-t border-slate-100 pt-4">
-                          <div className="flex flex-wrap items-center gap-2">
-                            {([90, 180, 365] as const).map(d => (
-                              <button key={d} type="button" onClick={() => setDeadStockDays(d)}
-                                className={`text-sm font-semibold px-3 py-1 rounded-full border transition cursor-pointer ${deadStockDays === d ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'}`}>
-                                {d} يوماً
-                              </button>
-                            ))}
-                            <input
-                              type="text"
-                              value={deadStockQuery}
-                              onChange={e => setDeadStockQuery(e.target.value)}
-                              placeholder="بحث باسم المادة…"
-                              className="flex-1 min-w-[160px] bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-primary-500"
-                            />
-                          </div>
-                          <p className="text-xs text-slate-500 font-bold">
-                            «لم يُبَع منذ التسجيل» = لا يوجد أي بيع مسجَّل للمادة في التطبيق. تُعرض أعلى {deadStockVisible.length} مادة قيمةً؛ استخدم البحث للوصول لغيرها.
-                          </p>
-                          {deadStockVisible.length === 0 ? (
-                            <p className="text-xs text-slate-500 font-bold text-center py-6">لا مخزون راكد ضمن هذه المدة 🎉</p>
-                          ) : (
-                            <div className="space-y-1.5 max-h-96 overflow-y-auto pl-1">
-                              {deadStockVisible.map(({ med, lastSale, capital }) => {
-                                const exp = expiryDates[med.id];
-                                return (
-                                  <div key={med.id} className="flex items-center justify-between gap-3 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
-                                    <div className="min-w-0 flex-1">
-                                      <p className="text-sm font-semibold text-slate-800 truncate">{med.nameAr}</p>
-                                      <p className="text-xs font-bold text-slate-500 tabular-nums">
-                                        بالمخزن: {fmtNum(med.availableQuantity)} · {lastSale ? `آخر بيع: ${lastSale}` : 'لم يُبَع منذ التسجيل'}
-                                        {exp && <> · ينتهي: <span className={exp < todayLocalISO() ? 'text-rose-600' : 'text-amber-700'}>{exp.slice(0, 7)}</span></>}
-                                      </p>
-                                    </div>
-                                    <span className="text-xs tabular-nums font-bold text-slate-700 shrink-0">{fmtNum(capital)} <span className="text-xs font-bold text-slate-500">د.ع</span></span>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Expandable Box: Add drug Form */}
-                    {isAddingDrug && (
-                      <form onSubmit={handleAddNewDrug} className="bg-slate-50 p-5 rounded-2xl border border-slate-100 p-6 space-y-4">
-                        <h4 className="font-bold text-slate-900 text-xs">إدخال دواء ومستحضر تجميل جديد يدوياً في صيدلية انوار الحسن</h4>
-                        
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                          <div className="space-y-1">
-                            <label className="block text-sm font-bold text-slate-500">الاسم التجاري (عربي):</label>
-                            <input 
-                              type="text" required
-                              value={newDrugAr} onChange={(e) => setNewDrugAr(e.target.value)}
-                              className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-primary-500" 
-                              placeholder="مثال: ريفانين خافض حرارة"
-                            />
-                          </div>
-                          
-                          <div className="space-y-1">
-                            <label className="block text-sm font-bold text-slate-500">الاسم التجاري (إنجليزي):</label>
-                            <input 
-                              type="text" required
-                              value={newDrugEn} onChange={(e) => setNewDrugEn(e.target.value)}
-                              className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs text-slate-850 focus:outline-primary-500 tabular-nums" 
-                              placeholder="Revanin 500mg"
-                            />
-                          </div>
-
-                          <div className="space-y-1">
-                            <label className="block text-sm font-bold text-slate-500">الاسم العلمي والمادة النشطة:</label>
-                            <input 
-                              type="text"
-                              value={newDrugSci} onChange={(e) => setNewDrugSci(e.target.value)}
-                              className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-primary-500" 
-                              placeholder="Paracetamol"
-                            />
-                          </div>
-
-                          <div className="space-y-1">
-                            <label className="block text-sm font-bold text-slate-500">رمز الباركود الدولي (Barcode):</label>
-                            <div className="flex gap-1.5">
-                              <input 
-                                type="text"
-                                value={newDrugBarcode} onChange={(e) => setNewDrugBarcode(e.target.value)}
-                                className="flex-1 bg-white border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-primary-500 tabular-nums" 
-                                placeholder="مثال: 6281100115598"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => startScanning('add-drug')}
-                                className="bg-primary-600 hover:bg-primary-700 active:bg-primary-700 text-white rounded-lg px-2.5 flex items-center justify-center transition cursor-pointer"
-                                title="قراءة بالكاميرا (Scan Barcode)"
-                              >
-                                <Barcode className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="space-y-1">
-                            <label className="block text-sm font-bold text-slate-500">السعر النقدي للجمهور (د.ع):</label>
-                            <input 
-                              type="number" required
-                              value={newDrugPrice} onChange={(e) => setNewDrugPrice(Number(e.target.value))}
-                              className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-primary-500 tabular-nums" 
-                            />
-                          </div>
-
-                          <div className="space-y-1">
-                            <label className="block text-sm font-bold text-slate-500">سعر البيع في قائمة المخزون (د.ع - رسمي):</label>
-                            <input 
-                              type="number" required
-                              value={newDrugSecondaryPrice} onChange={(e) => setNewDrugSecondaryPrice(Number(e.target.value))}
-                              className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-primary-500 tabular-nums" 
-                            />
-                          </div>
-
-                          <div className="space-y-1">
-                            <label className="block text-sm font-bold text-slate-500">الكمية الأولية (علبة):</label>
-                            <input 
-                              type="number" required
-                              value={newDrugQty} onChange={(e) => setNewDrugQty(Number(e.target.value))}
-                              className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-primary-500 tabular-nums" 
-                            />
-                          </div>
-
-                          <div className="space-y-1">
-                            <label className="block text-sm font-bold text-slate-500">تاريخ انتهاء الصلاحية للمنتج:</label>
-                            <input 
-                              type="date"
-                              value={newDrugExpiry} onChange={(e) => setNewDrugExpiry(e.target.value)}
-                              className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-primary-500 tabular-nums" 
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className="block text-sm font-bold text-slate-500">حد التنبيه (أدنى كمية):</label>
-                          <input
-                            type="number" min="1"
-                            value={newDrugMinStock ?? 15}
-                            onChange={(e) => setNewDrugMinStock(Number(e.target.value))}
-                            className="w-full bg-white border border-slate-200 rounded-lg p-2.5 text-xs text-slate-800 focus:outline-primary-500"
-                            placeholder="15"
-                          />
-                        </div>
-
-                        <div className="flex justify-end space-x-reverse space-x-3 pt-3">
-                          <button 
-                            type="button" onClick={() => setIsAddingDrug(false)}
-                            className="bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-bold cursor-pointer"
-                          >
-                            إلغاء التراجع
-                          </button>
-                          <button 
-                            type="submit"
-                            className="bg-primary-600 hover:bg-primary-700 text-white px-5 py-2 rounded-xl text-xs font-bold cursor-pointer"
-                          >
-                            حفظ المنتج في انوار الحسن
-                          </button>
-                        </div>
-                      </form>
-                    )}
-
-                  {/* ===================================================== */}
-                  {/* حركة المادة — سجل الوارد (شراء) والصادر (بيع) لصنف معيّن */}
-                  {/* ===================================================== */}
-                  <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
-                    <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-                      <div className="w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
-                        <RefreshCw className="w-4 h-4 text-indigo-600" />
-                      </div>
-                      <div>
-                        <h4 className="font-semibold text-slate-900 text-sm">حركة المادة — سجل الوارد والصادر</h4>
-                        <p className="text-sm text-slate-500 font-bold mt-0.5">اختر صنفاً لعرض كميات الشراء والبيع وتواريخها ضمن مدة زمنية قابلة للتحديد</p>
-                      </div>
-                    </div>
-
-                    {/* أدوات التحكم: اختيار الصنف + المدى الزمني */}
-                    <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                      <div className="md:col-span-5 space-y-1 relative">
-                        <label className="block text-sm font-bold text-slate-500">الصنف / الدواء (بحث بالاسم أو الباركود)</label>
-                        <div className="flex gap-1.5">
-                          <div className="relative flex-1">
-                            <Search className="w-3.5 h-3.5 text-slate-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                            <input
-                              type="text"
-                              value={movementSearch}
-                              onChange={(e) => {
-                                setMovementSearch(e.target.value);
-                                setMovementDropdownOpen(true);
-                                if (!e.target.value.trim()) setMovementMedId('');
-                              }}
-                              onFocus={() => setMovementDropdownOpen(true)}
-                              onBlur={() => setTimeout(() => setMovementDropdownOpen(false), 150)}
-                              placeholder="اكتب اسم الدواء أو امسح الباركود..."
-                              className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-9 pl-8 py-2.5 text-xs font-bold text-slate-700 focus:outline-indigo-400 placeholder:text-slate-500 placeholder:font-medium"
-                            />
-                            {movementSearch && (
-                              <button
-                                type="button"
-                                onMouseDown={(e) => e.preventDefault()}
-                                onClick={() => { setMovementSearch(''); setMovementMedId(''); setMovementDropdownOpen(false); }}
-                                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600 cursor-pointer bg-transparent border-none p-0"
-                                title="مسح"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => startScanning('movement')}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl px-3 py-2 cursor-pointer transition flex items-center justify-center shrink-0 border-none"
-                            title="مسح الباركود بالكاميرا"
-                          >
-                            <Barcode className="w-4 h-4" />
-                          </button>
-                        </div>
-                        {/* قائمة النتائج المنسدلة */}
-                        {movementDropdownOpen && (() => {
-                          const q = movementSearch.toLowerCase().trim();
-                          const selectedMed = inventory.find(m => m.id === movementMedId);
-                          const isExactSelected = !!selectedMed && movementSearch === `${selectedMed.nameAr} (${selectedMed.nameEn})`;
-                          const filtered = [...inventory]
-                            .filter(m =>
-                              !q || isExactSelected ||
-                              m.nameAr.toLowerCase().includes(q) ||
-                              m.nameEn.toLowerCase().includes(q) ||
-                              (m.scientificName || '').toLowerCase().includes(q) ||
-                              (m.barcode || '').includes(q)
-                            )
-                            .sort((a, b) => a.nameAr.localeCompare(b.nameAr));
-                          return (
-                            <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
-                              {filtered.length === 0 ? (
-                                <p className="text-sm text-slate-500 font-bold text-center py-3">لا توجد نتائج مطابقة</p>
-                              ) : filtered.slice(0, MOVEMENT_DROPDOWN_LIMIT).map(m => (
-                                // سقف العرض: بدون بحث تتطابق كل الأصناف (~7000 زر) فتجمّد القائمة المنسدلة
-                                <button
-                                  key={m.id}
-                                  type="button"
-                                  onMouseDown={(e) => e.preventDefault()}
-                                  onClick={() => {
-                                    setMovementMedId(m.id);
-                                    setMovementSearch(`${m.nameAr} (${m.nameEn})`);
-                                    setMovementDropdownOpen(false);
-                                  }}
-                                  className={`w-full text-right px-3 py-2 hover:bg-indigo-50 cursor-pointer border-none flex items-center justify-between gap-2 transition ${m.id === movementMedId ? 'bg-indigo-50' : 'bg-transparent'}`}
-                                >
-                                  <div className="min-w-0">
-                                    <span className="block text-sm font-bold text-slate-800 truncate">{m.nameAr} <span className="text-slate-500 tabular-nums text-xs">{m.nameEn}</span></span>
-                                    <span className="block text-xs text-slate-500 tabular-nums">{m.barcode || '—'}</span>
-                                  </div>
-                                  <span className="text-xs text-slate-500 font-bold shrink-0 whitespace-nowrap">{m.availableQuantity} علبة</span>
-                                </button>
-                              ))}
-                              {filtered.length > MOVEMENT_DROPDOWN_LIMIT && (
-                                <p className="text-sm text-slate-500 font-bold text-center py-2">
-                                  يُعرض {MOVEMENT_DROPDOWN_LIMIT} من أصل {fmtNum(filtered.length)} صنف — اكتب في البحث لعرض المزيد
-                                </p>
-                              )}
-                            </div>
-                          );
-                        })()}
-                      </div>
-                      <div className="md:col-span-3 space-y-1">
-                        <label className="block text-sm font-bold text-slate-500">من تاريخ</label>
-                        <input
-                          type="date"
-                          value={movementFrom}
-                          onChange={(e) => setMovementFrom(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-700 tabular-nums focus:outline-indigo-400"
-                        />
-                      </div>
-                      <div className="md:col-span-3 space-y-1">
-                        <label className="block text-sm font-bold text-slate-500">إلى تاريخ</label>
-                        <input
-                          type="date"
-                          value={movementTo}
-                          onChange={(e) => setMovementTo(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-700 tabular-nums focus:outline-indigo-400"
-                        />
-                      </div>
-                      <div className="md:col-span-1">
-                        <button
-                          type="button"
-                          onClick={() => { setMovementFrom(''); setMovementTo(''); }}
-                          className="w-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold py-2.5 rounded-xl text-sm cursor-pointer transition border-none"
-                          title="مسح المدى الزمني"
-                        >
-                          مسح
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* النتائج */}
-                    {!movementMedId ? (
-                      <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl py-10 text-center">
-                        <Search className="w-6 h-6 text-slate-300 mx-auto mb-2" />
-                        <p className="text-sm text-slate-500 font-bold">اختر صنفاً من القائمة أعلاه لعرض سجل حركته (الوارد والصادر)</p>
-                      </div>
-                    ) : (() => {
-                      const med = inventory.find(m => m.id === movementMedId);
-                      const { movements, totalIn, totalOut, valueIn, valueOut } = getStockMovements(movementMedId, movementFrom, movementTo);
-                      const net = totalIn - totalOut;
-                      return (
-                        <div className="space-y-4">
-                          {/* بطاقات الملخص */}
-                          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                            <div className="bg-primary-50 border border-primary-100 rounded-2xl p-4">
-                              <span className="text-xs text-primary-700 font-bold block mb-1">إجمالي الوارد (شراء)</span>
-                              <strong className="text-lg font-bold text-money-700 tabular-nums block">{fmtNum(totalIn)} <span className="text-xs font-bold">علبة</span></strong>
-                              <span className="text-xs text-money-600/70 font-bold tabular-nums">{fmtNum(valueIn)} د.ع</span>
-                            </div>
-                            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
-                              <span className="text-xs text-blue-700 font-bold block mb-1">إجمالي الصادر (بيع)</span>
-                              <strong className="text-lg font-bold text-blue-700 tabular-nums block">{fmtNum(totalOut)} <span className="text-xs font-bold">علبة</span></strong>
-                              <span className="text-xs text-blue-600/70 font-bold tabular-nums">{fmtNum(valueOut)} د.ع</span>
-                            </div>
-                            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
-                              <span className="text-xs text-slate-500 font-bold block mb-1">صافي الحركة</span>
-                              <strong className={`text-lg font-bold tabular-nums block ${net >= 0 ? 'text-money-700' : 'text-rose-600'}`}>{net >= 0 ? '+' : ''}{fmtNum(net)} <span className="text-xs font-bold">علبة</span></strong>
-                              <span className="text-xs text-slate-500 font-bold">وارد − صادر</span>
-                            </div>
-                            <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4">
-                              <span className="text-xs text-indigo-700 font-bold block mb-1">الرصيد الحالي بالمخزن</span>
-                              <strong className="text-lg font-bold text-indigo-700 tabular-nums block">{fmtNum((med?.availableQuantity ?? 0))} <span className="text-xs font-bold">علبة</span></strong>
-                              <span className="text-xs text-indigo-600/70 font-bold">{med?.nameAr}</span>
-                            </div>
-                          </div>
-
-                          {/* جدول الحركات الزمني */}
-                          {movements.length === 0 ? (
-                            <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl py-8 text-center">
-                              <p className="text-sm text-slate-500 font-bold">لا توجد حركات مسجّلة لهذا الصنف{(movementFrom || movementTo) ? ' ضمن المدى الزمني المحدد' : ''}</p>
-                            </div>
-                          ) : (
-                            <div className="overflow-x-auto border border-slate-100 rounded-2xl">
-                              <table className="w-full text-right text-sm">
-                                <thead>
-                                  <tr className="bg-slate-50 text-slate-500 border-b border-slate-100 font-bold">
-                                    <th className="py-2.5 px-3 rounded-r-xl">التاريخ</th>
-                                    <th className="py-2.5 px-3 text-center">نوع الحركة</th>
-                                    <th className="py-2.5 px-3 text-center">الكمية</th>
-                                    <th className="py-2.5 px-3 text-center">سعر الوحدة</th>
-                                    <th className="py-2.5 px-3 text-center">القيمة الإجمالية</th>
-                                    <th className="py-2.5 px-3">المرجع</th>
-                                    <th className="py-2.5 px-3 rounded-l-xl">الجهة</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {movements.map((mv, i) => (
-                                    <tr key={mv.ref + '-' + i} className="border-b border-slate-100/70 hover:bg-slate-50/50 transition">
-                                      <td className="py-2.5 px-3 tabular-nums text-slate-500 whitespace-nowrap">{mv.date}</td>
-                                      <td className="py-2.5 px-3 text-center">
-                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-xs font-bold ${mv.type === 'in' ? 'bg-primary-50 text-primary-700 border-primary-100' : 'bg-blue-50 text-blue-700 border-blue-100'}`}>
-                                          {mv.type === 'in' ? '↓ وارد (شراء)' : '↑ صادر (بيع)'}
-                                        </span>
-                                      </td>
-                                      <td className={`py-2.5 px-3 text-center tabular-nums font-bold ${mv.type === 'in' ? 'text-primary-700' : 'text-blue-700'}`}>
-                                        {mv.type === 'in' ? '+' : '−'}{fmtNum(mv.qty)}
-                                      </td>
-                                      <td className="py-2.5 px-3 text-center tabular-nums text-slate-600">{fmtNum(mv.price)} د.ع</td>
-                                      <td className="py-2.5 px-3 text-center tabular-nums font-bold text-slate-700">{fmtNum((mv.qty * mv.price))} د.ع</td>
-                                      <td className="py-2.5 px-3 tabular-nums text-slate-500">{mv.ref}</td>
-                                      <td className="py-2.5 px-3 text-slate-600 font-semibold max-w-[160px] truncate" title={mv.party}>{mv.party}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-                          <p className="text-xs text-slate-500 font-bold">* الوارد يُحتسب من طلبيات الشراء (المذاخر)، والصادر من سجل فواتير البيع (POS). عدد الحركات: {movements.length}</p>
-                        </div>
-                      );
-                    })()}
-                  </div>
-
-                  {/* Reorder point section */}
-                  {(() => {
-                    const lowItems = inventory.filter(m =>
-                      m.availableQuantity <= 1 && !dismissedLowStock.has(m.id)
-                    );
-                    if (lowItems.length === 0) return null;
-
-                    // حساب أعلى كمية سبق شراؤها لكل دواء من سجل الطلبيات
-                    const getMaxPurchasedQty = (med: Medicine): number => {
-                      let max = 0;
-                      b2bOrders.forEach(order => {
-                        order.items?.forEach((it: any) => {
-                          if (
-                            it.medicineName?.includes(med.nameAr.substring(0, 6)) ||
-                            med.nameAr.includes((it.medicineName || '').substring(0, 6))
-                          ) {
-                            if ((it.quantity || 0) > max) max = it.quantity;
-                          }
-                        });
-                      });
-                      return max;
-                    };
-
-                    // اقتراح كمية الطلب بناءً على سلوك الشراء السابق
-                    const getSuggestedQty = (med: Medicine): number => {
-                      const maxQty = getMaxPurchasedQty(med);
-                      if (maxQty > 100) return 10;
-                      if (maxQty > 50)  return 5;
-                      if (maxQty > 10)  return 2;
-                      return 2;
-                    };
-
-                    return (
-                      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 space-y-3">
-                        {/* رأس القسم — قابل للطي */}
-                        <div className="flex items-center justify-between">
-                          <button
-                            type="button"
-                            onClick={() => setShowLowStock(p => !p)}
-                            className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition text-right"
-                          >
-                            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                            <span className="text-xs font-bold text-amber-900">أصناف نفدت أو شارفت على النفاد</span>
-                            <span className="text-sm bg-amber-200 text-amber-900 font-semibold px-2.5 py-0.5 rounded-full">{lowItems.length} صنف</span>
-                            <ChevronDown className={`w-3.5 h-3.5 text-amber-600 transition-transform duration-200 ${showLowStock ? 'rotate-180' : ''}`} />
-                          </button>
-                          {/* زر الطباعة */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const win = window.open('', '_blank');
-                              if (!win) return;
-                              win.document.write(`
-                                <html dir="rtl"><head><title>قائمة الطلب العاجل</title>
-                                <style>body{font-family:Arial,sans-serif;padding:20px;direction:rtl}
-                                table{width:100%;border-collapse:collapse}
-                                th,td{border:1px solid #ccc;padding:8px 12px;text-align:right}
-                                th{background:#fef3c7;font-weight:bold}
-                                h2{color:#92400e}</style></head><body>
-                                <h2>قائمة الطلب العاجل — صيدلية انوار الحسن</h2>
-                                <p style="color:#666;font-size:12px">${fmtDate(new Date())}</p>
-                                <table><thead><tr><th>الدواء</th><th>الكمية الحالية</th><th>الكمية المقترحة للطلب</th></tr></thead>
-                                <tbody>${lowItems.map(m => `<tr><td>${escapeHtml(m.nameAr)}</td><td>${m.availableQuantity} علبة</td><td>${getSuggestedQty(m)} علبة</td></tr>`).join('')}
-                                </tbody></table></body></html>
-                              `);
-                              win.document.close();
-                              win.print();
-                            }}
-                            className="flex items-center gap-1.5 text-sm font-bold bg-amber-200 hover:bg-amber-300 text-amber-900 px-3 py-1.5 rounded-xl transition cursor-pointer border-none"
-                          >
-                            <FileText className="w-3.5 h-3.5" />
-                            طباعة القائمة
-                          </button>
-                        </div>
-
-                        {/* قائمة الأصناف */}
-                        {showLowStock && <div className="space-y-2">
-                          {lowItems.map(m => {
-                            const suggestedQty = getSuggestedQty(m);
-                            const maxPast = getMaxPurchasedQty(m);
-                            return (
-                              <div key={m.id} className="bg-white border border-amber-100 rounded-xl px-3 py-2.5 flex items-center justify-between text-xs gap-2">
-                                <div className="min-w-0 flex-1">
-                                  <span className="font-bold text-slate-800 block">{m.nameAr}</span>
-                                  <span className={`tabular-nums font-bold text-sm ${m.availableQuantity === 0 ? 'text-rose-600' : 'text-amber-600'}`}>
-                                    {m.availableQuantity === 0 ? 'نفد المخزون' : `${m.availableQuantity} علبة متبقية`}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                  {/* اقتراح الكمية */}
-                                  <div className="text-center">
-                                    <span className="text-xs text-slate-500 font-bold block">اقتراح الطلب</span>
-                                    <span className="text-sm font-bold text-primary-700 bg-primary-50 px-2 py-0.5 rounded-lg tabular-nums">
-                                      {suggestedQty} علبة
-                                    </span>
-                                    {maxPast > 0 && (
-                                      <span className="text-xs text-slate-500 block">بناءً على {maxPast} سابقاً</span>
-                                    )}
-                                  </div>
-                                  {/* زر إضافة للشراء */}
-                                  <button
-                                    type="button"
-                                    onClick={() => { addToPurchaseDraft(m, suggestedQty); setActiveTab('b2b'); }}
-                                    className="text-xs font-bold px-2.5 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition cursor-pointer border-none"
-                                  >
-                                    أضف للشراء
-                                  </button>
-                                  {/* زر الإخفاء */}
-                                  <button
-                                    type="button"
-                                    onClick={() => setDismissedLowStock(prev => new Set([...prev, m.id]))}
-                                    className="text-xs font-bold px-2 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-lg transition cursor-pointer border-none"
-                                    title="إخفاء من القائمة"
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>}
-                        {showLowStock && dismissedLowStock.size > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setDismissedLowStock(new Set())}
-                            className="text-xs text-amber-700 font-bold underline cursor-pointer bg-transparent border-none"
-                          >
-                            إعادة عرض الأصناف المخفية ({dismissedLowStock.size})
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })()}
-
-                  {/* ===================================================== */}
-                  {/* قائمة الأدوية في المخزون — شريط تحكم + جدول (نهاية القائمة) */}
-                  {/* ===================================================== */}
-                  <div className="space-y-3">
-                    {/* شريط تحكم موحّد: بحث + فلتر الفئة + أزرار الإجراءات */}
-                    <div className="bg-slate-50/70 border border-slate-150 rounded-2xl p-3 flex flex-wrap items-center gap-2">
-                      <InventorySearchBar ref={invSearchRef} onQueryChange={handleInvQueryChange} />
-                      {searchInInventoryQuery && (
-                        <button
-                          type="button"
-                          onClick={() => { invSearchRef.current?.setValue(''); }}
-                          className="text-sm font-bold text-slate-500 hover:text-rose-600 px-2 py-2 transition cursor-pointer"
-                        >
-                          مسح ✕
-                        </button>
-                      )}
-                      <div className="flex-1" />
-                      <button
-                        type="button"
-                        onClick={() => startScanning('inventory')}
-                        className="bg-white border border-slate-200 hover:border-primary-300 text-slate-600 hover:text-primary-700 rounded-xl px-3 py-2 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-                        title="قراءة الباركود بالكاميرا"
-                      >
-                        <Barcode className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => setIsAddingDrug(!isAddingDrug)}
-                        className="bg-primary-600 hover:bg-primary-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5"
-                      >
-                        <Plus className="w-4 h-4" />
-                        <span>إضافة دواء</span>
-                      </button>
-                      {/* زر مؤقت للاختبار */}
-                      <button
-                        onClick={handleSeedTestData}
-                        className="bg-orange-500 hover:bg-orange-600 text-white font-bold text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5"
-                        title="إضافة 5 أدوية تجريبية"
-                      >
-                        <span className="inline-flex items-center gap-1"><FlaskConical className="w-3.5 h-3.5" />بيانات تجريبية</span>
-                      </button>
-                      {currentRole === 'admin' && (
-                        <button
-                          onClick={() => setShowBulkImportConfirm(true)}
-                          disabled={bulkImportStatus === 'loading' || bulkImportStatus === 'writing'}
-                          className="bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs px-3.5 py-2 rounded-xl cursor-pointer transition flex items-center space-x-reverse space-x-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <Download className="w-4 h-4" />
-                          <span>استيراد المخزون</span>
-                        </button>
-                      )}
-                    </div>
-
-                    {/* جدول المخزون */}
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-right border-collapse text-xs">
-                        <thead>
-                          <tr className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100 text-sm">
-                            <th className="py-3 px-4">رقم الرف</th>
-                            <th className="py-3 px-4">الاسم والدواء</th>
-                            <th className="py-3 px-4">سعر البيع للجمهور</th>
-                            <th className="py-3 px-4">سعر البيع الرسمي</th>
-                            <th className="py-3 px-4">الكمية المتوفرة</th>
-                            <th className="py-3 px-4">انتهاء الصلاحية</th>
-                            <th className="py-3 px-4 text-center">تعديل المخزون</th>
-                            <th className="py-3 px-4 text-center">حذف</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                          {filteredInventory.slice(0, invRenderCap).map((med, idx) => {
-                              const expDate = expiryDates[med.id] || '2028-01-01';
-                              const daysRemaining = getDaysUntilExpiry(med.id);
-                              const isNearExpiry30 = daysRemaining <= 30;
-                              return (
-                                <React.Fragment key={med.id}>
-                                <tr
-                                  className={`transition border-b border-slate-100 ${isNearExpiry30 ? 'bg-rose-50/65 hover:bg-rose-100/70 text-rose-950' : 'hover:bg-slate-50/50'}`}
-                                >
-                                  <td className="py-3 px-4 tabular-nums text-slate-500">REF-{1000 + idx}</td>
-                                  <td className="py-3 px-4 space-y-0.5">
-                                    <strong className="text-slate-900 block font-bold">{med.nameAr}</strong>
-                                    <span className="text-sm text-slate-500 tabular-nums block">{med.nameEn} • {med.scientificName}</span>
-                                    {med.manufacturer && (
-                                      <span className="text-xs text-slate-500 font-bold flex items-center gap-1"><Factory className="w-3 h-3 shrink-0" />{med.manufacturer}</span>
-                                    )}
-                                  </td>
-                                  {editingPriceId === med.id ? (
-                                    <>
-                                      <td className="py-3 px-4 tabular-nums">
-                                        <input
-                                          type="number" min={0} step={250} autoFocus
-                                          value={editingPriceValue}
-                                          onChange={(e) => setEditingPriceValue(e.target.value)}
-                                          onKeyDown={(e) => { if (e.key === 'Enter') saveEditingPrice(med.id); if (e.key === 'Escape') setEditingPriceId(null); }}
-                                          className="w-24 bg-white border border-primary-300 rounded-lg px-2 py-1 text-xs text-primary-900 tabular-nums font-bold text-center focus:outline-primary-500"
-                                        />
-                                      </td>
-                                      <td className="py-3 px-4 tabular-nums">
-                                        <div className="flex items-center gap-1.5">
-                                          <input
-                                            type="number" min={0} step={250}
-                                            value={editingSecondaryPriceValue}
-                                            onChange={(e) => setEditingSecondaryPriceValue(e.target.value)}
-                                            onKeyDown={(e) => { if (e.key === 'Enter') saveEditingPrice(med.id); if (e.key === 'Escape') setEditingPriceId(null); }}
-                                            className="w-24 bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs text-slate-700 tabular-nums font-bold text-center focus:outline-slate-400"
-                                          />
-                                          <button type="button" onClick={() => saveEditingPrice(med.id)} className="bg-primary-600 hover:bg-primary-700 text-white px-2 py-1 rounded-lg transition cursor-pointer" title="حفظ السعر"><Check className="w-3.5 h-3.5" /></button>
-                                          <button type="button" onClick={() => setEditingPriceId(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded-lg transition cursor-pointer" title="إلغاء"><X className="w-3.5 h-3.5" /></button>
-                                        </div>
-                                      </td>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <td className="py-3 px-4 tabular-nums font-bold text-primary-800">
-                                        <button type="button" onClick={() => startEditingPrice(med)} className="group flex items-center gap-1.5 hover:text-primary-600 transition cursor-pointer" title="تعديل السعر">
-                                          <span>{fmtNum(med.price)} د.ع</span>
-                                          <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-100 transition" />
-                                        </button>
-                                      </td>
-                                      <td className="py-3 px-4 tabular-nums font-bold text-slate-500/80">{fmtNum((med.secondaryPrice || (med.price + 500)))} د.ع</td>
-                                    </>
-                                  )}
-                                  <td className="py-3 px-4 tabular-nums">
-                                    <span className={`px-2 py-0.5 rounded-full font-bold ${med.availableQuantity <= 0 ? 'bg-rose-100 text-rose-800 font-sans text-sm' : med.availableQuantity < 15 ? 'bg-amber-100 text-amber-800 font-sans text-sm' : 'text-slate-800'}`}>
-                                      {med.availableQuantity <= 0 ? 'نفذ بالكامل' : `${med.availableQuantity} علبة`}
-                                    </span>
-                                    {med.availableQuantity <= (med.minStock ?? 15) && med.availableQuantity > 0 && (
-                                      <span className="text-xs bg-amber-500 text-white font-bold px-1.5 py-0.5 rounded mr-1">طلب عاجل</span>
-                                    )}
-                                  </td>
-                                  <td className={`py-3 px-4 tabular-nums font-bold ${isNearExpiry30 ? 'text-rose-600' : 'text-slate-500'}`}>
-                                    <div className="flex items-center space-x-reverse space-x-1">
-                                      {isNearExpiry30 && <AlertCircle className="w-3.5 h-3.5" />}
-                                      <span>{expDate}</span>
-                                    </div>
-                                  </td>
-                                  <td className="py-3 px-4">
-                                    {editingQtyId === med.id ? (
-                                      <div className="flex items-center justify-center space-x-reverse space-x-1.5">
-                                        <input
-                                          type="number" min={0} autoFocus
-                                          value={editingQtyValue}
-                                          onChange={(e) => setEditingQtyValue(e.target.value)}
-                                          onKeyDown={(e) => { if (e.key === 'Enter') saveEditingQty(med.id); if (e.key === 'Escape') setEditingQtyId(null); }}
-                                          className="w-20 bg-white border border-primary-300 rounded-lg px-2 py-1 text-xs text-slate-800 tabular-nums font-bold text-center focus:outline-primary-500"
-                                        />
-                                        <button type="button" onClick={() => saveEditingQty(med.id)} className="bg-primary-600 hover:bg-primary-700 text-white px-2 py-1 rounded-lg transition cursor-pointer" title="حفظ"><Check className="w-3.5 h-3.5" /></button>
-                                        <button type="button" onClick={() => setEditingQtyId(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-2 py-1 rounded-lg transition cursor-pointer" title="إلغاء"><X className="w-3.5 h-3.5" /></button>
-                                      </div>
-                                    ) : (
-                                      <div className="flex items-center justify-center space-x-reverse space-x-1.5">
-                                        <button type="button" onClick={() => startEditingQty(med)} className="bg-primary-50 hover:bg-primary-100 text-primary-800 px-2.5 py-1 rounded-lg font-bold transition cursor-pointer text-sm flex items-center gap-1 border border-primary-100" title="تعديل الكمية يدوياً"><Pencil className="w-3 h-3" /><span>تعديل</span></button>
-                                        <button onClick={() => adjustStockQty(med.id, 10)} className="bg-slate-100 hover:bg-primary-100 text-slate-600 hover:text-primary-800 px-3 py-2 min-h-10 rounded-lg font-bold transition cursor-pointer text-xs" title="إضافة 10 علب">+10</button>
-                                        <button onClick={() => adjustStockQty(med.id, -5)} className="bg-slate-100 hover:bg-rose-100 text-slate-600 hover:text-rose-800 px-3 py-2 min-h-10 rounded-lg font-bold transition cursor-pointer text-xs" title="تخفيض 5 علب">-5</button>
-                                      </div>
-                                    )}
-                                  </td>
-                                  <td className="py-3 px-4 text-center">
-                                    <div className="flex items-center justify-center gap-1.5">
-                                      <button
-                                        type="button"
-                                        onClick={() => quickAuditId === med.id ? setQuickAuditId(null) : startQuickAudit(med)}
-                                        className={`px-2.5 py-1 rounded-lg text-sm font-bold transition cursor-pointer border ${quickAuditId === med.id ? 'bg-violet-600 text-white border-violet-600' : 'bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100'}`}
-                                        title="جرد سريع"
-                                      >
-                                        جرد
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setDeleteMedTarget(med)}
-                                        className="text-slate-500 hover:text-white hover:bg-rose-600 p-1.5 rounded-lg transition cursor-pointer border border-transparent hover:border-rose-600"
-                                        title="حذف المادة نهائياً"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-
-                                {/* صف الجرد السريع الموسّع */}
-                                {quickAuditId === med.id && (
-                                  <tr className="bg-violet-50/80 border-b border-violet-100">
-                                    <td colSpan={8} className="px-4 py-4">
-                                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
-                                        <div className="space-y-1">
-                                          <label className="block text-sm font-bold text-violet-700">الاسم عربي</label>
-                                          <input value={qaNameAr} onChange={e => setQaNameAr(e.target.value)}
-                                            className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-800 focus:outline-violet-500" />
-                                        </div>
-                                        <div className="space-y-1">
-                                          <label className="block text-sm font-bold text-violet-700">الاسم إنجليزي</label>
-                                          <input value={qaNameEn} onChange={e => setQaNameEn(e.target.value)}
-                                            className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-800 focus:outline-violet-500" />
-                                        </div>
-                                        <div className="space-y-1">
-                                          <label className="block text-sm font-bold text-violet-700">سعر البيع (د.ع)</label>
-                                          <input type="number" min={0} step={250} value={qaPrice} onChange={e => setQaPrice(e.target.value)}
-                                            className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs tabular-nums font-bold text-slate-800 focus:outline-violet-500" />
-                                        </div>
-                                        <div className="space-y-1">
-                                          <label className="block text-sm font-bold text-violet-700">سعر الشراء (د.ع)</label>
-                                          <input type="number" min={0} step={250} value={qaCostPrice} onChange={e => setQaCostPrice(e.target.value)}
-                                            className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs tabular-nums font-bold text-slate-800 focus:outline-violet-500" />
-                                        </div>
-                                        <div className="space-y-1">
-                                          <label className="block text-sm font-bold text-violet-700">الكمية الفعلية</label>
-                                          <input type="number" min={0} value={qaQty} onChange={e => setQaQty(e.target.value)}
-                                            className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs tabular-nums font-bold text-slate-800 focus:outline-violet-500" />
-                                        </div>
-                                        <div className="space-y-1">
-                                          <label className="block text-sm font-bold text-violet-700">انتهاء الصلاحية</label>
-                                          <input type="date" value={qaExpiry} onChange={e => setQaExpiry(e.target.value)}
-                                            className="w-full bg-white border border-violet-200 rounded-lg px-2 py-1.5 text-xs tabular-nums font-bold text-slate-800 focus:outline-violet-500" />
-                                        </div>
-                                      </div>
-                                      <div className="flex items-center gap-2 mt-3">
-                                        <button type="button" onClick={() => saveQuickAudit(med.id)}
-                                          className="bg-violet-600 hover:bg-violet-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5">
-                                          <Check className="w-3.5 h-3.5" />حفظ الجرد
-                                        </button>
-                                        <button type="button" onClick={() => setQuickAuditId(null)}
-                                          className="bg-white hover:bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg text-xs font-bold border border-slate-200 transition cursor-pointer">
-                                          إلغاء
-                                        </button>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                )}
-                                </React.Fragment>
-                              );
-                            })}
-                        </tbody>
-                      </table>
-                    </div>
-                    {filteredInventory.length > invRenderCap && (
-                      <div className="text-center py-4">
-                        <button
-                          type="button"
-                          onClick={() => setInvRenderCap(c => c + 200)}
-                          className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-5 py-2.5 rounded-xl cursor-pointer transition"
-                        >
-                          عرض المزيد ({filteredInventory.length - invRenderCap} مادة متبقية)
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  </div>
-                </motion.div>
+                <InventoryScreen
+                  inventory={inventory} filteredInventory={filteredInventory} expiryDates={expiryDates} currentRole={currentRole}
+                  b2bOrders={b2bOrders} setActiveTab={setActiveTab} addToPurchaseDraft={addToPurchaseDraft} startScanning={startScanning}
+                  setDeleteMedTarget={setDeleteMedTarget}
+                  bulkImportStatus={bulkImportStatus} bulkImportProgress={bulkImportProgress} bulkImportMsg={bulkImportMsg}
+                  setShowBulkImportConfirm={setShowBulkImportConfirm} exportInventoryToCSV={exportInventoryToCSV} handleSeedTestData={handleSeedTestData}
+                  searchInInventoryQuery={searchInInventoryQuery} handleInvQueryChange={handleInvQueryChange} invSearchRef={invSearchRef}
+                  setSearchInInventoryQuery={setSearchInInventoryQuery} invRenderCap={invRenderCap} setInvRenderCap={setInvRenderCap}
+                  showNearExpiry30={showNearExpiry30} setShowNearExpiry30={setShowNearExpiry30}
+                  showExpiryHorizon={showExpiryHorizon} setShowExpiryHorizon={setShowExpiryHorizon}
+                  selectedExpiryMonth={selectedExpiryMonth} setSelectedExpiryMonth={setSelectedExpiryMonth}
+                  getNearExpiryMeds={getNearExpiryMeds} getHorizonExpiryMeds={getHorizonExpiryMeds} getExpiryMonths={getExpiryMonths}
+                  getDaysUntilExpiry={getDaysUntilExpiry} expirySeverity={expirySeverity}
+                  showDeadStock={showDeadStock} setShowDeadStock={setShowDeadStock} deadStock={deadStock} deadStockVisible={deadStockVisible}
+                  deadStockDays={deadStockDays} setDeadStockDays={setDeadStockDays} deadStockQuery={deadStockQuery} setDeadStockQuery={setDeadStockQuery}
+                  showLowStock={showLowStock} setShowLowStock={setShowLowStock} dismissedLowStock={dismissedLowStock} setDismissedLowStock={setDismissedLowStock}
+                  editingPriceId={editingPriceId} setEditingPriceId={setEditingPriceId} editingPriceValue={editingPriceValue} setEditingPriceValue={setEditingPriceValue}
+                  editingSecondaryPriceValue={editingSecondaryPriceValue} setEditingSecondaryPriceValue={setEditingSecondaryPriceValue}
+                  startEditingPrice={startEditingPrice} saveEditingPrice={saveEditingPrice}
+                  editingQtyId={editingQtyId} setEditingQtyId={setEditingQtyId} editingQtyValue={editingQtyValue} setEditingQtyValue={setEditingQtyValue}
+                  startEditingQty={startEditingQty} saveEditingQty={saveEditingQty} adjustStockQty={adjustStockQty}
+                  quickAuditId={quickAuditId} setQuickAuditId={setQuickAuditId} qaNameAr={qaNameAr} setQaNameAr={setQaNameAr} qaNameEn={qaNameEn} setQaNameEn={setQaNameEn}
+                  qaPrice={qaPrice} setQaPrice={setQaPrice} qaCostPrice={qaCostPrice} setQaCostPrice={setQaCostPrice}
+                  qaQty={qaQty} setQaQty={setQaQty} qaExpiry={qaExpiry} setQaExpiry={setQaExpiry}
+                  startQuickAudit={startQuickAudit} saveQuickAudit={saveQuickAudit}
+                  isAddingDrug={isAddingDrug} setIsAddingDrug={setIsAddingDrug}
+                  newDrugAr={newDrugAr} setNewDrugAr={setNewDrugAr} newDrugEn={newDrugEn} setNewDrugEn={setNewDrugEn}
+                  newDrugSci={newDrugSci} setNewDrugSci={setNewDrugSci} newDrugBarcode={newDrugBarcode} setNewDrugBarcode={setNewDrugBarcode}
+                  newDrugPrice={newDrugPrice} setNewDrugPrice={setNewDrugPrice} newDrugSecondaryPrice={newDrugSecondaryPrice} setNewDrugSecondaryPrice={setNewDrugSecondaryPrice}
+                  newDrugQty={newDrugQty} setNewDrugQty={setNewDrugQty} newDrugMinStock={newDrugMinStock} setNewDrugMinStock={setNewDrugMinStock}
+                  newDrugExpiry={newDrugExpiry} setNewDrugExpiry={setNewDrugExpiry} handleAddNewDrug={handleAddNewDrug}
+                  movementMedId={movementMedId} setMovementMedId={setMovementMedId} movementSearch={movementSearch} setMovementSearch={setMovementSearch}
+                  movementDropdownOpen={movementDropdownOpen} setMovementDropdownOpen={setMovementDropdownOpen}
+                  movementFrom={movementFrom} setMovementFrom={setMovementFrom} movementTo={movementTo} setMovementTo={setMovementTo}
+                  getStockMovements={getStockMovements}
+                />
               )}
 
               {activeTab === 'b2b' && (
-                <motion.div
-                  key="b2b"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="space-y-6"
-                  dir="rtl"
-                >
-                  {/* Dashboard Hub Header */}
-                  <div className="bg-gradient-to-l from-primary-900 to-slate-900 rounded-3xl p-6 text-white shadow-md relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-64 h-64 bg-primary-500/10 rounded-full blur-3xl -ml-20 -mt-20" />
-                    <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                      <div className="space-y-1 text-right">
-                        <span className="text-sm uppercase tracking-wider font-semibold bg-primary-500/30 text-primary-100 px-3.5 py-1 rounded-full">إدارة مشتريات وتوريدات الأدوية</span>
-                        <h3 className="font-semibold text-lg mt-2 font-sans">طلبيات الشراء والتغذية اليومية للمخزون</h3>
-                        <p className="text-xs text-slate-300 leading-relaxed max-w-2xl font-medium">
-                          منظومة متكاملة لتهيئة وتخطيط طلبيات الشراء اليومية من المكاتب العلمية والمذاخر. قم باضافة كمياتك والتحكم المباشر في الأسعار، التواريخ، والباركود لتنزيلها في المخزن بضغطة زر واحدة.
-                        </p>
-                      </div>
-                      
-                      <div className="flex items-center gap-2 bg-slate-800/40 border border-slate-700/50 p-4 rounded-2xl backdrop-blur-md">
-                        <DollarSign className="w-8 h-8 text-primary-400" />
-                        <div className="text-right">
-                          <span className="text-sm text-slate-500 block font-bold">ميزانية الصندوق المتاحة:</span>
-                          <strong className="text-base text-money-400 tabular-nums tracking-wide">{fmtNum(walletBalance)} د.ع</strong>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Top Level Success banner */}
-                  {purchaseSuccessBanner && (
-                    <motion.div 
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="p-4 bg-primary-50 border border-primary-200 rounded-2xl flex items-start gap-3.5 text-right font-semibold text-xs text-primary-950 shadow-sm"
-                    >
-                      <CheckCircle2 className="w-5 h-5 text-primary-600 shrink-0 mt-0.5" />
-                      <div>
-                        <strong>عملية توريد ناجحة !</strong>
-                        <p className="text-sm text-primary-800 mt-1">{purchaseSuccessBanner}</p>
-                      </div>
-                    </motion.div>
-                  )}
-
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                    
-                    {/* TOP PANEL - QUICK ADDERS (صف أفقي بعرض كامل) */}
-                    <div className="lg:col-span-12 grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
-
-                      {/* Import from Image Button */}
-                      <button
-                        type="button"
-                        onClick={() => setShowInvoiceImport(true)}
-                        className="w-full flex items-center gap-3 bg-gradient-to-l from-primary-600 to-primary-500 text-white rounded-2xl p-4 shadow-sm hover:from-primary-700 hover:to-primary-600 transition cursor-pointer"
-                      >
-                        <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
-                          <ScanLine className="w-5 h-5" />
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xs font-semibold">استيراد فاتورة من صورة</p>
-                          <p className="text-sm text-primary-100 font-bold mt-0.5">ارفع صورة القائمة وسيُعبّأ المخزون تلقائياً</p>
-                        </div>
-                      </button>
-
-                      {/* Interactive Section: Search and Add by Name */}
-                      <div className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-xs space-y-4">
-                        <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-                          <PlusCircle className="w-5 h-5 text-primary-600" />
-                          <h4 className="font-semibold text-xs text-slate-900">إضافة سريعة بالاسم أو التفاصيل</h4>
-                        </div>
-                        
-                        <div className="space-y-3">
-                          <p className="text-sm text-slate-500 font-bold leading-relaxed">
-                            اختر أي دواء مسجل مسبقاً في الصيدلية لإدراجه مباشرةً في مسودة الشراء اليومي مع تطبيق التخفيضات:
-                          </p>
-                          
-                          <div className="relative">
-                            <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none text-slate-500">
-                              <Search className="w-4 h-4" />
-                            </div>
-                            <input
-                              type="text"
-                              value={purchaseSearchWord}
-                              onChange={(e) => setPurchaseSearchWord(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  const match = findScanMatch(purchaseSearchWord);
-                                  if (match) { addToPurchaseDraft(match); setPurchaseSearchWord(''); }
-                                }
-                              }}
-                              placeholder="امسح الباركود أو اكتب الاسم ثم Enter..."
-                              className="w-full bg-slate-50 hover:bg-slate-100/70 border border-slate-200 rounded-xl py-2.5 pr-9 pl-10 text-xs font-bold text-slate-850 placeholder:text-slate-500 transition focus:outline-primary-500"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => startScanning('purchase-order')}
-                              title="مسح باركود"
-                              className="absolute inset-y-0 left-2 flex items-center px-1 text-primary-600 hover:text-primary-700 transition cursor-pointer"
-                            >
-                              <Barcode className="w-4 h-4" />
-                            </button>
-                          </div>
-
-                          {/* Quick Suggestion List */}
-                          {purchaseSearchWord.trim().length > 0 && (
-                            <div className="bg-white border border-slate-150 rounded-2xl max-h-56 overflow-y-auto divide-y divide-slate-100 text-right shadow-md scrollbar-thin">
-                              {inventory
-                                .filter(m => {
-                                  const q = purchaseSearchWord.toLowerCase();
-                                  return (
-                                    m.nameAr.toLowerCase().includes(q) ||
-                                    m.nameEn.toLowerCase().includes(q) ||
-                                    (m.scientificName && m.scientificName.toLowerCase().includes(q)) ||
-                                    (m.barcode && m.barcode.toLowerCase().includes(q))
-                                  );
-                                })
-                                .slice(0, 6)
-                                .map(med => (
-                                  <button
-                                    key={med.id}
-                                    type="button"
-                                    onClick={() => {
-                                      addToPurchaseDraft(med);
-                                      setPurchaseSearchWord('');
-                                    }}
-                                    className="w-full p-3 hover:bg-slate-50 transition text-right text-xs block cursor-pointer"
-                                  >
-                                    <div className="flex justify-between items-center">
-                                      <strong className="font-semibold text-slate-900 block">{med.nameAr}</strong>
-                                      <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full tabular-nums font-bold">
-                                        رصيد: {med.availableQuantity}
-                                      </span>
-                                    </div>
-                                    <span className="text-sm text-slate-500 tabular-nums block mt-0.5">{med.nameEn} • {med.scientificName}</span>
-                                  </button>
-                                ))}
-                              {inventory.filter(m => 
-                                  m.nameAr.toLowerCase().includes(purchaseSearchWord.toLowerCase()) || 
-                                  m.nameEn.toLowerCase().includes(purchaseSearchWord.toLowerCase())
-                               ).length === 0 && (
-                                <p className="p-4 text-sm text-slate-500 text-center font-bold">لم نعثر على دواء مطابق. هل ترغب بإضافة منتج جديد؟</p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-
-                      {/* Section: Dynamic form to add a completely custom brand new drug */}
-                      <div className="bg-white border border-slate-200/80 p-5 rounded-3xl shadow-xs space-y-4">
-                        <button
-                          type="button"
-                          onClick={() => setShowPurchaseNewProdForm(!showPurchaseNewProdForm)}
-                          className="w-full flex items-center justify-between transition hover:opacity-80 border-none bg-transparent cursor-pointer"
-                        >
-                          <div className="flex items-center gap-2 text-slate-800">
-                            <PlusCircle className="w-5 h-5 text-primary-600" />
-                            <h4 className="font-semibold text-xs text-slate-900">تسجيل وإضافة دواء جديد كلياً 🆕</h4>
-                          </div>
-                          <span className={`text-sm font-bold px-2 py-0.5 rounded-full ${
-                            showPurchaseNewProdForm ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-500'
-                          }`}>
-                            {showPurchaseNewProdForm ? 'إغلاق' : 'توسعة'}
-                          </span>
-                        </button>
-
-                        <AnimatePresence>
-                          {showPurchaseNewProdForm && (
-                            <motion.div
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: 'auto', opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              className="overflow-hidden space-y-3.5 pt-3 text-right"
-                            >
-                              <div className="space-y-1.5 text-xs text-slate-600 font-bold">
-                                <label className="block text-sm">الاسم العربي للمنتج:</label>
-                                <input
-                                  type="text"
-                                  value={purchaseNewProdAr}
-                                  onChange={(e) => setPurchaseNewProdAr(e.target.value)}
-                                  className="w-full bg-slate-50 p-2 border border-slate-200 rounded-lg text-slate-900 focus:outline-primary-500"
-                                  placeholder="مثال: ريمكس 500 ملغ"
-                                />
-                              </div>
-
-                              <div className="space-y-1.5 text-xs text-slate-600 font-bold">
-                                <label className="block text-sm">الاسم الإنكليزي للمنتج:</label>
-                                <input
-                                  type="text"
-                                  value={purchaseNewProdEn}
-                                  onChange={(e) => setPurchaseNewProdEn(e.target.value)}
-                                  className="w-full bg-slate-50 p-2 border border-slate-200 rounded-lg text-slate-900 tabular-nums focus:outline-primary-500 text-left"
-                                  placeholder="e.g. Remex 500mg"
-                                />
-                              </div>
-
-                              <div className="space-y-1.5 text-xs text-slate-600 font-bold">
-                                <label className="block text-sm">الاسم العلمي والمادة الفعالة:</label>
-                                <input
-                                  type="text"
-                                  value={purchaseNewProdSci}
-                                  onChange={(e) => setPurchaseNewProdSci(e.target.value)}
-                                  className="w-full bg-slate-50 p-2 border border-slate-200 rounded-lg text-slate-900 focus:outline-primary-500"
-                                  placeholder="مثال: Paracetamol"
-                                />
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="space-y-1 text-xs text-slate-600 font-bold">
-                                  <label className="block text-sm">تاريخ انتهاء الصلاحية:</label>
-                                  <input
-                                    type="date"
-                                    value={purchaseNewProdExpiry}
-                                    onChange={(e) => setPurchaseNewProdExpiry(e.target.value)}
-                                    className="w-full bg-slate-50 p-2 border border-slate-200 rounded-lg tabular-nums text-slate-800"
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="space-y-1 text-xs text-slate-600 font-bold">
-                                  <label className="block text-sm">سعر شراء الجملة (د.ع):</label>
-                                  <input
-                                    type="number"
-                                    value={purchaseNewProdPrice}
-                                    onChange={(e) => setPurchaseNewProdPrice(Number(e.target.value))}
-                                    className="w-full bg-slate-50 p-2 border border-slate-200 rounded-lg text-slate-900 text-center tabular-nums"
-                                  />
-                                </div>
-
-                                <div className="space-y-1 text-xs text-slate-600 font-bold">
-                                  <label className="block text-sm">الكمية المطلوبة (علب):</label>
-                                  <input
-                                    type="number"
-                                    value={purchaseNewProdQty}
-                                    onChange={(e) => setPurchaseNewProdQty(Number(e.target.value))}
-                                    className="w-full bg-slate-50 p-2 border border-slate-200 rounded-lg text-slate-900 text-center tabular-nums"
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="space-y-1.5 text-xs text-slate-600 font-bold">
-                                <label className="block text-sm">الباركود الرقمي للمنتج:</label>
-                                <div className="flex gap-1.5">
-                                  <input
-                                    type="text"
-                                    value={purchaseNewProdBarcode}
-                                    onChange={(e) => setPurchaseNewProdBarcode(e.target.value)}
-                                    className="flex-1 min-w-0 bg-slate-50 p-2 border border-slate-200 rounded-lg text-slate-900 tabular-nums focus:outline-primary-500"
-                                    placeholder="سيتولد تلقائياً إن ترك فارغاً"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => startScanning('purchase-new-product')}
-                                    className="bg-primary-600 hover:bg-primary-700 text-white rounded-lg px-2.5 flex items-center justify-center transition cursor-pointer shrink-0"
-                                    title="قراءة الباركود بالكاميرا"
-                                  >
-                                    <Barcode className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              </div>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (!purchaseNewProdAr || !purchaseNewProdEn) {
-                                    toast('الرجاء إدخال الاسم العربي والاسم الإنكليزي لإدراج المنتج!', 'info');
-                                    return;
-                                  }
-                                  const customItem = {
-                                    id: 'draft-new-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
-                                    medicineId: null, 
-                                    nameAr: `${purchaseNewProdAr} (جديد 🆕)`,
-                                    nameEn: purchaseNewProdEn,
-                                    scientificName: purchaseNewProdSci || 'N/A',
-                                    category: '',
-                                    price: purchaseNewProdPrice,
-                                    qty: purchaseNewProdQty,
-                                    expiryDate: purchaseNewProdExpiry,
-                                    barcode: purchaseNewProdBarcode || '628' + Math.floor(Math.random() * 90000000 + 10000000),
-                                    warehouse: purchaseSupplier || '',
-                                  };
-                                  setPurchaseDraft(prev => [customItem, ...prev]);
-                                  setPurchaseNewProdAr('');
-                                  setPurchaseNewProdEn('');
-                                  setPurchaseNewProdSci('');
-                                  setPurchaseNewProdPrice(3000);
-                                  setPurchaseNewProdQty(50);
-                                  setPurchaseNewProdBarcode('');
-                                  setShowPurchaseNewProdForm(false);
-                                }}
-                                className="w-full bg-primary-600 hover:bg-primary-700 text-white font-bold py-2.5 rounded-xl text-center transition shadow-sm cursor-pointer text-xs border-none"
-                              >
-                                إضافة المنتج الجديد إلى جدول المشتريات
-                              </button>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-
-                    </div>
-
-                    {/* MAIN PANEL - DIVERSIFIED DAILY PURCHASE SHEET (بعرض كامل) */}
-                    <div className="lg:col-span-12 space-y-6">
-                      
-                      {/* Interactive Draft Sheet */}
-                      <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm space-y-5">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-                          <div className="space-y-0.5 text-right">
-                            <span className="text-xs bg-indigo-50 text-indigo-700 font-bold px-2.5 py-0.5 rounded-full inline-block">حالة المسودة: قيد التعديل والتخصيص</span>
-                            <h4 className="font-semibold text-sm text-slate-900 mt-1">مسودة قائمة الشراء والتوريد النشطة</h4>
-                            <p className="text-sm text-slate-500 font-bold">قم بتعديل الأعداد، الأسعار، وحالات الصلاحية مباشرة في الجدول لتحديث رصيد المخزن تلقائياً</p>
-                          </div>
-                          
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                confirmDialog({ title: 'تفريغ مسودة المشتريات بالكامل؟', confirmText: 'تفريغ', danger: true })
-                                  .then(ok => { if (ok) setPurchaseDraft([]); });
-                              }}
-                              className="text-sm text-rose-500 hover:text-rose-700 font-semibold bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-xl transition cursor-pointer border-none"
-                            >
-                              مسح المسودة
-                            </button>
-                          </div>
-                        </div>
-
-                        {purchaseDraft.length === 0 ? (
-                          <div className="p-12 text-center border-2 border-dashed border-slate-100 rounded-2xl bg-slate-50/50 space-y-3">
-                            <ClipboardList className="w-10 h-10 text-slate-300 mx-auto" />
-                            <strong className="text-xs text-slate-700 block">جدول الشراء اليومي فارغ تماماً</strong>
-                            <p className="text-sm text-slate-500 max-w-sm mx-auto font-bold leading-relaxed">
-                              ابدأ الآن بإضافة منتجاتك المطلوبة، أو ابحث عن النواقص بالاسم، أو تصفّح النواقص التي أوشكت صلاحيتها على الانتهاء، أو استخدم مسدس الكاميرا المحاكي.
-                            </p>
-                          </div>
-                        ) : (
-                          <div className="space-y-4">
-                            
-                            {/* بطاقات الأصناف — بديل الجدول العريض: كل صنف بطاقة تلتفّ حقولها على عرض الشاشة
-                                فتظهر كاملة في شاشة واحدة بلا تمرير أفقي. كل المعالجات كما كانت في الجدول. */}
-                            <div className="space-y-2.5">
-                              {purchaseDraft.map((item) => {
-                                const subTotal = (item.qty || 0) * (item.price || 0);
-                                // الرصيد الحقيقي الحالي للصنف في المخزن (مصدره inventory لا كمية المسودة)
-                                const liveMed = inventory.find(m => m.id === item.medicineId);
-                                const liveQty = liveMed?.availableQuantity ?? 0;
-                                const fieldCls = 'w-full rounded-lg border p-1.5 tabular-nums text-center text-xs focus:outline-primary-500';
-                                const labelCls = 'block text-xs font-bold text-slate-500 mb-0.5 text-center';
-                                return (
-                                  <div key={item.id} className="bg-white border border-slate-200 rounded-2xl p-3 space-y-2.5 hover:border-slate-300 transition">
-
-                                    {/* الصف الأول: الاسم والرصيد والباركود — والإجمالي وزر الحذف */}
-                                    <div className="flex items-start justify-between gap-3">
-                                      <div className="min-w-0 flex-1 space-y-0.5">
-                                        {/* الاسم العربي (ثلاث نقرات للتعديل) + الرصيد الحقيقي بالمخزن بجانبه */}
-                                        <div className="flex items-center gap-2 flex-wrap">
-                                          {editingDraftField !== null && editingDraftField.id === item.id && editingDraftField.field === 'nameAr' ? (
-                                            <input
-                                              autoFocus
-                                              type="text"
-                                              value={editingDraftValue}
-                                              onChange={e => setEditingDraftValue(e.target.value)}
-                                              onKeyDown={e => {
-                                                if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); }
-                                                else if (e.key === 'Escape') { draftEditCancelRef.current = true; (e.target as HTMLInputElement).blur(); }
-                                              }}
-                                              onBlur={saveDraftField}
-                                              className="text-slate-900 font-bold text-xs flex-1 min-w-0 bg-indigo-50 border border-indigo-300 rounded px-1 focus:outline-indigo-500 text-right"
-                                              title="اضغط Enter للحفظ أو Escape للإلغاء"
-                                            />
-                                          ) : (
-                                            <strong
-                                              className="text-slate-900 font-bold text-sm cursor-text select-none"
-                                              title="انقر ثلاث مرات لتعديل الاسم العربي"
-                                              onClick={e => { if (e.detail === 3) startEditDraftField(item, 'nameAr'); }}
-                                            >{item.nameAr}</strong>
-                                          )}
-                                          {item.medicineId && liveMed ? (
-                                            editingDraftStockId === item.id ? (
-                                              <input
-                                                type="number"
-                                                min={0}
-                                                autoFocus
-                                                defaultValue={item.stockCorrection ?? liveQty}
-                                                onBlur={e => saveDraftStock(item.id, liveQty, e.target.value)}
-                                                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingDraftStockId(null); }}
-                                                className="w-16 bg-white border border-blue-400 rounded-full px-2 py-0.5 text-xs font-bold text-blue-900 text-center focus:outline-blue-500"
-                                              />
-                                            ) : (() => {
-                                              const effQty = item.stockCorrection ?? liveQty;
-                                              const corrected = item.stockCorrection !== undefined && item.stockCorrection !== liveQty;
-                                              return (
-                                                <span
-                                                  onDoubleClick={() => setEditingDraftStockId(item.id)}
-                                                  className={`text-xs font-bold px-1.5 py-0.5 rounded-full shrink-0 cursor-pointer ${corrected ? 'bg-amber-100 text-amber-800 border border-amber-300' : effQty <= 0 ? 'bg-rose-100 text-rose-700' : effQty < (liveMed.minStock ?? 15) ? 'bg-amber-100 text-amber-700' : 'bg-primary-50 text-primary-700'}`}
-                                                  title="الرصيد الحالي في المخزن — انقر مرتين لتصحيحه"
-                                                >بالمخزن: {effQty}{corrected ? ' ✎' : ''}</span>
-                                              );
-                                            })()
-                                          ) : (
-                                            <span className="text-xs font-bold px-1.5 py-0.5 rounded-full shrink-0 bg-blue-50 text-blue-700" title="صنف جديد غير موجود بالمخزن بعد">جديد</span>
-                                          )}
-                                        </div>
-                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                                          <span className="text-xs text-slate-500 tabular-nums">
-                                            {item.nameEn} • {item.scientificName}
-                                          </span>
-                                          {/* الباركود — ثلاث نقرات للتعديل مع انتشار للمخزون */}
-                                          {editingDraftField !== null && editingDraftField.id === item.id && editingDraftField.field === 'barcode' ? (
-                                            <input
-                                              autoFocus
-                                              type="text"
-                                              value={editingDraftValue}
-                                              onChange={e => setEditingDraftValue(e.target.value)}
-                                              onKeyDown={e => {
-                                                if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); }
-                                                else if (e.key === 'Escape') { draftEditCancelRef.current = true; (e.target as HTMLInputElement).blur(); }
-                                              }}
-                                              onBlur={saveDraftField}
-                                              className="text-xs text-slate-500 tabular-nums bg-indigo-50 border border-indigo-300 rounded px-1 w-24 text-right focus:outline-indigo-500"
-                                              title="اضغط Enter للحفظ أو Escape للإلغاء"
-                                            />
-                                          ) : (
-                                            <span
-                                              className="text-xs text-slate-500 tabular-nums cursor-text select-none border-b border-dashed border-slate-200"
-                                              title="انقر ثلاث مرات لتعديل الباركود"
-                                              onClick={e => { if (e.detail === 3) startEditDraftField(item, 'barcode'); }}
-                                            >{item.barcode || '—'}</span>
-                                          )}
-                                        </div>
-                                      </div>
-                                      <div className="flex items-center gap-2 shrink-0">
-                                        <div className="text-left">
-                                          <span className="block text-xs font-bold text-slate-500">الإجمالي</span>
-                                          <span className="tabular-nums font-semibold text-slate-800 text-sm">{fmtNum(subTotal)} <span className="text-xs">د.ع</span></span>
-                                        </div>
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setPurchaseDraft(prev => prev.filter(d => d.id !== item.id));
-                                          }}
-                                          className="text-slate-500 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition cursor-pointer border-none"
-                                          title="حذف هذا الدواء"
-                                        >
-                                          <Trash2 className="w-4 h-4" />
-                                        </button>
-                                      </div>
-                                    </div>
-
-                                    {/* الصف الثاني: الحقول القابلة للتعديل — تلتفّ على عرض الشاشة */}
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
-                                      {/* الكمية */}
-                                      <div>
-                                        <label className={labelCls}>الكمية (علبة)</label>
-                                        <div className="flex items-center gap-1">
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, qty: Math.max(1, Number(d.qty) - 5) } : d));
-                                            }}
-                                            className="w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg flex items-center justify-center transition focus:outline-none border-none cursor-pointer shrink-0"
-                                            title="−5"
-                                          >
-                                            -
-                                          </button>
-                                          <input
-                                            type="number"
-                                            min="1"
-                                            value={item.qty}
-                                            onChange={(e) => {
-                                              const val = Number(e.target.value);
-                                              setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, qty: isNaN(val) ? 1 : val } : d));
-                                            }}
-                                            className={`${fieldCls} bg-slate-50 border-slate-200 text-slate-900 min-w-0`}
-                                          />
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, qty: Number(d.qty) + 10 } : d));
-                                            }}
-                                            className="w-10 h-10 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg flex items-center justify-center transition focus:outline-none border-none cursor-pointer shrink-0"
-                                            title="+10"
-                                          >
-                                            +
-                                          </button>
-                                        </div>
-                                      </div>
-
-                                      {/* سعر الجملة */}
-                                      <div>
-                                        <label className={labelCls}>سعر الجملة (د.ع)</label>
-                                        <input
-                                          type="number"
-                                          step="250"
-                                          value={item.price}
-                                          onChange={(e) => {
-                                            const val = Number(e.target.value);
-                                            setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, price: isNaN(val) ? 0 : val } : d));
-                                          }}
-                                          className={`${fieldCls} bg-slate-50 border-slate-200 text-slate-900`}
-                                        />
-                                      </div>
-
-                                      {/* سعر البيع للجمهور — يُحدّث inventory.price مباشرة */}
-                                      <div>
-                                        <label className={`${labelCls} text-blue-700`}>البيع للجمهور (د.ع)</label>
-                                        <input
-                                          type="number"
-                                          step="250"
-                                          value={item.retailPrice ?? ''}
-                                          onChange={(e) => {
-                                            const val = Number(e.target.value);
-                                            if (isNaN(val)) return;
-                                            setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, retailPrice: val } : d));
-                                            setInventory(prev => prev.map(m => m.id === item.medicineId ? { ...m, price: val } : m));
-                                          }}
-                                          className={`${fieldCls} bg-blue-50 border-blue-200 text-blue-900 focus:outline-blue-400`}
-                                        />
-                                      </div>
-
-                                      {/* سعر البيع الرسمي — يُحدّث inventory.secondaryPrice مباشرة */}
-                                      <div>
-                                        <label className={`${labelCls} text-violet-700`}>البيع الرسمي (د.ع)</label>
-                                        <input
-                                          type="number"
-                                          step="250"
-                                          value={item.officialPrice ?? ''}
-                                          onChange={(e) => {
-                                            const val = Number(e.target.value);
-                                            if (isNaN(val)) return;
-                                            setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, officialPrice: val } : d));
-                                            setInventory(prev => prev.map(m => m.id === item.medicineId ? { ...m, secondaryPrice: val } : m));
-                                          }}
-                                          className={`${fieldCls} bg-violet-50 border-violet-200 text-violet-900 focus:outline-violet-400`}
-                                        />
-                                      </div>
-
-                                      {/* الانتهاء — يعرض آخر تاريخ محفوظ ويحدّثه عند التعديل */}
-                                      <div className="col-span-2 sm:col-span-1">
-                                        <label className={labelCls}>انتهاء الصلاحية</label>
-                                        <input
-                                          type="date"
-                                          value={expiryDates[item.medicineId] || item.expiryDate || ''}
-                                          onChange={(e) => {
-                                            const val = e.target.value;
-                                            setPurchaseDraft(prev => prev.map(d => d.id === item.id ? { ...d, expiryDate: val } : d));
-                                            if (item.medicineId) setExpiryDates(prev => ({ ...prev, [item.medicineId]: val }));
-                                          }}
-                                          className={`${fieldCls} bg-slate-50 border-slate-200 text-slate-900 text-sm`}
-                                        />
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-
-                            {/* Summary panel & Dynamic updating math displays */}
-                            <div className="bg-slate-50 rounded-2xl p-5 border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                              <div className="space-y-1.5 text-right font-bold text-slate-700">
-                                <div className="flex items-center gap-2 text-xs">
-                                  <span>مجموع المنتجات المسجلة للتوريد:</span>
-                                  <span className="bg-primary-100 text-primary-800 tabular-nums px-2.5 py-0.5 rounded-full text-sm">
-                                    {purchaseDraft.reduce((acc, curr) => acc + Number(curr.qty), 0)} علبة إجمالية
-                                  </span>
-                                </div>
-                                <div className="text-sm text-slate-500 leading-normal font-medium">
-                                  <p>سعر توريد الجملة النهائي خاضع لحسابات الصيدلية و يحدّث أرصدة دواء صيدلية انوار الحسن مع تطبيق الأرباح تلقائياً عند التأكيد.</p>
-                                </div>
-
-                                <div className="pt-1 space-y-2">
-                                  {/* المورّد الموحّد — يُختار من الموردين المحفوظين عبر قائمة منسدلة،
-                                      أو يُكتب اسم جديد فيُحفظ كمورد عند اعتماد الشراء */}
-                                  <div className="space-y-1">
-                                    <label className="block text-slate-500 text-sm font-bold">المورّد (يُطبَّق على كل الأصناف)</label>
-                                    <SupplierPicker suppliers={suppliers} value={purchaseSupplier} onChange={applyDraftSupplier} />
-                                  </div>
-
-                                  {/* شراء بالآجل: تسجيل الفاتورة كذمّة على المذخر بدل خصمها نقداً */}
-                                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                                    <input
-                                      type="checkbox"
-                                      checked={purchaseOnCredit}
-                                      onChange={(e) => setPurchaseOnCredit(e.target.checked)}
-                                      className="w-4 h-4 accent-rose-600 cursor-pointer"
-                                    />
-                                    <span className="text-sm font-bold text-rose-700">شراء بالآجل (على حساب المذخر)</span>
-                                  </label>
-                                  {purchaseOnCredit && (
-                                    <p className="text-xs text-rose-500 font-bold leading-normal">* لن تُخصم القيمة من الصندوق، وستُسجَّل كذمّة مستحقة في دفتر ديون الموردين باسم المورّد المحدّد أعلاه.</p>
-                                  )}
-                                </div>
-                              </div>
-
-                              <div className="flex flex-col items-end gap-2 text-right shrink-0">
-                                <span className="text-sm text-slate-500 font-bold">إجمالي فاتورة الشراء المتبقية:</span>
-                                <strong className="text-xl text-primary-700 tabular-nums font-semibold tracking-wide">
-                                  {fmtNum(purchaseDraft.reduce((acc, curr) => acc + (curr.price * curr.qty), 0))} د.ع
-                                </strong>
-                              </div>
-                            </div>
-
-                            {/* Large final CTA to store products in pharmacy index and refresh levels */}
-                            <button
-                              type="button"
-                              onClick={commitPurchaseDraft}
-                              className="w-full bg-primary-600 hover:bg-primary-700 active:bg-primary-800 text-white font-bold py-3 px-5 rounded-2xl flex items-center justify-center gap-2 transition shadow-md cursor-pointer hover:shadow-primary-200 text-sm border-none"
-                            >
-                              <CheckCircle2 className="w-5 h-5 text-primary-100 animate-pulse" />
-                              <span>تأكيد واعتماد طلبيات الشراء وتغذية المخزون الفوري</span>
-                            </button>
-
-                          </div>
-                        )}
-                      </div>
-
-                      {/* ARCHIVED PAST PURCHASE ORDERS (المشتريات السابقة والموثقة) */}
-                      <div className="bg-white border border-slate-200 p-6 rounded-3xl shadow-sm space-y-4">
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                          <div className="flex items-center gap-2">
-                            <ClipboardList className="w-5 h-5 text-indigo-600" />
-                            <h4 className="font-semibold text-xs text-slate-900">سجل قوائم المشتريات والطلبيات السابقة</h4>
-                          </div>
-                          <span className="text-sm text-slate-500 font-bold">حالة تدفق الفواتير: موثقة بكامل القيود</span>
-                        </div>
-
-                        {/* حقل البحث برقم القائمة أو اسم المورد */}
-                        <div className="relative">
-                          <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
-                          <input
-                            type="text"
-                            value={b2bOrderSearch}
-                            onChange={e => setB2bOrderSearch(e.target.value)}
-                            placeholder="ابحث برقم القائمة (مثال: CAP-28109) أو اسم المورد..."
-                            className="w-full bg-slate-50 border border-slate-200 rounded-xl pr-8 pl-3 py-2 text-sm font-bold text-slate-700 placeholder:text-slate-500 placeholder:font-normal focus:outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 transition"
-                          />
-                          {b2bOrderSearch && (
-                            <button
-                              type="button"
-                              onClick={() => setB2bOrderSearch('')}
-                              className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-600 transition bg-transparent border-none cursor-pointer p-0"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-
-                        {(() => {
-                          const q = b2bOrderSearch.trim().toLowerCase();
-                          const filtered = q
-                            ? b2bOrders.filter(o =>
-                                o.id.toLowerCase().includes(q) ||
-                                (o.warehouseName || '').toLowerCase().includes(q)
-                              )
-                            : b2bOrders;
-
-                          if (b2bOrders.length === 0) {
-                            return <p className="p-8 text-center text-sm text-slate-500 font-bold">لا يوجد طلبيات شراء سابقة مسجلة حالياً.</p>;
-                          }
-                          if (filtered.length === 0) {
-                            return (
-                              <div className="p-6 text-center space-y-1">
-                                <p className="text-sm text-slate-500 font-bold">لا توجد نتائج لـ «{b2bOrderSearch}»</p>
-                                <p className="text-sm text-slate-500 font-medium">تأكد من رقم القائمة أو اسم المورد</p>
-                              </div>
-                            );
-                          }
-
-                          return (
-                          <div className="space-y-3.5">
-                            {filtered.map((order) => {
-                              // اسم المورد: مورد الآجل أولاً، ثم المورّد المحفوظ ضمن بنود اللقطة، ثم اسم المخزن
-                              const supplierLabel =
-                                (order.onCredit && order.creditSupplierName && order.creditSupplierName.trim())
-                                  ? order.creditSupplierName.trim()
-                                  : (Array.isArray(order.draftSnapshot)
-                                      ? (order.draftSnapshot.find((d: any) => d.warehouse && String(d.warehouse).trim())?.warehouse || '')
-                                      : '')
-                                    || (order.warehouseName && order.warehouseName.trim())
-                                    || 'مورد غير محدد';
-                              return (
-                              <div key={order.id} className="bg-slate-50 hover:bg-slate-100/50 p-4 rounded-2xl border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs transition">
-                                <div className="space-y-1 text-right">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <span className="flex items-center gap-1.5 bg-indigo-50 text-indigo-800 border border-indigo-150 px-2.5 py-1 rounded-lg font-semibold text-sm">
-                                      <Truck className="w-3.5 h-3.5 text-indigo-600" />
-                                      <span>المورد: {supplierLabel}</span>
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <strong className="text-slate-900 tabular-nums font-bold">{order.id}</strong>
-                                    <span className="text-xs bg-slate-200 text-slate-600 px-2.5 py-0.2 rounded font-sans font-bold">
-                                      {order.warehouseName || "توريد مباشر"}
-                                    </span>
-                                  </div>
-                                  <span className="text-sm text-slate-500 tabular-nums block">التاريخ والمشرف: {order.date} • {order.itemsCount} أدوية مختلفة</span>
-                                  
-                                  {/* Detailed medicine items in order */}
-                                  <div className="flex flex-wrap gap-1 mt-1.5">
-                                    {order.items && order.items.map((item, id) => (
-                                      <span key={id} className="text-xs bg-white border border-slate-200/60 text-slate-600 px-2.5 py-0.5 rounded-lg font-bold">
-                                        {item.medicineName} x{item.quantity}
-                                      </span>
-                                    ))}
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-4 text-right sm:text-left shrink-0">
-                                  <div className="space-y-1">
-                                    <span className="text-sm text-slate-500 block font-bold">إجمالي المدفوع:</span>
-                                    <strong className="text-sm text-slate-950 tabular-nums font-bold">
-                                      {fmtNum(order.totalAmount)} د.ع
-                                    </strong>
-                                  </div>
-
-                                  <div className="flex flex-col items-stretch gap-1.5">
-                                    <span className="px-3 py-1 bg-primary-50 text-primary-800 border border-primary-100 rounded-xl font-semibold text-sm text-center">
-                                      تم استيرادها بالكامل ✅
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => reopenPurchaseOrderForEdit(order.id)}
-                                      title="إعادة فتح الطلبية للتعديل — يُعكس أثرها على المخزون والحسابات وتعود بنودها إلى المسودة"
-                                      className="px-3 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl font-semibold text-sm flex items-center justify-center gap-1 transition cursor-pointer"
-                                    >
-                                      <Pencil className="w-3 h-3" />
-                                      <span>تعديل القائمة</span>
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                              );
-                            })}
-                          </div>
-                          );
-                        })()}
-                      </div>
-
-                    </div>
-
-                  </div>
-                </motion.div>
+                <B2BScreen
+                  inventory={inventory} setInventory={setInventory}
+                  expiryDates={expiryDates} setExpiryDates={setExpiryDates}
+                  suppliers={suppliers} b2bOrders={b2bOrders} walletBalance={walletBalance}
+                  b2bOrderSearch={b2bOrderSearch} setB2bOrderSearch={setB2bOrderSearch}
+                  purchaseDraft={purchaseDraft} setPurchaseDraft={setPurchaseDraft}
+                  purchaseSupplier={purchaseSupplier} purchaseOnCredit={purchaseOnCredit} setPurchaseOnCredit={setPurchaseOnCredit}
+                  purchaseSuccessBanner={purchaseSuccessBanner}
+                  purchaseSearchWord={purchaseSearchWord} setPurchaseSearchWord={setPurchaseSearchWord}
+                  showPurchaseNewProdForm={showPurchaseNewProdForm} setShowPurchaseNewProdForm={setShowPurchaseNewProdForm}
+                  purchaseNewProdAr={purchaseNewProdAr} setPurchaseNewProdAr={setPurchaseNewProdAr}
+                  purchaseNewProdEn={purchaseNewProdEn} setPurchaseNewProdEn={setPurchaseNewProdEn}
+                  purchaseNewProdSci={purchaseNewProdSci} setPurchaseNewProdSci={setPurchaseNewProdSci}
+                  purchaseNewProdPrice={purchaseNewProdPrice} setPurchaseNewProdPrice={setPurchaseNewProdPrice}
+                  purchaseNewProdQty={purchaseNewProdQty} setPurchaseNewProdQty={setPurchaseNewProdQty}
+                  purchaseNewProdExpiry={purchaseNewProdExpiry} setPurchaseNewProdExpiry={setPurchaseNewProdExpiry}
+                  purchaseNewProdBarcode={purchaseNewProdBarcode} setPurchaseNewProdBarcode={setPurchaseNewProdBarcode}
+                  editingDraftField={editingDraftField} editingDraftValue={editingDraftValue} setEditingDraftValue={setEditingDraftValue}
+                  editingDraftStockId={editingDraftStockId} setEditingDraftStockId={setEditingDraftStockId}
+                  draftEditCancelRef={draftEditCancelRef} startEditDraftField={startEditDraftField} saveDraftField={saveDraftField} saveDraftStock={saveDraftStock}
+                  addToPurchaseDraft={addToPurchaseDraft} applyDraftSupplier={applyDraftSupplier}
+                  commitPurchaseDraft={commitPurchaseDraft} reopenPurchaseOrderForEdit={reopenPurchaseOrderForEdit}
+                  findScanMatch={findScanMatch} startScanning={startScanning} setShowInvoiceImport={setShowInvoiceImport}
+                />
               )}
 
               {/*
@@ -6619,8 +4958,8 @@ export default function Dashboard() {
                   className="flex items-center justify-center min-h-[60vh]"
                 >
                   <div className="bg-white border border-slate-200 rounded-3xl shadow-lg p-8 w-full max-w-sm space-y-6 text-center">
-                    <div className="w-16 h-16 bg-violet-50 rounded-2xl flex items-center justify-center mx-auto">
-                      <ShieldCheck className="w-8 h-8 text-violet-600" />
+                    <div className="w-16 h-16 bg-special-50 rounded-2xl flex items-center justify-center mx-auto">
+                      <ShieldCheck className="w-8 h-8 text-special-600" />
                     </div>
                     <div>
                       <h3 className="font-bold text-slate-800 text-base">الحسابات المالية</h3>
@@ -6649,15 +4988,15 @@ export default function Dashboard() {
                           onChange={(e) => { setPinEntry(e.target.value); setPinError(false); }}
                           placeholder="••••"
                           autoFocus
-                          className={`w-full text-center text-2xl tabular-nums tracking-[0.5em] bg-slate-50 border rounded-xl py-3 px-4 focus:outline-none focus:ring-2 transition ${pinError ? 'border-rose-400 focus:ring-rose-200 bg-rose-50' : 'border-slate-200 focus:ring-violet-200 focus:border-violet-400'}`}
+                          className={`w-full text-center text-2xl tabular-nums tracking-[0.5em] bg-slate-50 border rounded-xl py-3 px-4 focus:outline-none focus:ring-2 transition ${pinError ? 'border-danger-400 focus:ring-danger-200 bg-danger-50' : 'border-slate-200 focus:ring-special-200 focus:border-special-400'}`}
                         />
                         {pinError && (
-                          <p className="text-sm text-rose-600 font-bold mt-1.5 text-center">كلمة المرور غير صحيحة</p>
+                          <p className="text-sm text-danger-600 font-bold mt-1.5 text-center">كلمة المرور غير صحيحة</p>
                         )}
                       </div>
                       <button
                         type="submit"
-                        className="w-full bg-violet-600 hover:bg-violet-700 text-white font-bold py-3 rounded-xl cursor-pointer transition border-none font-sans text-sm"
+                        className="w-full bg-special-600 hover:bg-special-700 text-white font-bold py-3 rounded-xl cursor-pointer transition border-none font-sans text-sm"
                       >
                         دخول
                       </button>
@@ -6701,7 +5040,7 @@ export default function Dashboard() {
                         </button>
                         <button
                           onClick={restoreFromBrowserBackup}
-                          className="bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
+                          className="bg-warn-600 hover:bg-warn-700 text-white font-bold py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
                           title={lastAutoBackupAt ? `استعادة آخر نسخة محفوظة تلقائياً في المتصفح (${fmtDateTime(new Date(lastAutoBackupAt))})` : 'استعادة من النسخة المحفوظة تلقائياً في المتصفح'}
                         >
                           <RefreshCw className="w-4 h-4" />
@@ -6709,7 +5048,7 @@ export default function Dashboard() {
                         </button>
                         <button
                           onClick={() => restoreFileRef.current?.click()}
-                          className="bg-white border border-slate-300 hover:border-amber-400 text-slate-700 font-bold py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
+                          className="bg-white border border-slate-300 hover:border-warn-400 text-slate-700 font-bold py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
                           title="استعادة من ملف نسخة احتياطية (.json) محفوظ على اللابتوب"
                         >
                           <Upload className="w-4 h-4" />
@@ -6732,7 +5071,7 @@ export default function Dashboard() {
                             window.print();
                             setTimeout(() => document.body.classList.remove('printing-financial'), 1000);
                           }}
-                          className="bg-violet-600 hover:bg-violet-700 text-white font-bold py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
+                          className="bg-special-600 hover:bg-special-700 text-white font-bold py-2.5 px-4 rounded-xl flex items-center gap-2 transition shadow-sm cursor-pointer text-xs"
                         >
                           <FileText className="w-4 h-4" />
                           <span>طباعة / PDF</span>
@@ -6760,18 +5099,18 @@ export default function Dashboard() {
                             {fmtNum(dailySalesRevenue)} <span className="text-xs text-slate-500 font-sans font-semibold">د.ع</span>
                           </span>
                         </div>
-                        <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
+                        <div className="w-10 h-10 bg-info-50 text-info-600 rounded-xl flex items-center justify-center">
                           <TrendingUp className="w-5 h-5" />
                         </div>
                       </div>
                       <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex items-center justify-between">
                         <div className="space-y-1">
                           <span className="text-sm text-slate-500 font-bold tracking-wider block">ذمم المذاخر المتبقية</span>
-                          <span className="text-xl font-bold text-rose-700 tracking-tight tabular-nums">
+                          <span className="text-xl font-bold text-danger-700 tracking-tight tabular-nums">
                             {fmtNum(totalDebts)} <span className="text-xs text-slate-500 font-sans font-semibold">د.ع</span>
                           </span>
                         </div>
-                        <div className="w-10 h-10 bg-rose-50 text-rose-600 rounded-xl flex items-center justify-center">
+                        <div className="w-10 h-10 bg-danger-50 text-danger-600 rounded-xl flex items-center justify-center">
                           <ClipboardList className="w-5 h-5" />
                         </div>
                       </div>
@@ -6888,7 +5227,7 @@ export default function Dashboard() {
                         {/* أعلى المنتجات ربحية */}
                         <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
                           <div className="flex items-center gap-2 mb-3">
-                            <Trophy className="w-4 h-4 text-amber-500" />
+                            <Trophy className="w-4 h-4 text-warn-500" />
                             <span className="text-sm font-bold text-slate-700">أعلى المنتجات ربحية</span>
                           </div>
                           <div className="space-y-1.5">
@@ -6910,18 +5249,18 @@ export default function Dashboard() {
                         {/* الأكثر مبيعاً بالكمية */}
                         <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
                           <div className="flex items-center gap-2 mb-3">
-                            <TrendingUp className="w-4 h-4 text-blue-600" />
+                            <TrendingUp className="w-4 h-4 text-info-600" />
                             <span className="text-sm font-bold text-slate-700">الأكثر مبيعاً (بالكمية)</span>
                           </div>
                           <div className="space-y-1.5">
                             {topSelling.map((p, i) => (
                               <div key={p.name} className="flex items-center justify-between text-sm font-bold bg-slate-50 rounded-lg px-3 py-2">
                                 <div className="flex items-center gap-2 min-w-0 flex-wrap">
-                                  <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold shrink-0">{i + 1}</span>
+                                  <span className="w-5 h-5 rounded-full bg-info-100 text-info-700 flex items-center justify-center font-bold shrink-0">{i + 1}</span>
                                   <span className="text-slate-700 truncate">{p.name}</span>
                                 </div>
                                 <div className="text-left shrink-0 mr-2">
-                                  <strong className="text-blue-700 tabular-nums">{fmtNum(p.qty)}</strong>
+                                  <strong className="text-info-700 tabular-nums">{fmtNum(p.qty)}</strong>
                                   <span className="text-slate-500 text-xs"> وحدة</span>
                                 </div>
                               </div>
@@ -6951,10 +5290,10 @@ export default function Dashboard() {
                                 <tr key={m.name} className="border-b border-slate-50 hover:bg-slate-50/60">
                                   <td className="text-right py-2 px-2 text-slate-700">{m.name}</td>
                                   <td className="text-center py-2 px-2">
-                                    <span className={`tabular-nums ${m.sold === 0 ? 'text-rose-600' : 'text-slate-600'}`}>{m.sold}</span>
+                                    <span className={`tabular-nums ${m.sold === 0 ? 'text-danger-600' : 'text-slate-600'}`}>{m.sold}</span>
                                   </td>
                                   <td className="text-center py-2 px-2 tabular-nums text-slate-600">{m.stock}</td>
-                                  <td className="text-left py-2 px-2 tabular-nums text-amber-700">{fmtNum(m.value)} د.ع</td>
+                                  <td className="text-left py-2 px-2 tabular-nums text-warn-700">{fmtNum(m.value)} د.ع</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -6977,11 +5316,11 @@ export default function Dashboard() {
                           <span className="text-xs text-money-700 font-bold block mb-1">الربح الإجمالي (الشهر)</span>
                           <strong className="text-base font-bold text-money-800 tabular-nums">{fmtNum(statsMonth.profit)} <span className="text-xs font-bold">د.ع</span></strong>
                         </div>
-                        <div className="bg-rose-50 border border-rose-100 rounded-xl p-3">
-                          <span className="text-xs text-rose-700 font-bold block mb-1">− إجمالي المصاريف (الشهر)</span>
-                          <strong className="text-base font-bold text-rose-700 tabular-nums">{fmtNum(expMonth)} <span className="text-xs font-bold">د.ع</span></strong>
+                        <div className="bg-danger-50 border border-danger-100 rounded-xl p-3">
+                          <span className="text-xs text-danger-700 font-bold block mb-1">− إجمالي المصاريف (الشهر)</span>
+                          <strong className="text-base font-bold text-danger-700 tabular-nums">{fmtNum(expMonth)} <span className="text-xs font-bold">د.ع</span></strong>
                         </div>
-                        <div className={`${netProfitMonth >= 0 ? 'bg-money-600' : 'bg-rose-600'} rounded-xl p-3`}>
+                        <div className={`${netProfitMonth >= 0 ? 'bg-money-600' : 'bg-danger-600'} rounded-xl p-3`}>
                           <span className="text-xs text-white/80 font-bold block mb-1">= صافي الربح (الشهر)</span>
                           <strong className="text-base font-bold text-white tabular-nums">{fmtNum(netProfitMonth)} <span className="text-xs font-bold">د.ع</span></strong>
                         </div>
@@ -7039,7 +5378,7 @@ export default function Dashboard() {
                                   <strong className="text-slate-800 block">{exp.category}</strong>
                                   <span className="text-slate-500 text-xs font-semibold">{exp.date} • {exp.paidBy}{exp.description ? ` • ${exp.description}` : ''}</span>
                                 </div>
-                                <strong className="text-rose-700 tabular-nums shrink-0 mr-2">−{fmtNum(exp.amount)} د.ع</strong>
+                                <strong className="text-danger-700 tabular-nums shrink-0 mr-2">−{fmtNum(exp.amount)} د.ع</strong>
                               </div>
                             ))}
                           </div>
@@ -7051,7 +5390,7 @@ export default function Dashboard() {
                     <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div className="flex items-center gap-2">
-                          <FileText className="w-4 h-4 text-violet-600" />
+                          <FileText className="w-4 h-4 text-special-600" />
                           <span className="text-sm text-slate-600 font-bold">قائمة الأرباح والخسائر (الدخل)</span>
                         </div>
                         <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
@@ -7059,7 +5398,7 @@ export default function Dashboard() {
                             <button
                               key={k}
                               onClick={() => setPlPeriod(k)}
-                              className={`text-sm font-bold px-3 py-1.5 rounded-lg transition cursor-pointer border-none font-sans ${plPeriod === k ? 'bg-white text-violet-700 shadow-sm' : 'bg-transparent text-slate-500'}`}
+                              className={`text-sm font-bold px-3 py-1.5 rounded-lg transition cursor-pointer border-none font-sans ${plPeriod === k ? 'bg-white text-special-700 shadow-sm' : 'bg-transparent text-slate-500'}`}
                             >
                               {lbl}
                             </button>
@@ -7075,7 +5414,7 @@ export default function Dashboard() {
                         </div>
                         <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100">
                           <span className="text-slate-500">(−) مرتجعات المبيعات{plReturns.count > 0 ? ` (${plReturns.count})` : ''}</span>
-                          <span className="tabular-nums text-rose-600">−{fmtNum(plReturns.value)} د.ع</span>
+                          <span className="tabular-nums text-danger-600">−{fmtNum(plReturns.value)} د.ع</span>
                         </div>
                         <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100 bg-slate-50/60">
                           <span className="text-slate-700 font-bold">= صافي المبيعات</span>
@@ -7084,7 +5423,7 @@ export default function Dashboard() {
                         {/* التكلفة */}
                         <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100">
                           <span className="text-slate-500">(−) تكلفة البضاعة المباعة (COGS)</span>
-                          <span className="tabular-nums text-rose-600">−{fmtNum(plNetCogs)} د.ع</span>
+                          <span className="tabular-nums text-danger-600">−{fmtNum(plNetCogs)} د.ع</span>
                         </div>
                         {/* مجمل الربح */}
                         <div className="flex items-center justify-between px-4 py-3 border-t border-slate-100 bg-primary-50">
@@ -7094,7 +5433,7 @@ export default function Dashboard() {
                         {/* المصاريف التشغيلية مفصّلة */}
                         <div className="flex items-center justify-between px-4 py-2.5 border-t border-slate-100">
                           <span className="text-slate-700 font-bold">(−) المصاريف التشغيلية</span>
-                          <span className="tabular-nums text-rose-600">−{fmtNum(plTotalExpenses)} د.ع</span>
+                          <span className="tabular-nums text-danger-600">−{fmtNum(plTotalExpenses)} د.ع</span>
                         </div>
                         {plExpenseRows.length === 0 ? (
                           <div className="px-6 py-2 border-t border-slate-50 text-sm text-slate-500 font-bold">لا مصاريف مسجّلة في هذه الفترة</div>
@@ -7105,7 +5444,7 @@ export default function Dashboard() {
                           </div>
                         ))}
                         {/* صافي الربح */}
-                        <div className={`flex items-center justify-between px-4 py-3.5 border-t-2 ${plNetProfit >= 0 ? 'bg-money-600 border-money-700' : 'bg-rose-600 border-rose-700'}`}>
+                        <div className={`flex items-center justify-between px-4 py-3.5 border-t-2 ${plNetProfit >= 0 ? 'bg-money-600 border-money-700' : 'bg-danger-600 border-danger-700'}`}>
                           <span className="text-white font-bold">= صافي الربح <span className="text-xs text-white/75 font-bold">(هامش {plNetMargin}%)</span></span>
                           <span className="tabular-nums text-white font-bold text-sm">{fmtNum(plNetProfit)} د.ع</span>
                         </div>
@@ -7119,13 +5458,13 @@ export default function Dashboard() {
                     <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <Truck className="w-4 h-4 text-indigo-600" />
+                          <Truck className="w-4 h-4 text-accent-600" />
                           <span className="text-sm text-slate-600 font-bold">قائمة الموردين ومصادر التجهيز</span>
                         </div>
                         <button
                           type="button"
                           onClick={() => { setSupplierFormVisible(v => !v); setSelectedSupplierId(null); }}
-                          className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold px-3 py-1.5 rounded-xl transition cursor-pointer border-none"
+                          className="flex items-center gap-1.5 bg-accent-600 hover:bg-accent-700 text-white text-sm font-bold px-3 py-1.5 rounded-xl transition cursor-pointer border-none"
                         >
                           <Plus className="w-3.5 h-3.5" />
                           إضافة مورد جديد
@@ -7162,8 +5501,8 @@ export default function Dashboard() {
                             }}
                             className="overflow-hidden"
                           >
-                            <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 space-y-3 text-xs font-semibold">
-                              <span className="text-sm text-indigo-700 font-bold block">بيانات المورد الجديد</span>
+                            <div className="bg-accent-50 border border-accent-100 rounded-2xl p-4 space-y-3 text-xs font-semibold">
+                              <span className="text-sm text-accent-700 font-bold block">بيانات المورد الجديد</span>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <div className="space-y-1 sm:col-span-2">
                                   <label className="block text-slate-500 text-sm">اسم المورد / المذخر *</label>
@@ -7195,7 +5534,7 @@ export default function Dashboard() {
                                 </div>
                               </div>
                               <div className="flex gap-2 pt-1">
-                                <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
+                                <button type="submit" className="flex-1 bg-accent-600 hover:bg-accent-700 text-white font-bold py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
                                   حفظ المورد
                                 </button>
                                 <button type="button" onClick={() => setSupplierFormVisible(false)} className="px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
@@ -7223,13 +5562,13 @@ export default function Dashboard() {
                               initial={{ opacity: 0, y: 8 }}
                               animate={{ opacity: 1, y: 0 }}
                               exit={{ opacity: 0, y: 8 }}
-                              className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 space-y-4"
+                              className="bg-accent-50 border border-accent-100 rounded-2xl p-4 space-y-4"
                             >
                               {/* Header */}
                               <div className="flex items-start justify-between gap-3">
                                 <div className="space-y-0.5">
                                   <div className="flex items-center gap-2">
-                                    <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center flex-shrink-0">
+                                    <div className="w-8 h-8 rounded-xl bg-accent-600 flex items-center justify-center flex-shrink-0">
                                       <Truck className="w-4 h-4 text-white" />
                                     </div>
                                     <h4 className="font-bold text-sm text-slate-900">{sup.name}</h4>
@@ -7257,7 +5596,7 @@ export default function Dashboard() {
                                       setNewSupPaymentTerms(sup.paymentTerms || 30);
                                       setNewSupNotes(sup.notes || '');
                                     }}
-                                    className="p-1.5 text-indigo-500 hover:text-indigo-700 hover:bg-indigo-100 rounded-lg transition cursor-pointer bg-transparent border-none"
+                                    className="p-1.5 text-accent-500 hover:text-accent-700 hover:bg-accent-100 rounded-lg transition cursor-pointer bg-transparent border-none"
                                     title="تعديل بيانات المورد"
                                   >
                                     <Pencil className="w-4 h-4" />
@@ -7268,7 +5607,7 @@ export default function Dashboard() {
                                       confirmDialog({ title: `حذف المورد «${sup.name}»؟`, message: 'لن تتأثّر الذمم أو الفواتير المسجّلة سابقاً.', confirmText: 'حذف', danger: true })
                                         .then(ok => { if (ok) deleteSupplier(sup); });
                                     }}
-                                    className="p-1.5 text-rose-400 hover:text-rose-600 hover:bg-rose-100 rounded-lg transition cursor-pointer bg-transparent border-none"
+                                    className="p-1.5 text-danger-400 hover:text-danger-600 hover:bg-danger-100 rounded-lg transition cursor-pointer bg-transparent border-none"
                                     title="حذف المورد"
                                   >
                                     <Trash2 className="w-4 h-4" />
@@ -7302,9 +5641,9 @@ export default function Dashboard() {
                                     });
                                     setEditingSupplierId(null);
                                   }}
-                                  className="bg-white border border-indigo-200 rounded-2xl p-4 space-y-3 text-xs font-semibold"
+                                  className="bg-white border border-accent-200 rounded-2xl p-4 space-y-3 text-xs font-semibold"
                                 >
-                                  <span className="text-sm text-indigo-700 font-bold block">تعديل بيانات المورد</span>
+                                  <span className="text-sm text-accent-700 font-bold block">تعديل بيانات المورد</span>
                                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                     <div className="space-y-1 sm:col-span-2">
                                       <label className="block text-slate-500 text-sm">اسم المورد / المذخر *</label>
@@ -7336,7 +5675,7 @@ export default function Dashboard() {
                                     </div>
                                   </div>
                                   <div className="flex gap-2 pt-1">
-                                    <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
+                                    <button type="submit" className="flex-1 bg-accent-600 hover:bg-accent-700 text-white font-bold py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
                                       حفظ التعديلات
                                     </button>
                                     <button type="button" onClick={() => setEditingSupplierId(null)} className="px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl cursor-pointer transition border-none font-sans text-xs">
@@ -7348,20 +5687,20 @@ export default function Dashboard() {
 
                               {/* ملخص الحساب */}
                               <div className="grid grid-cols-3 gap-2">
-                                <div className="bg-rose-50 border border-rose-100 rounded-xl p-3 text-center">
-                                  <span className="text-xs text-rose-600 font-bold block mb-0.5">المتبقي للمورد</span>
-                                  <strong className="text-sm font-bold text-rose-700 tabular-nums">{fmtNum(totalOwed)}</strong>
-                                  <span className="text-xs text-rose-500 font-bold block">د.ع</span>
+                                <div className="bg-danger-50 border border-danger-100 rounded-xl p-3 text-center">
+                                  <span className="text-xs text-danger-600 font-bold block mb-0.5">المتبقي للمورد</span>
+                                  <strong className="text-sm font-bold text-danger-700 tabular-nums">{fmtNum(totalOwed)}</strong>
+                                  <span className="text-xs text-danger-500 font-bold block">د.ع</span>
                                 </div>
                                 <div className="bg-primary-50 border border-primary-100 rounded-xl p-3 text-center">
                                   <span className="text-xs text-primary-600 font-bold block mb-0.5">إجمالي المسدَّد</span>
                                   <strong className="text-sm font-bold text-money-700 tabular-nums">{fmtNum(totalPaid)}</strong>
                                   <span className="text-xs text-money-500 font-bold block">د.ع</span>
                                 </div>
-                                <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center">
-                                  <span className="text-xs text-blue-600 font-bold block mb-0.5">إجمالي الفواتير</span>
-                                  <strong className="text-sm font-bold text-blue-700 tabular-nums">{fmtNum(totalInvoiced)}</strong>
-                                  <span className="text-xs text-blue-500 font-bold block">د.ع</span>
+                                <div className="bg-info-50 border border-info-100 rounded-xl p-3 text-center">
+                                  <span className="text-xs text-info-600 font-bold block mb-0.5">إجمالي الفواتير</span>
+                                  <strong className="text-sm font-bold text-info-700 tabular-nums">{fmtNum(totalInvoiced)}</strong>
+                                  <span className="text-xs text-info-500 font-bold block">د.ع</span>
                                 </div>
                               </div>
 
@@ -7425,7 +5764,7 @@ export default function Dashboard() {
                                   ? <p className="text-sm text-slate-500 text-center py-3">لا توجد فواتير مسجّلة لهذا المورد</p>
                                   : supPayables.map(p => {
                                     const rem = Math.max(0, p.amount - p.paidAmount);
-                                    const stCls = p.status === 'paid' ? 'text-primary-700 bg-primary-50 border-primary-100' : p.status === 'partial' ? 'text-amber-700 bg-amber-50 border-amber-100' : 'text-rose-700 bg-rose-50 border-rose-100';
+                                    const stCls = p.status === 'paid' ? 'text-primary-700 bg-primary-50 border-primary-100' : p.status === 'partial' ? 'text-warn-700 bg-warn-50 border-warn-100' : 'text-danger-700 bg-danger-50 border-danger-100';
                                     const stLabel = p.status === 'paid' ? 'مسدّدة' : p.status === 'partial' ? 'جزئي' : 'مفتوحة';
                                     return (
                                       <div key={p.id} className="bg-white border border-slate-100 rounded-xl px-3 py-2 text-sm font-semibold flex items-center gap-2 justify-between">
@@ -7436,7 +5775,7 @@ export default function Dashboard() {
                                         <div className="flex items-center gap-2 shrink-0 text-right">
                                           <div>
                                             <span className="tabular-nums text-slate-700 font-bold block text-sm">{fmtNum(p.amount)} د.ع</span>
-                                            {rem > 0 && <span className="tabular-nums text-rose-600 text-xs font-bold">متبقّي {fmtNum(rem)}</span>}
+                                            {rem > 0 && <span className="tabular-nums text-danger-600 text-xs font-bold">متبقّي {fmtNum(rem)}</span>}
                                           </div>
                                           <span className={`px-2 py-0.5 rounded-full border text-xs font-bold ${stCls}`}>{stLabel}</span>
                                         </div>
@@ -7458,7 +5797,7 @@ export default function Dashboard() {
                                       </div>
                                       <div className="text-right">
                                         <span className="tabular-nums text-slate-700 font-bold block">{fmtNum(o.totalAmount)} د.ع</span>
-                                        <span className={`text-xs font-bold ${o.status === 'delivered' ? 'text-primary-600' : o.status === 'cancelled' ? 'text-rose-500' : 'text-amber-600'}`}>
+                                        <span className={`text-xs font-bold ${o.status === 'delivered' ? 'text-primary-600' : o.status === 'cancelled' ? 'text-danger-500' : 'text-warn-600'}`}>
                                           {o.status === 'delivered' ? 'مستلمة' : o.status === 'on_way' ? 'في الطريق' : o.status === 'preparing' ? 'تحضير' : o.status === 'cancelled' ? 'ملغاة' : 'معلّقة'}
                                         </span>
                                       </div>
@@ -7483,7 +5822,7 @@ export default function Dashboard() {
                                 key={sup.id}
                                 type="button"
                                 onClick={() => { setSelectedSupplierId(sup.id); setSupplierFormVisible(false); }}
-                                className="text-right bg-white border border-slate-100 hover:border-indigo-300 hover:bg-indigo-50 rounded-2xl p-4 transition cursor-pointer text-xs space-y-2 w-full"
+                                className="text-right bg-white border border-slate-100 hover:border-accent-300 hover:bg-accent-50 rounded-2xl p-4 transition cursor-pointer text-xs space-y-2 w-full"
                               >
                                 <div className="flex items-start justify-between gap-2">
                                   <div className="min-w-0">
@@ -7492,7 +5831,7 @@ export default function Dashboard() {
                                   </div>
                                   <div className="shrink-0 text-left">
                                     {totalOwed > 0
-                                      ? <span className="text-sm font-bold text-rose-600 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full tabular-nums">{fmtNum(totalOwed)} د.ع</span>
+                                      ? <span className="text-sm font-bold text-danger-600 bg-danger-50 border border-danger-100 px-2 py-0.5 rounded-full tabular-nums">{fmtNum(totalOwed)} د.ع</span>
                                       : <span className="text-sm font-bold text-primary-600 bg-primary-50 border border-primary-100 px-2 py-0.5 rounded-full">✓ مسوّى</span>
                                     }
                                   </div>
@@ -7500,7 +5839,7 @@ export default function Dashboard() {
                                 <div className="flex items-center gap-3 text-xs text-slate-500 font-bold">
                                   {sup.phone && <span className="inline-flex items-center gap-1"><Phone className="w-3 h-3" />{sup.phone}</span>}
                                   {sup.paymentTerms && <span className="inline-flex items-center gap-1"><Calendar className="w-3 h-3" />{sup.paymentTerms} يوم آجل</span>}
-                                  {openCount > 0 && <span className="text-amber-600 inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3" />{openCount} ذمّة مفتوحة</span>}
+                                  {openCount > 0 && <span className="text-warn-600 inline-flex items-center gap-1"><AlertTriangle className="w-3 h-3" />{openCount} ذمّة مفتوحة</span>}
                                 </div>
                               </button>
                             );
@@ -7515,19 +5854,19 @@ export default function Dashboard() {
                     {/* --- ديون الموردين والذمم الدائنة --- */}
                     <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
                       <div className="flex items-center gap-2">
-                        <ClipboardList className="w-4 h-4 text-rose-600" />
+                        <ClipboardList className="w-4 h-4 text-danger-600" />
                         <span className="text-sm text-slate-600 font-bold">ديون الموردين والذمم الدائنة (المذاخر والمكاتب العلمية)</span>
                       </div>
 
                       {/* ملخص الذمم الدائنة */}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div className="bg-rose-50 border border-rose-100 rounded-xl p-3">
-                          <span className="text-xs text-rose-700 font-bold block mb-1">إجمالي الذمم المستحقة</span>
-                          <strong className="text-base font-bold text-rose-700 tabular-nums">{fmtNum(totalDebts)} <span className="text-xs font-bold">د.ع</span></strong>
+                        <div className="bg-danger-50 border border-danger-100 rounded-xl p-3">
+                          <span className="text-xs text-danger-700 font-bold block mb-1">إجمالي الذمم المستحقة</span>
+                          <strong className="text-base font-bold text-danger-700 tabular-nums">{fmtNum(totalDebts)} <span className="text-xs font-bold">د.ع</span></strong>
                         </div>
-                        <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
-                          <span className="text-xs text-amber-700 font-bold block mb-1">عدد الذمم المفتوحة</span>
-                          <strong className="text-base font-bold text-amber-700 tabular-nums">{payables.filter(p => p.status !== 'paid').length} <span className="text-xs font-bold">ذمّة</span></strong>
+                        <div className="bg-warn-50 border border-warn-100 rounded-xl p-3">
+                          <span className="text-xs text-warn-700 font-bold block mb-1">عدد الذمم المفتوحة</span>
+                          <strong className="text-base font-bold text-warn-700 tabular-nums">{payables.filter(p => p.status !== 'paid').length} <span className="text-xs font-bold">ذمّة</span></strong>
                         </div>
                         <div className="bg-primary-50 border border-primary-100 rounded-xl p-3">
                           <span className="text-xs text-primary-700 font-bold block mb-1">إجمالي المسدَّد</span>
@@ -7549,8 +5888,8 @@ export default function Dashboard() {
                               const statusCls = p.status === 'paid'
                                 ? 'bg-primary-50 text-primary-700 border-primary-100'
                                 : p.status === 'partial'
-                                  ? 'bg-amber-50 text-amber-700 border-amber-100'
-                                  : 'bg-rose-50 text-rose-700 border-rose-100';
+                                  ? 'bg-warn-50 text-warn-700 border-warn-100'
+                                  : 'bg-danger-50 text-danger-700 border-danger-100';
                               return (
                                 <div key={p.id} className="bg-white border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-bold space-y-2">
                                   <div className="flex items-start justify-between gap-2">
@@ -7563,7 +5902,7 @@ export default function Dashboard() {
                                   <div className="flex items-center justify-between gap-2 text-xs text-slate-500 font-bold">
                                     <span>الأصل: <span className="tabular-nums text-slate-700">{fmtNum(p.amount)}</span></span>
                                     <span>المسدَّد: <span className="tabular-nums text-money-700">{fmtNum(p.paidAmount)}</span></span>
-                                    <span>المتبقّي: <span className="tabular-nums text-rose-700">{fmtNum(remaining)} د.ع</span></span>
+                                    <span>المتبقّي: <span className="tabular-nums text-danger-700">{fmtNum(remaining)} د.ع</span></span>
                                   </div>
                                   {p.status !== 'paid' && (
                                     <div className="flex items-center gap-1.5 pt-1">
@@ -7602,19 +5941,19 @@ export default function Dashboard() {
                     {/* --- ذمم الزبائن والبيع بالآجل (الذمم المدينة) --- */}
                     <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
                       <div className="flex items-center gap-2">
-                        <ClipboardList className="w-4 h-4 text-amber-600" />
+                        <ClipboardList className="w-4 h-4 text-warn-600" />
                         <span className="text-sm text-slate-600 font-bold">ذمم الزبائن والبيع بالآجل (الذمم المدينة المستحقة لنا)</span>
                       </div>
 
                       {/* ملخص الذمم المدينة */}
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
-                          <span className="text-xs text-amber-700 font-bold block mb-1">إجمالي الذمم المستحقة لنا</span>
-                          <strong className="text-base font-bold text-amber-700 tabular-nums">{fmtNum(totalReceivables)} <span className="text-xs font-bold">د.ع</span></strong>
+                        <div className="bg-warn-50 border border-warn-100 rounded-xl p-3">
+                          <span className="text-xs text-warn-700 font-bold block mb-1">إجمالي الذمم المستحقة لنا</span>
+                          <strong className="text-base font-bold text-warn-700 tabular-nums">{fmtNum(totalReceivables)} <span className="text-xs font-bold">د.ع</span></strong>
                         </div>
-                        <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
-                          <span className="text-xs text-blue-700 font-bold block mb-1">عدد الذمم المفتوحة</span>
-                          <strong className="text-base font-bold text-blue-700 tabular-nums">{receivables.filter(r => r.status !== 'paid').length} <span className="text-xs font-bold">ذمّة</span></strong>
+                        <div className="bg-info-50 border border-info-100 rounded-xl p-3">
+                          <span className="text-xs text-info-700 font-bold block mb-1">عدد الذمم المفتوحة</span>
+                          <strong className="text-base font-bold text-info-700 tabular-nums">{receivables.filter(r => r.status !== 'paid').length} <span className="text-xs font-bold">ذمّة</span></strong>
                         </div>
                         <div className="bg-primary-50 border border-primary-100 rounded-xl p-3">
                           <span className="text-xs text-primary-700 font-bold block mb-1">إجمالي المُحصَّل</span>
@@ -7642,7 +5981,7 @@ export default function Dashboard() {
                             <label className="block text-slate-500 text-sm">وصف (اختياري)</label>
                             <input type="text" value={newRecDesc} onChange={(e) => setNewRecDesc(e.target.value)} className="w-full bg-white border border-slate-200 rounded-lg p-2" placeholder="مثال: أدوية ومستلزمات شهرية للعيادة" />
                           </div>
-                          <button type="submit" className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2.5 rounded-xl cursor-pointer transition shadow-sm border-none font-sans text-xs">
+                          <button type="submit" className="w-full bg-warn-600 hover:bg-warn-700 text-white font-bold py-2.5 rounded-xl cursor-pointer transition shadow-sm border-none font-sans text-xs">
                             تسجيل ذمّة على زبون
                           </button>
                           {receivableSuccess && <p className="text-sm text-primary-700 font-bold text-center">✓ تم تسجيل الذمّة في دفتر ذمم الزبائن</p>}
@@ -7662,8 +6001,8 @@ export default function Dashboard() {
                               const statusCls = r.status === 'paid'
                                 ? 'bg-primary-50 text-primary-700 border-primary-100'
                                 : r.status === 'partial'
-                                  ? 'bg-blue-50 text-blue-700 border-blue-100'
-                                  : 'bg-amber-50 text-amber-700 border-amber-100';
+                                  ? 'bg-info-50 text-info-700 border-info-100'
+                                  : 'bg-warn-50 text-warn-700 border-warn-100';
                               return (
                                 <div key={r.id} className="bg-white border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-bold space-y-2">
                                   <div className="flex items-start justify-between gap-2">
@@ -7676,7 +6015,7 @@ export default function Dashboard() {
                                   <div className="flex items-center justify-between gap-2 text-xs text-slate-500 font-bold">
                                     <span>الأصل: <span className="tabular-nums text-slate-700">{fmtNum(r.amount)}</span></span>
                                     <span>المُحصَّل: <span className="tabular-nums text-money-700">{fmtNum(r.paidAmount)}</span></span>
-                                    <span>المتبقّي: <span className="tabular-nums text-amber-700">{fmtNum(remaining)} د.ع</span></span>
+                                    <span>المتبقّي: <span className="tabular-nums text-warn-700">{fmtNum(remaining)} د.ع</span></span>
                                   </div>
                                   {r.status !== 'paid' && (
                                     <div className="flex items-center gap-1.5 pt-1">
@@ -7722,7 +6061,7 @@ export default function Dashboard() {
                         <div className="space-y-2">
                           <p className="flex justify-between">
                             <span>إجمالي الذمم المستحقة للموردين:</span>
-                            <strong className="text-rose-700 tabular-nums text-sm">{fmtNum(totalDebts)} د.ع</strong>
+                            <strong className="text-danger-700 tabular-nums text-sm">{fmtNum(totalDebts)} د.ع</strong>
                           </p>
                           <p className="flex justify-between text-slate-500">
                             <span>الرصيد المتاح بالصندوق:</span>
@@ -7765,7 +6104,7 @@ export default function Dashboard() {
                                     {/* اسم المورد والمبلغ المستحق */}
                                     <div className="flex items-center justify-between">
                                       <span className="font-bold text-slate-800 text-sm">{sup.name}</span>
-                                      <span className="tabular-nums text-rose-600 font-bold text-sm">{fmtNum(sup.remaining)} د.ع</span>
+                                      <span className="tabular-nums text-danger-600 font-bold text-sm">{fmtNum(sup.remaining)} د.ع</span>
                                     </div>
                                     {/* حقل المبلغ + أزرار التسديد */}
                                     <div className="flex gap-1.5 items-center">
@@ -7785,7 +6124,7 @@ export default function Dashboard() {
                                           paySupplierDebt(supplierObj, payAmt);
                                           setDebtPayAmounts(prev => ({ ...prev, [sup.name]: 0 }));
                                         }}
-                                        className="shrink-0 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-bold px-3 py-1.5 rounded-lg text-sm cursor-pointer transition border-none"
+                                        className="shrink-0 bg-accent-600 hover:bg-accent-700 disabled:opacity-40 text-white font-bold px-3 py-1.5 rounded-lg text-sm cursor-pointer transition border-none"
                                       >
                                         دفعة
                                       </button>
@@ -7834,10 +6173,10 @@ export default function Dashboard() {
                     <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
-                          <RefreshCw className="w-4 h-4 text-rose-500" />
+                          <RefreshCw className="w-4 h-4 text-danger-500" />
                           <span className="text-sm text-slate-600 font-bold">مرتجعات المبيعات</span>
                         </div>
-                        <span className="text-xs bg-rose-50 text-rose-700 font-bold px-2.5 py-1 rounded-full border border-rose-100">
+                        <span className="text-xs bg-danger-50 text-danger-700 font-bold px-2.5 py-1 rounded-full border border-danger-100">
                           {salesReturns.length} مرتجع • {fmtNum(salesReturns.reduce((s, r) => s + r.total, 0))} د.ع
                         </span>
                       </div>
@@ -7850,15 +6189,15 @@ export default function Dashboard() {
                             <div key={r.returnId} className="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5 text-sm font-bold space-y-1">
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                  <span className="tabular-nums text-rose-700 font-bold">{r.returnId}</span>
+                                  <span className="tabular-nums text-danger-700 font-bold">{r.returnId}</span>
                                   <span className="text-slate-500">←</span>
                                   <span className="tabular-nums text-slate-500">{r.originalInvoiceId}</span>
                                 </div>
-                                <strong className="text-rose-700 tabular-nums">−{fmtNum(r.total)} د.ع</strong>
+                                <strong className="text-danger-700 tabular-nums">−{fmtNum(r.total)} د.ع</strong>
                               </div>
                               <div className="flex items-center justify-between text-slate-500 text-xs">
                                 <span>{r.timestamp} • {r.customerName} • {r.reason}</span>
-                                <span className={`px-1.5 py-0.5 rounded font-bold ${r.refundMethod === 'cash' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'}`}>
+                                <span className={`px-1.5 py-0.5 rounded font-bold ${r.refundMethod === 'cash' ? 'bg-danger-100 text-danger-700' : 'bg-slate-100 text-slate-500'}`}>
                                   {r.refundMethod === 'cash' ? 'استرداد نقدي' : 'تصحيح فقط'}
                                 </span>
                               </div>
@@ -7884,7 +6223,7 @@ export default function Dashboard() {
 
                         {/* ---- كشف حساب المورد ---- */}
                         <div className="space-y-3">
-                          <span className="text-sm font-bold text-rose-600 flex items-center gap-1.5">
+                          <span className="text-sm font-bold text-danger-600 flex items-center gap-1.5">
                             <Truck className="w-3.5 h-3.5" /> كشف حساب المورد / المذخر
                           </span>
                           <select
@@ -7907,17 +6246,17 @@ export default function Dashboard() {
                             return (
                               <div className="space-y-2">
                                 <div className="grid grid-cols-3 gap-2">
-                                  <div className="bg-rose-50 rounded-xl p-2.5 text-center">
-                                    <span className="text-xs text-rose-600 font-bold block">إجمالي الدين</span>
-                                    <strong className="text-sm tabular-nums text-rose-700">{fmtNum(totalOwed)}</strong>
+                                  <div className="bg-danger-50 rounded-xl p-2.5 text-center">
+                                    <span className="text-xs text-danger-600 font-bold block">إجمالي الدين</span>
+                                    <strong className="text-sm tabular-nums text-danger-700">{fmtNum(totalOwed)}</strong>
                                   </div>
                                   <div className="bg-primary-50 rounded-xl p-2.5 text-center">
                                     <span className="text-xs text-primary-600 font-bold block">المدفوع</span>
                                     <strong className="text-sm tabular-nums text-money-700">{fmtNum(totalPaid)}</strong>
                                   </div>
-                                  <div className="bg-amber-50 rounded-xl p-2.5 text-center">
-                                    <span className="text-xs text-amber-600 font-bold block">المتبقي</span>
-                                    <strong className="text-sm tabular-nums text-amber-700">{fmtNum(balance)}</strong>
+                                  <div className="bg-warn-50 rounded-xl p-2.5 text-center">
+                                    <span className="text-xs text-warn-600 font-bold block">المتبقي</span>
+                                    <strong className="text-sm tabular-nums text-warn-700">{fmtNum(balance)}</strong>
                                   </div>
                                 </div>
                                 <div className="overflow-x-auto">
@@ -7938,9 +6277,9 @@ export default function Dashboard() {
                                           <tr key={p.id} className="border-b border-slate-50 hover:bg-slate-50">
                                             <td className="p-1.5 text-slate-500">{p.date}</td>
                                             <td className="p-1.5 text-slate-700">{p.description || 'فاتورة توريد'}</td>
-                                            <td className="p-1.5 tabular-nums text-rose-600 text-left">{fmtNum(p.amount)}</td>
+                                            <td className="p-1.5 tabular-nums text-danger-600 text-left">{fmtNum(p.amount)}</td>
                                             <td className="p-1.5 tabular-nums text-money-600 text-left">{p.paidAmount > 0 ? fmtNum(p.paidAmount) : '—'}</td>
-                                            <td className="p-1.5 tabular-nums text-amber-700 text-left">{fmtNum(running)}</td>
+                                            <td className="p-1.5 tabular-nums text-warn-700 text-left">{fmtNum(running)}</td>
                                           </tr>
                                         );
                                       })}
@@ -7948,9 +6287,9 @@ export default function Dashboard() {
                                     <tfoot>
                                       <tr className="bg-slate-50 font-bold">
                                         <td colSpan={2} className="p-1.5 text-slate-600">الرصيد النهائي</td>
-                                        <td className="p-1.5 tabular-nums text-rose-700 text-left">{fmtNum(totalOwed)}</td>
+                                        <td className="p-1.5 tabular-nums text-danger-700 text-left">{fmtNum(totalOwed)}</td>
                                         <td className="p-1.5 tabular-nums text-money-700 text-left">{fmtNum(totalPaid)}</td>
-                                        <td className="p-1.5 tabular-nums text-amber-800 text-left">{fmtNum(balance)}</td>
+                                        <td className="p-1.5 tabular-nums text-warn-800 text-left">{fmtNum(balance)}</td>
                                       </tr>
                                     </tfoot>
                                   </table>
@@ -7994,17 +6333,17 @@ export default function Dashboard() {
                             return (
                               <div className="space-y-2">
                                 <div className="grid grid-cols-3 gap-2">
-                                  <div className="bg-blue-50 rounded-xl p-2.5 text-center">
-                                    <span className="text-xs text-blue-600 font-bold block">إجمالي المبيعات</span>
-                                    <strong className="text-sm tabular-nums text-blue-700">{fmtNum((totalSales + totalRec))}</strong>
+                                  <div className="bg-info-50 rounded-xl p-2.5 text-center">
+                                    <span className="text-xs text-info-600 font-bold block">إجمالي المبيعات</span>
+                                    <strong className="text-sm tabular-nums text-info-700">{fmtNum((totalSales + totalRec))}</strong>
                                   </div>
                                   <div className="bg-primary-50 rounded-xl p-2.5 text-center">
                                     <span className="text-xs text-primary-600 font-bold block">المحصَّل</span>
                                     <strong className="text-sm tabular-nums text-money-700">{fmtNum((totalSales + totalCollected))}</strong>
                                   </div>
-                                  <div className="bg-amber-50 rounded-xl p-2.5 text-center">
-                                    <span className="text-xs text-amber-600 font-bold block">المتبقي (ذمّة)</span>
-                                    <strong className="text-sm tabular-nums text-amber-700">{fmtNum(balance)}</strong>
+                                  <div className="bg-warn-50 rounded-xl p-2.5 text-center">
+                                    <span className="text-xs text-warn-600 font-bold block">المتبقي (ذمّة)</span>
+                                    <strong className="text-sm tabular-nums text-warn-700">{fmtNum(balance)}</strong>
                                   </div>
                                 </div>
                                 <div className="overflow-x-auto">
@@ -8025,9 +6364,9 @@ export default function Dashboard() {
                                           <tr key={i} className="border-b border-slate-50 hover:bg-slate-50">
                                             <td className="p-1.5 text-slate-500">{row.date}</td>
                                             <td className="p-1.5 text-slate-700">{row.desc}</td>
-                                            <td className="p-1.5 tabular-nums text-rose-600 text-left">{row.debit > 0 ? fmtNum(row.debit) : '—'}</td>
+                                            <td className="p-1.5 tabular-nums text-danger-600 text-left">{row.debit > 0 ? fmtNum(row.debit) : '—'}</td>
                                             <td className="p-1.5 tabular-nums text-money-600 text-left">{row.credit > 0 ? fmtNum(row.credit) : '—'}</td>
-                                            <td className="p-1.5 tabular-nums text-amber-700 text-left">{fmtNum(running)}</td>
+                                            <td className="p-1.5 tabular-nums text-warn-700 text-left">{fmtNum(running)}</td>
                                           </tr>
                                         );
                                       })}
@@ -8036,7 +6375,7 @@ export default function Dashboard() {
                                       <tr className="bg-slate-50 font-bold">
                                         <td colSpan={2} className="p-1.5 text-slate-600">الرصيد النهائي</td>
                                         <td colSpan={2} className="p-1.5 text-slate-500 text-left text-xs">إجمالي الحركات</td>
-                                        <td className="p-1.5 tabular-nums text-amber-800 text-left">{fmtNum(balance)}</td>
+                                        <td className="p-1.5 tabular-nums text-warn-800 text-left">{fmtNum(balance)}</td>
                                       </tr>
                                     </tfoot>
                                   </table>
@@ -8131,9 +6470,9 @@ export default function Dashboard() {
                             <span className="block text-xs text-money-700 font-bold">إجمالي المبيعات</span>
                             <span className="block text-lg font-bold text-money-800 tabular-nums">{fmtNum(salesTotal)}</span>
                           </div>
-                          <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 text-center">
-                            <span className="block text-xs text-violet-700 font-bold">ربح المبيعات</span>
-                            <span className="block text-lg font-bold text-violet-800 tabular-nums">{fmtNum(salesProfit)}</span>
+                          <div className="bg-special-50 border border-special-100 rounded-xl p-3 text-center">
+                            <span className="block text-xs text-special-700 font-bold">ربح المبيعات</span>
+                            <span className="block text-lg font-bold text-special-800 tabular-nums">{fmtNum(salesProfit)}</span>
                           </div>
                         </div>
 
@@ -8141,14 +6480,14 @@ export default function Dashboard() {
                           {zRows.map(([label, val]) => (
                             <div key={label} className="flex items-center justify-between bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 text-sm font-bold">
                               <span className="text-slate-600">{label}</span>
-                              <span className={`tabular-nums font-bold ${val < 0 ? 'text-rose-600' : 'text-primary-700'}`}>
+                              <span className={`tabular-nums font-bold ${val < 0 ? 'text-danger-600' : 'text-primary-700'}`}>
                                 {val < 0 ? '−' : '+'}{fmtNum(Math.abs(val))} د.ع
                               </span>
                             </div>
                           ))}
                           <div className="flex items-center justify-between bg-slate-900 rounded-xl px-3 py-2.5 text-sm font-bold">
                             <span className="text-white">صافي حركة النقد لليوم</span>
-                            <span className={`tabular-nums ${netCash < 0 ? 'text-rose-300' : 'text-money-300'}`}>
+                            <span className={`tabular-nums ${netCash < 0 ? 'text-danger-300' : 'text-money-300'}`}>
                               {netCash < 0 ? '−' : ''}{fmtNum(Math.abs(netCash))} د.ع
                             </span>
                           </div>
@@ -8174,17 +6513,17 @@ export default function Dashboard() {
                       {auditLog.slice(0, 50).map(entry => {
                         const actionMeta: Record<AuditEntry['action'], { label: string; color: string; bg: string }> = {
                           sale:               { label: 'بيع',       color: 'text-primary-700', bg: 'bg-primary-50' },
-                          purchase:           { label: 'شراء',      color: 'text-blue-700',   bg: 'bg-blue-50'   },
-                          expense:            { label: 'مصروف',     color: 'text-rose-700',   bg: 'bg-rose-50'   },
-                          payable_add:        { label: 'ذمّة مورّد', color: 'text-amber-700',  bg: 'bg-amber-50'  },
+                          purchase:           { label: 'شراء',      color: 'text-info-700',   bg: 'bg-info-50'   },
+                          expense:            { label: 'مصروف',     color: 'text-danger-700',   bg: 'bg-danger-50'   },
+                          payable_add:        { label: 'ذمّة مورّد', color: 'text-warn-700',  bg: 'bg-warn-50'  },
                           payable_settle:     { label: 'تسديد',     color: 'text-primary-700',bg: 'bg-primary-50'},
-                          receivable_add:     { label: 'ذمّة زبون', color: 'text-violet-700', bg: 'bg-violet-50' },
+                          receivable_add:     { label: 'ذمّة زبون', color: 'text-special-700', bg: 'bg-special-50' },
                           receivable_collect: { label: 'تحصيل',     color: 'text-primary-700',bg: 'bg-primary-50'},
-                          return:             { label: 'مرتجع',     color: 'text-rose-700',   bg: 'bg-rose-50'   },
+                          return:             { label: 'مرتجع',     color: 'text-danger-700',   bg: 'bg-danger-50'   },
                           inventory_import:   { label: 'استيراد مخزون', color: 'text-slate-700', bg: 'bg-slate-100' },
-                          inventory_edit:     { label: 'تعديل مخزون', color: 'text-blue-700',  bg: 'bg-blue-50'   },
-                          inventory_delete:   { label: 'حذف مادة',   color: 'text-rose-700',   bg: 'bg-rose-50'   },
-                          security:           { label: 'أمان',       color: 'text-amber-700',  bg: 'bg-amber-50'  },
+                          inventory_edit:     { label: 'تعديل مخزون', color: 'text-info-700',  bg: 'bg-info-50'   },
+                          inventory_delete:   { label: 'حذف مادة',   color: 'text-danger-700',   bg: 'bg-danger-50'   },
+                          security:           { label: 'أمان',       color: 'text-warn-700',  bg: 'bg-warn-50'  },
                         };
                         const meta = actionMeta[entry.action];
                         return (
@@ -8195,7 +6534,7 @@ export default function Dashboard() {
                             </div>
                             <div className="flex items-center gap-3 shrink-0 text-right">
                               {entry.amount > 0 && (
-                                <span className={`tabular-nums font-bold ${['expense','payable_settle','return'].includes(entry.action) ? 'text-rose-600' : 'text-primary-700'}`}>
+                                <span className={`tabular-nums font-bold ${['expense','payable_settle','return'].includes(entry.action) ? 'text-danger-600' : 'text-primary-700'}`}>
                                   {['expense','payable_settle','return'].includes(entry.action) ? '−' : '+'}{fmtNum(entry.amount)} د.ع
                                 </span>
                               )}
@@ -8217,7 +6556,7 @@ export default function Dashboard() {
                   {/* --- تغيير كلمة مرور التبويب المالي --- */}
                   <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
                     <div className="flex items-center gap-2">
-                      <ShieldCheck className="w-4 h-4 text-violet-600" />
+                      <ShieldCheck className="w-4 h-4 text-special-600" />
                       <span className="text-sm text-slate-600 font-bold">تغيير كلمة مرور الحسابات المالية</span>
                     </div>
                     <form
@@ -8254,7 +6593,7 @@ export default function Dashboard() {
                           value={changePinOld}
                           onChange={e => { setChangePinOld(e.target.value); setChangePinMsg(null); }}
                           placeholder="••••"
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center tabular-nums text-sm focus:outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-200 transition"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center tabular-nums text-sm focus:outline-none focus:border-special-400 focus:ring-1 focus:ring-special-200 transition"
                         />
                       </div>
                       <div className="space-y-1">
@@ -8264,7 +6603,7 @@ export default function Dashboard() {
                           value={changePinNew}
                           onChange={e => { setChangePinNew(e.target.value); setChangePinMsg(null); }}
                           placeholder="••••"
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center tabular-nums text-sm focus:outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-200 transition"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center tabular-nums text-sm focus:outline-none focus:border-special-400 focus:ring-1 focus:ring-special-200 transition"
                         />
                       </div>
                       <div className="space-y-1">
@@ -8274,18 +6613,18 @@ export default function Dashboard() {
                           value={changePinConfirm}
                           onChange={e => { setChangePinConfirm(e.target.value); setChangePinMsg(null); }}
                           placeholder="••••"
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center tabular-nums text-sm focus:outline-none focus:border-violet-400 focus:ring-1 focus:ring-violet-200 transition"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center tabular-nums text-sm focus:outline-none focus:border-special-400 focus:ring-1 focus:ring-special-200 transition"
                         />
                       </div>
                       <div className="sm:col-span-3 flex items-center gap-3">
                         <button
                           type="submit"
-                          className="bg-violet-600 hover:bg-violet-700 text-white font-bold px-6 py-2.5 rounded-xl text-xs cursor-pointer transition border-none font-sans"
+                          className="bg-special-600 hover:bg-special-700 text-white font-bold px-6 py-2.5 rounded-xl text-xs cursor-pointer transition border-none font-sans"
                         >
                           حفظ كلمة المرور الجديدة
                         </button>
                         {changePinMsg && (
-                          <span className={`text-sm font-bold ${changePinMsg.type === 'success' ? 'text-primary-700' : 'text-rose-600'}`}>
+                          <span className={`text-sm font-bold ${changePinMsg.type === 'success' ? 'text-primary-700' : 'text-danger-600'}`}>
                             {changePinMsg.text}
                           </span>
                         )}
@@ -8296,7 +6635,7 @@ export default function Dashboard() {
                   {/* --- إعداد نسبة تقدير التكلفة (C1) --- */}
                   <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
                     <div className="flex items-center gap-2">
-                      <Info className="w-4 h-4 text-amber-600" />
+                      <Info className="w-4 h-4 text-warn-600" />
                       <span className="text-sm text-slate-600 font-bold">نسبة تقدير التكلفة الافتراضية</span>
                     </div>
                     <p className="text-sm text-slate-500 font-semibold leading-relaxed">
@@ -8314,7 +6653,7 @@ export default function Dashboard() {
                             const v = Math.min(99, Math.max(1, Math.round(Number(e.target.value) || 0)));
                             setDefaultCostPercent(v);
                           }}
-                          className="w-20 bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center tabular-nums text-sm focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-200 transition"
+                          className="w-20 bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-center tabular-nums text-sm focus:outline-none focus:border-warn-400 focus:ring-1 focus:ring-warn-200 transition"
                         />
                         <span className="text-xs text-slate-500 font-bold">% من سعر البيع</span>
                       </div>
@@ -8324,7 +6663,7 @@ export default function Dashboard() {
                           saveDefaultCostPercent(defaultCostPercent);
                           toast(`تم الحفظ: ستُقدَّر تكلفة المواد بلا سعر شراء بنسبة ${defaultCostPercent}% من سعر البيع.`, 'success');
                         }}
-                        className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs cursor-pointer transition border-none font-sans"
+                        className="bg-warn-500 hover:bg-warn-600 text-white font-bold px-5 py-2.5 rounded-xl text-xs cursor-pointer transition border-none font-sans"
                       >
                         حفظ النسبة
                       </button>
@@ -8411,7 +6750,7 @@ export default function Dashboard() {
                 {/* Billing sums */}
                 <div className="border-t border-dashed border-slate-200/80 pt-3 mt-3 spacing-y-2">
                   {lastPrintedInvoice.discount > 0 && (
-                    <p className="flex justify-between text-rose-700 text-xs py-0.5">
+                    <p className="flex justify-between text-danger-700 text-xs py-0.5">
                       <span>الخصم المطبق:</span>
                       <span className="tabular-nums">-{fmtNum((lastPrintedInvoice.discount))} د.ع</span>
                     </p>
@@ -8470,7 +6809,7 @@ export default function Dashboard() {
               {/* Header */}
               <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                 <div>
-                  <span className="text-sm font-bold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-full uppercase">مرتجع مبيعات</span>
+                  <span className="text-sm font-bold text-danger-600 bg-danger-50 px-2.5 py-1 rounded-full uppercase">مرتجع مبيعات</span>
                   <h3 className="font-semibold text-slate-900 text-sm mt-2">إرجاع فاتورة {returnTarget.invoiceId}</h3>
                   <p className="text-sm text-slate-500 font-bold mt-0.5">الزبون: {returnTarget.customerName} • المبلغ الأصلي: {fmtNum(returnTarget.total)} د.ع</p>
                 </div>
@@ -8504,7 +6843,7 @@ export default function Dashboard() {
 
                 {/* Running total */}
                 {Object.values(returnQtys).some(q => q > 0) && (
-                  <div className="bg-rose-50 border border-rose-100 rounded-xl px-3 py-2 text-sm font-bold text-rose-700 flex justify-between">
+                  <div className="bg-danger-50 border border-danger-100 rounded-xl px-3 py-2 text-sm font-bold text-danger-700 flex justify-between">
                     <span>إجمالي مبلغ الاسترداد:</span>
                     <span className="tabular-nums">
                       {fmtNum(returnTarget.items.reduce((s, it, idx) => s + it.price * (returnQtys[idx] ?? 0), 0))} د.ع
@@ -8539,7 +6878,7 @@ export default function Dashboard() {
                 <button
                   type="submit"
                   disabled={!Object.values(returnQtys).some(q => q > 0)}
-                  className="w-full bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white font-bold text-xs py-3 rounded-xl cursor-pointer transition shadow-sm"
+                  className="w-full bg-danger-600 hover:bg-danger-700 disabled:opacity-40 text-white font-bold text-xs py-3 rounded-xl cursor-pointer transition shadow-sm"
                 >
                   تأكيد المرتجع وتحديث المخزون
                 </button>
@@ -8579,7 +6918,7 @@ export default function Dashboard() {
               
               {/* Modal Header */}
               <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-                <div className="flex items-center space-x-reverse space-x-2.5">
+                <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 bg-primary-50 rounded-lg flex items-center justify-center text-primary-600">
                     <Barcode className="w-5 h-5" />
                   </div>
@@ -8589,7 +6928,7 @@ export default function Dashboard() {
                   </div>
                 </div>
                 
-                <div className="flex items-center space-x-reverse space-x-2">
+                <div className="flex items-center gap-2">
                   {/* Sound Toggle */}
                   <button
                     type="button"
@@ -8670,15 +7009,15 @@ export default function Dashboard() {
 
                   {/* Scan Error Overlay */}
                   {scanError && (
-                    <div className="absolute inset-0 bg-rose-950/80 backdrop-blur-xs flex flex-col items-center justify-center text-center p-4 z-20 font-sans">
-                      <div className="w-14 h-14 bg-rose-500 text-white rounded-full flex items-center justify-center mb-3 shadow-[0_0_20px_#ef4444]">
+                    <div className="absolute inset-0 bg-danger-950/80 backdrop-blur-xs flex flex-col items-center justify-center text-center p-4 z-20 font-sans">
+                      <div className="w-14 h-14 bg-danger-500 text-white rounded-full flex items-center justify-center mb-3 shadow-[0_0_20px_#ef4444]">
                         <X className="w-7 h-7" strokeWidth={3} />
                       </div>
                       <p className="text-white font-bold text-xs leading-relaxed max-w-xs">{scanError}</p>
                       <button
                         type="button"
                         onClick={() => startScanning(scanTarget)}
-                        className="mt-3 bg-white hover:bg-slate-100 text-rose-950 font-bold text-sm px-4 py-2 rounded-lg transition"
+                        className="mt-3 bg-white hover:bg-slate-100 text-danger-950 font-bold text-sm px-4 py-2 rounded-lg transition"
                       >
                         إعادة محاولة الاتصال
                       </button>
@@ -8730,7 +7069,7 @@ export default function Dashboard() {
                 اختر ملف المخزون <strong className="text-slate-900">(JSON)</strong> من جهازك — مثل ملف تصدير ES-PRO — وسيُستبدل مخزونك بالكامل بأصنافه، مع الباركود والأسعار (شراء وبيع) والكميات.
                 الكميات السالبة ستُحوَّل إلى صفر. {currentUser ? 'ستُرفع إلى حسابك السحابي.' : 'ستُحفظ محلياً (غير مسجّل الدخول).'}
               </p>
-              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-sm text-rose-800 font-bold">
+              <div className="bg-danger-50 border border-danger-200 rounded-xl p-3 text-sm text-danger-800 font-bold">
                 <AlertTriangle className="inline w-4 h-4 -mt-0.5 ml-1" />تنبيه: سيتم <strong>حذف كل المواد الحالية</strong> (بما فيها التجريبية) واستبدالها بمواد الملف. لن تتأثّر الفواتير أو المبيعات السابقة. قد تستغرق العملية دقيقة — لا تغلق الصفحة.
               </div>
               <div className="flex gap-2">
@@ -8739,7 +7078,7 @@ export default function Dashboard() {
                   إلغاء
                 </button>
                 <button onClick={() => bulkImportFileRef.current?.click()}
-                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white rounded-xl py-2.5 text-xs font-semibold transition cursor-pointer">
+                  className="flex-1 bg-danger-600 hover:bg-danger-700 text-white rounded-xl py-2.5 text-xs font-semibold transition cursor-pointer">
                   اختر الملف واستبدل المخزون
                 </button>
               </div>
@@ -8772,8 +7111,8 @@ export default function Dashboard() {
               dir="rtl"
             >
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 bg-rose-100 rounded-2xl flex items-center justify-center shrink-0">
-                  <Trash2 className="w-5 h-5 text-rose-600" />
+                <div className="w-11 h-11 bg-danger-100 rounded-2xl flex items-center justify-center shrink-0">
+                  <Trash2 className="w-5 h-5 text-danger-600" />
                 </div>
                 <div>
                   <h3 className="font-semibold text-sm text-slate-900">حذف مادة من المخزون</h3>
@@ -8783,11 +7122,11 @@ export default function Dashboard() {
               <p className="text-xs text-slate-600 font-medium leading-relaxed">
                 هل أنت متأكد من حذف <strong className="text-slate-900">{deleteMedTarget.nameAr}</strong> نهائياً؟
                 {deleteMedTarget.availableQuantity > 0 && (
-                  <span className="text-rose-700 font-bold"> (يوجد {deleteMedTarget.availableQuantity} علبة في المخزون حالياً)</span>
+                  <span className="text-danger-700 font-bold"> (يوجد {deleteMedTarget.availableQuantity} علبة في المخزون حالياً)</span>
                 )}
                 {' '}{currentUser ? 'سيُحذف من حسابك السحابي أيضاً.' : 'سيُحذف محلياً (غير مسجّل الدخول).'}
               </p>
-              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-sm text-rose-800 font-bold">
+              <div className="bg-danger-50 border border-danger-200 rounded-xl p-3 text-sm text-danger-800 font-bold">
                 <AlertTriangle className="inline w-4 h-4 -mt-0.5 ml-1" />لن تتأثّر الفواتير أو المبيعات السابقة المسجّلة لهذه المادة.
               </div>
               <div className="flex gap-2">
@@ -8796,7 +7135,7 @@ export default function Dashboard() {
                   إلغاء
                 </button>
                 <button onClick={confirmDeleteMedicine}
-                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white rounded-xl py-2.5 text-xs font-semibold transition cursor-pointer">
+                  className="flex-1 bg-danger-600 hover:bg-danger-700 text-white rounded-xl py-2.5 text-xs font-semibold transition cursor-pointer">
                   نعم، احذف المادة
                 </button>
               </div>

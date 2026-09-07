@@ -15,7 +15,8 @@ import { AlertTriangle, CheckCircle2, Info, X, XCircle } from 'lucide-react';
  */
 
 export type ToastKind = 'success' | 'error' | 'warning' | 'info';
-export interface ToastItem { id: number; message: string; kind: ToastKind }
+export interface ToastAction { label: string; onClick: () => void }
+export interface ToastItem { id: number; message: string; kind: ToastKind; action?: ToastAction }
 
 export interface ConfirmOptions {
   title: string;
@@ -52,11 +53,11 @@ function subscribe(l: () => void) {
 }
 function getSnapshot() { return state; }
 
-/** إشعار خفيف أسفل الشاشة يختفي وحده (الأخطاء تبقى أطول). */
-export function toast(message: string, kind: ToastKind = 'info', durationMs?: number) {
+/** إشعار خفيف أسفل الشاشة يختفي وحده (الأخطاء تبقى أطول). action: زر «تراجع» ونحوه. */
+export function toast(message: string, kind: ToastKind = 'info', durationMs?: number, action?: ToastAction) {
   const id = nextId++;
-  setState({ toasts: [...state.toasts, { id, message, kind }] });
-  const ttl = durationMs ?? (kind === 'error' ? 6500 : kind === 'warning' ? 5000 : 3500);
+  setState({ toasts: [...state.toasts, { id, message, kind, action }] });
+  const ttl = durationMs ?? (action ? 6000 : kind === 'error' ? 6500 : kind === 'warning' ? 5000 : 3500);
   window.setTimeout(() => dismissToast(id), ttl);
   return id;
 }
@@ -120,6 +121,12 @@ export default function DialogHost() {
               className={`pointer-events-auto max-w-md w-full sm:w-auto sm:min-w-72 flex items-start gap-3 rounded-xl px-4 py-3 shadow-lg text-sm font-semibold leading-relaxed whitespace-pre-line ${cls}`}>
               <Icon className="w-5 h-5 shrink-0 mt-0.5" />
               <span className="flex-1">{t.message}</span>
+              {t.action && (
+                <button type="button" onClick={() => { t.action!.onClick(); dismissToast(t.id); }}
+                  className="shrink-0 text-sm font-bold underline underline-offset-2 hover:no-underline cursor-pointer">
+                  {t.action.label}
+                </button>
+              )}
               <button type="button" onClick={() => dismissToast(t.id)} aria-label="إغلاق"
                 className="shrink-0 -m-1 p-1 rounded-md opacity-80 hover:opacity-100 hover:bg-white/15 transition cursor-pointer">
                 <X className="w-4 h-4" />
@@ -176,7 +183,7 @@ function ModalView({ modal }: { modal: Modal }) {
         )}
         <div className="flex gap-2 justify-start flex-row-reverse">
           <button ref={confirmRef} type="submit"
-            className={`flex-1 h-11 rounded-lg font-bold text-sm text-white transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 ${danger ? 'bg-danger hover:bg-red-800 focus:ring-danger-line' : 'bg-primary-600 hover:bg-primary-700 focus:ring-primary-200'}`}>
+            className={`flex-1 h-11 rounded-lg font-bold text-sm text-white transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 ${danger ? 'bg-danger hover:bg-danger-800 focus:ring-danger-line' : 'bg-primary-600 hover:bg-primary-700 focus:ring-primary-200'}`}>
             {opts.confirmText ?? 'موافق'}
           </button>
           {!opts.hideCancel && (

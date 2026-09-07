@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { Fragment, useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X, Upload, Loader2, CheckCircle2, AlertCircle, Search,
@@ -137,11 +137,11 @@ function toMonthInput(s?: string): string {
 }
 
 function matchBadge(score: number, isMatched: boolean, byAlias?: boolean, byAI?: boolean) {
-  if (!isMatched) return { label: 'جديد', cls: 'bg-amber-100 text-amber-700 border-amber-200' };
-  if (byAlias) return { label: 'محفوظ ✓', cls: 'bg-violet-100 text-violet-700 border-violet-200' };
-  if (byAI) return { label: 'حُسم ذكياً', cls: 'bg-sky-100 text-sky-700 border-sky-200' };
+  if (!isMatched) return { label: 'جديد', cls: 'bg-warn-100 text-warn-700 border-warn-200' };
+  if (byAlias) return { label: 'محفوظ ✓', cls: 'bg-special-100 text-special-700 border-special-200' };
+  if (byAI) return { label: 'حُسم ذكياً', cls: 'bg-custom-100 text-custom-700 border-custom-200' };
   if (score >= 0.8) return { label: 'تطابق', cls: 'bg-primary-100 text-primary-700 border-primary-200' };
-  return { label: 'تقريبي', cls: 'bg-blue-100 text-blue-700 border-blue-200' };
+  return { label: 'تقريبي', cls: 'bg-info-100 text-info-700 border-info-200' };
 }
 
 export default function InvoiceImportModal({ inventory, suppliers, supplierMemory, b2bOrders, expiryDates, lastEnteredExpiry, aliases, stripsMemory, onLearnAliases, onForgetAliases, onLearnStrips, initialDraft, onDraftChange, onClose, onConfirm }: Props) {
@@ -602,7 +602,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
   }).slice(0, 8);
 
   return (
-    <div className="fixed inset-y-0 left-0 z-50 flex max-w-full">
+    <div className="fixed inset-y-0 right-0 z-50 flex max-w-full">
       {/* Backdrop — أخف من نافذة منبثقة عادية ومن دون تشويش، يُبقي صفحة الشراء ظاهرة خلفه
           فتبدو اللوحة امتداداً لنفس الشاشة بدل نافذة منفصلة */}
       <motion.div
@@ -621,7 +621,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
             {/* إطار استهداف */}
             <div className="absolute inset-8 border-2 border-primary-400/80 rounded-2xl pointer-events-none" />
             <p className="text-center text-white text-xs font-bold mt-3">وجّه الكاميرا نحو الباركود…</p>
-            {scanError && <p className="text-center text-rose-300 text-sm font-bold mt-2">{scanError}</p>}
+            {scanError && <p className="text-center text-danger-300 text-sm font-bold mt-2">{scanError}</p>}
             <button
               type="button"
               onClick={stopScan}
@@ -634,28 +634,55 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
       )}
 
       <motion.div
-        initial={{ x: '-100%' }}
+        initial={{ x: '100%' }}
         animate={{ x: 0 }}
-        exit={{ x: '-100%' }}
+        exit={{ x: '100%' }}
         transition={{ type: 'tween', duration: 0.25, ease: 'easeOut' }}
-        className="relative bg-white w-full sm:w-[600px] lg:w-[760px] h-full flex flex-col shadow-2xl rounded-r-3xl"
+        className="relative bg-white w-full sm:w-[600px] lg:w-[760px] h-full flex flex-col shadow-2xl rounded-l-3xl"
         dir="rtl"
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-slate-100 shrink-0">
-          <div>
-            <h2 className="font-semibold text-sm text-slate-900">استيراد فاتورة من صورة</h2>
-            <p className="text-sm text-slate-500 font-bold mt-0.5">
-              {step === 'key' && 'أدخل مفتاح Gemini API لتفعيل الميزة'}
-              {batchTotal > 1 && step !== 'key' && <span className="text-violet-700">فاتورة {batchPos} من {batchTotal} · </span>}
-              {step === 'upload' && 'ارفع صورة الفاتورة أو صوّرها مباشرة لاستخراج البيانات تلقائياً'}
-              {step === 'processing' && 'جارٍ تحليل الفاتورة بالذكاء الاصطناعي...'}
-              {step === 'review' && `${items.length} صنف مستخرج · ${matchedCount} مطابق · ${newCount} جديد`}
-            </p>
+        <div className="p-5 border-b border-slate-100 shrink-0 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="font-semibold text-sm text-slate-900">استيراد فاتورة من صورة</h2>
+              <p className="text-sm text-slate-500 font-bold mt-0.5">
+                {step === 'key' && 'أدخل مفتاح Gemini API لتفعيل الميزة'}
+                {batchTotal > 1 && step !== 'key' && <span className="text-special-700">فاتورة {batchPos} من {batchTotal} · </span>}
+                {step === 'upload' && 'ارفع صورة الفاتورة أو صوّرها مباشرة لاستخراج البيانات تلقائياً'}
+                {step === 'processing' && 'جارٍ تحليل الفاتورة بالذكاء الاصطناعي...'}
+                {step === 'review' && `${items.length} صنف مستخرج · ${matchedCount} مطابق · ${newCount} جديد`}
+              </p>
+            </div>
+            <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-xl transition cursor-pointer">
+              <X className="w-4 h-4 text-slate-500" />
+            </button>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-xl transition cursor-pointer">
-            <X className="w-4 h-4 text-slate-500" />
-          </button>
+
+          {/* مؤشر الخطوات: 1 مفتاح · 2 صورة · 3 مراجعة (processing تصنيفها ضمن خطوة الصورة — انتقالية وليست قراراً من المستخدم) */}
+          <div className="flex items-center gap-1.5" aria-label="خطوات استيراد الفاتورة">
+            {(['key', 'upload', 'review'] as const).map((s, idx, arr) => {
+              const stageOf = (st: Step) => st === 'key' ? 0 : (st === 'upload' || st === 'processing') ? 1 : 2;
+              const current = stageOf(step);
+              const done = idx < current;
+              const active = idx === current;
+              return (
+                <Fragment key={s}>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                      done ? 'bg-primary-600 text-white' : active ? 'bg-primary-100 text-primary-700 ring-2 ring-primary-300' : 'bg-slate-100 text-slate-500'
+                    }`}>
+                      {done ? '✓' : idx + 1}
+                    </span>
+                    <span className={`text-sm font-semibold ${active ? 'text-primary-700' : done ? 'text-slate-600' : 'text-slate-500'}`}>
+                      {s === 'key' ? 'مفتاح' : s === 'upload' ? 'صورة' : 'مراجعة'}
+                    </span>
+                  </div>
+                  {idx < arr.length - 1 && <span className={`h-px flex-1 ${done ? 'bg-primary-300' : 'bg-slate-200'}`} />}
+                </Fragment>
+              );
+            })}
+          </div>
         </div>
 
         {/* Content */}
@@ -666,12 +693,12 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
             {step === 'key' && (
               <motion.div key="key" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                 className="p-6 space-y-5 max-w-md mx-auto">
-                <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-right">
+                <div className="bg-warn-50 border border-warn-200 rounded-2xl p-4 text-right">
                   <div className="flex items-start gap-3">
-                    <KeyRound className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <KeyRound className="w-5 h-5 text-warn-600 shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-xs font-semibold text-amber-900">مفتاح Gemini API مطلوب</p>
-                      <p className="text-sm text-amber-700 mt-1 leading-relaxed font-medium">
+                      <p className="text-xs font-semibold text-warn-900">مفتاح Gemini API مطلوب</p>
+                      <p className="text-sm text-warn-700 mt-1 leading-relaxed font-medium">
                         هذه الميزة تستخدم Google Gemini لقراءة الفواتير. أدخل مفتاح API مرة واحدة وسيُحفظ على جهازك.
                         احصل على مفتاح مجاني من Google AI Studio.
                       </p>
@@ -727,7 +754,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                           <span className="absolute top-1 right-1 text-xs font-bold bg-slate-900/70 text-white rounded-full px-1.5 py-0.5">{i + 1}</span>
                           <button type="button" title="إزالة هذه الصورة"
                             onClick={e => { e.stopPropagation(); removeImageAt(i); }}
-                            className="absolute top-1 left-1 w-5 h-5 rounded-full bg-rose-600 text-white flex items-center justify-center cursor-pointer hover:bg-rose-700">
+                            className="absolute top-1 left-1 w-5 h-5 rounded-full bg-danger-600 text-white flex items-center justify-center cursor-pointer hover:bg-danger-700">
                             <X className="w-3 h-3" />
                           </button>
                         </div>
@@ -777,7 +804,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                   </div>
                 )}
                 {cameraError && (
-                  <p className="text-sm font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2 text-right">{cameraError}</p>
+                  <p className="text-sm font-bold text-danger-700 bg-danger-50 border border-danger-200 rounded-xl px-3 py-2 text-right">{cameraError}</p>
                 )}
                 {!cameraOpen && (
                   <button type="button" onClick={openCamera}
@@ -789,16 +816,16 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
 
                 {/* طابور الفواتير: فواتير محفوظة بانتظار التحليل واحدة تلو الأخرى، كل واحدة بمراجعتها */}
                 {(queue.length > 0 || imageFiles.length > 0) && (
-                  <div className={`rounded-xl p-3 space-y-1.5 border ${queue.length ? 'bg-violet-50 border-violet-200' : 'bg-slate-50 border-slate-200'}`}>
+                  <div className={`rounded-xl p-3 space-y-1.5 border ${queue.length ? 'bg-special-50 border-special-200' : 'bg-slate-50 border-slate-200'}`}>
                     {queue.length > 0 && (
                       <>
-                        <p className="text-sm font-semibold text-violet-800 flex items-center gap-1.5"><Layers className="w-3.5 h-3.5" /> طابور الفواتير: {queue.length} فاتورة محفوظة{imageFiles.length ? ' + الحالية' : ''}</p>
+                        <p className="text-sm font-semibold text-special-800 flex items-center gap-1.5"><Layers className="w-3.5 h-3.5" /> طابور الفواتير: {queue.length} فاتورة محفوظة{imageFiles.length ? ' + الحالية' : ''}</p>
                         <div className="flex flex-wrap gap-1.5">
                           {queue.map((files, i) => (
-                            <span key={i} className="inline-flex items-center gap-1 bg-white border border-violet-200 rounded-full px-2 py-0.5 text-sm font-bold text-violet-700">
+                            <span key={i} className="inline-flex items-center gap-1 bg-white border border-special-200 rounded-full px-2 py-0.5 text-sm font-bold text-special-700">
                               فاتورة {batchDone + i + 1}: {files.length} {files.length === 1 ? 'صورة' : 'صور'}
                               <button type="button" title="إزالة من الطابور" onClick={() => setQueue(q => q.filter((_, j) => j !== i))}
-                                className="text-violet-400 hover:text-rose-600 cursor-pointer"><X className="w-3 h-3" /></button>
+                                className="text-special-400 hover:text-danger-600 cursor-pointer"><X className="w-3 h-3" /></button>
                             </span>
                           ))}
                         </div>
@@ -806,12 +833,12 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                     )}
                     {imageFiles.length > 0 && (
                       <button type="button" onClick={pushCurrentToQueue}
-                        className="w-full py-2 rounded-lg border border-violet-300 bg-white text-violet-800 text-sm font-semibold hover:bg-violet-100 transition cursor-pointer">
+                        className="w-full py-2 rounded-lg border border-special-300 bg-white text-special-800 text-sm font-semibold hover:bg-special-100 transition cursor-pointer">
                         + حفظ هذه الفاتورة في الطابور وتصوير فاتورة أخرى
                       </button>
                     )}
                     {queue.length > 0 && (
-                      <p className="text-xs text-violet-600 font-bold">تُحلَّل بالتتابع وتُراجَع كل واحدة على حدة، وتُضاف كلها إلى مسودة الشراء نفسها.</p>
+                      <p className="text-xs text-special-600 font-bold">تُحلَّل بالتتابع وتُراجَع كل واحدة على حدة، وتُضاف كلها إلى مسودة الشراء نفسها.</p>
                     )}
                   </div>
                 )}
@@ -825,15 +852,15 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                     const sp = suppliers.find(x => x.name === supplierName.trim());
                     const mem = sp ? supplierMemory[sp.id] : undefined;
                     return mem && mem.examples.length > 0 ? (
-                      <p className="text-sm text-violet-700 font-bold">✓ ذاكرة هذا المورد: {mem.examples.length} مثال مؤكَّد و{mem.companies.length} شركة ستُرفق مع الطلب</p>
+                      <p className="text-sm text-special-700 font-bold">✓ ذاكرة هذا المورد: {mem.examples.length} مثال مؤكَّد و{mem.companies.length} شركة ستُرفق مع الطلب</p>
                     ) : null;
                   })()}
                 </div>
 
                 {error && (
-                  <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl p-3 text-right">
-                    <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
-                    <p className="text-sm font-bold text-red-700">{error}</p>
+                  <div className="flex items-start gap-2 bg-danger-50 border border-danger-200 rounded-xl p-3 text-right">
+                    <AlertCircle className="w-4 h-4 text-danger-500 shrink-0 mt-0.5" />
+                    <p className="text-sm font-bold text-danger-700">{error}</p>
                   </div>
                 )}
 
@@ -901,7 +928,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                       const sug = suggestSupplier(ocr, suppliers);
                       return sug ? (
                         <button type="button" onClick={() => setSupplierName(sug.name)}
-                          className="mt-1.5 text-sm font-semibold text-violet-700 bg-violet-50 border border-violet-200 rounded-lg px-2 py-1 hover:bg-violet-100 transition cursor-pointer text-right">
+                          className="mt-1.5 text-sm font-semibold text-special-700 bg-special-50 border border-special-200 rounded-lg px-2 py-1 hover:bg-special-100 transition cursor-pointer text-right">
                           يبدو أن الفاتورة من «{sug.name}» — اختره بنقرة
                         </button>
                       ) : (
@@ -928,43 +955,43 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
 
                 {/* تنبيهات ما قبل الاعتماد: فاتورة مكرّرة / إجمالي لا يطابق / انحرافات سعر */}
                 {duplicateOrder && (
-                  <div className="mx-4 sm:mx-5 mb-2 bg-rose-50 border border-rose-300 rounded-2xl px-4 py-2.5 flex items-start gap-2 text-right">
-                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                    <p className="text-sm font-semibold text-rose-800 leading-snug">
+                  <div className="mx-4 sm:mx-5 mb-2 bg-danger-50 border border-danger-300 rounded-2xl px-4 py-2.5 flex items-start gap-2 text-right">
+                    <AlertCircle className="w-4 h-4 text-danger-600 shrink-0 mt-0.5" />
+                    <p className="text-sm font-semibold text-danger-800 leading-snug">
                       فاتورة مكرّرة؟ الرقم «{invoiceNo}» سبق اعتماده بتاريخ {duplicateOrder.date}
                       {duplicateOrder.supplierName ? ` للمورد «${duplicateOrder.supplierName}»` : ''} بقيمة {fmtNum(duplicateOrder.totalAmount)} د.ع.
                     </p>
                   </div>
                 )}
                 {totalMismatch && (
-                  <div className="mx-4 sm:mx-5 mb-2 bg-rose-50 border border-rose-200 rounded-2xl px-4 py-2.5 flex items-start gap-2 text-right">
-                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                    <p className="text-sm font-semibold text-rose-700 leading-snug">
+                  <div className="mx-4 sm:mx-5 mb-2 bg-danger-50 border border-danger-200 rounded-2xl px-4 py-2.5 flex items-start gap-2 text-right">
+                    <AlertCircle className="w-4 h-4 text-danger-600 shrink-0 mt-0.5" />
+                    <p className="text-sm font-semibold text-danger-700 leading-snug">
                       مجموع الأسطر {fmtNum(linesTotal)} ≠ إجمالي الفاتورة {fmtNum(invoiceTotal)} د.ع
                       (فرق {totalDiff > 0 ? '+' : ''}{fmtNum(totalDiff)}) — قد يكون سطر ضائع أو رقم مقروء خطأً.
                     </p>
                   </div>
                 )}
                 {lossCount > 0 && (
-                  <div className="mx-4 sm:mx-5 mb-2 bg-rose-50 border border-rose-300 rounded-2xl px-4 py-2.5 flex items-start gap-2 text-right">
-                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                    <p className="text-sm font-semibold text-rose-800 leading-snug">
+                  <div className="mx-4 sm:mx-5 mb-2 bg-danger-50 border border-danger-300 rounded-2xl px-4 py-2.5 flex items-start gap-2 text-right">
+                    <AlertCircle className="w-4 h-4 text-danger-600 shrink-0 mt-0.5" />
+                    <p className="text-sm font-semibold text-danger-800 leading-snug">
                       بيع بخسارة: {lossCount} سطر سعر بيعه للجمهور أقل من تكلفة الشريط الجديدة — راجع الأسعار المعلَّمة بالأحمر.
                     </p>
                   </div>
                 )}
                 {uncertainCount > 0 && (
-                  <div className="mx-4 sm:mx-5 mb-2 bg-rose-50 border border-rose-200 rounded-2xl px-4 py-2 flex items-start gap-2 text-right">
-                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                    <p className="text-sm font-semibold text-rose-700 leading-snug">
+                  <div className="mx-4 sm:mx-5 mb-2 bg-danger-50 border border-danger-200 rounded-2xl px-4 py-2 flex items-start gap-2 text-right">
+                    <AlertCircle className="w-4 h-4 text-danger-600 shrink-0 mt-0.5" />
+                    <p className="text-sm font-semibold text-danger-700 leading-snug">
                       {uncertainCount} سطر علّمه النموذج «غير واضح» (رقم أو اسم قُرئ بصعوبة) — قارنه بالصورة قبل الاعتماد.
                     </p>
                   </div>
                 )}
                 {deviationCount > 0 && (
-                  <div className="mx-4 sm:mx-5 mb-2 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-2 flex items-start gap-2 text-right">
-                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                    <p className="text-sm font-semibold text-amber-800 leading-snug">
+                  <div className="mx-4 sm:mx-5 mb-2 bg-warn-50 border border-warn-200 rounded-2xl px-4 py-2 flex items-start gap-2 text-right">
+                    <AlertCircle className="w-4 h-4 text-warn-600 shrink-0 mt-0.5" />
+                    <p className="text-sm font-semibold text-warn-800 leading-snug">
                       {deviationCount} سطر سعره يختلف عن آخر شراء بأكثر من {Math.round(PRICE_DEVIATION_LIMIT * 100)}% — راجع الأرقام المعلَّمة بالبرتقالي.
                     </p>
                   </div>
@@ -976,9 +1003,9 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                     <span className="text-xs font-semibold text-primary-700">{matchedCount}</span>
                     <span className="text-sm text-primary-600 font-bold">مطابق</span>
                   </span>
-                  <span className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 bg-amber-50 border border-amber-100 rounded-full px-3.5 py-1.5">
-                    <span className="text-xs font-semibold text-amber-700">{newCount}</span>
-                    <span className="text-sm text-amber-600 font-bold">جديد</span>
+                  <span className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 bg-warn-50 border border-warn-100 rounded-full px-3.5 py-1.5">
+                    <span className="text-xs font-semibold text-warn-700">{newCount}</span>
+                    <span className="text-sm text-warn-600 font-bold">جديد</span>
                   </span>
                   <span className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 bg-slate-50 border border-slate-200 rounded-full px-3.5 py-1.5">
                     <span className="text-xs font-semibold text-slate-700">{items.length}</span>
@@ -992,7 +1019,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                   </button>
                   {newCount > 0 && (
                     <button type="button" onClick={removeUnmatched}
-                      className="text-sm font-semibold px-3 py-1.5 rounded-full border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 transition cursor-pointer"
+                      className="text-sm font-semibold px-3 py-1.5 rounded-full border border-danger-200 bg-danger-50 text-danger-700 hover:bg-danger-100 transition cursor-pointer"
                       title="حذف كل الأصناف غير المطابقة من هذه الفاتورة">
                       حذف غير المطابق ({newCount})
                     </button>
@@ -1014,9 +1041,18 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                     const deviates = deviation !== null && Math.abs(deviation) > PRICE_DEVIATION_LIMIT;
                     const isSearchingThis = searchOpen === item.id;
 
+                    // حدود البطاقة تعكس درجة الثقة بدل حد أسود ثقيل واحد لكل الأصناف:
+                    // أحمر = غير واضح أو انحراف سعري يحتاج مراجعة، أخضر = مطابقة مؤكَّدة، كهرماني = صنف جديد
+                    const needsAttention = item.uncertain || deviates;
+                    const cardBorderCls = needsAttention
+                      ? 'border-2 border-danger-400 ring-2 ring-danger-100'
+                      : item.matchedMedicine
+                        ? 'border border-primary-200'
+                        : 'border border-warn-200';
+
                     return (
                       <div key={item.id}
-                        className={`bg-slate-50 border-2 rounded-2xl p-3.5 space-y-2.5 text-right transition ${item.uncertain ? 'border-rose-400 ring-2 ring-rose-100' : 'border-black'}`}>
+                        className={`bg-slate-50 rounded-2xl p-3.5 space-y-2.5 text-right transition ${cardBorderCls}`}>
 
                         {/* الصف الأول: الشارة، ثم الاسم العربي وبجانبه الشركة، والحذف في الطرف البعيد */}
                         <div className="flex items-start gap-2">
@@ -1024,7 +1060,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                             {badge.label}
                           </span>
                           {item.uncertain && (
-                            <span className="shrink-0 mt-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-full border bg-rose-100 text-rose-700 border-rose-300"
+                            <span className="shrink-0 mt-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-full border bg-danger-100 text-danger-700 border-danger-300"
                               title="النموذج قرأ رقماً أو اسماً في هذا السطر بصعوبة — قارنه بالصورة">
                               غير واضح ⚠
                             </span>
@@ -1050,7 +1086,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                             )}
                           </div>
                           <button onClick={() => removeItem(item.id)}
-                            className="shrink-0 mt-0.5 p-1 rounded-lg text-slate-300 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer">
+                            className="shrink-0 mt-0.5 p-1 rounded-lg text-slate-300 hover:text-danger-600 hover:bg-danger-50 transition cursor-pointer">
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
@@ -1078,20 +1114,20 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                                 {item.matchedMedicine.nameAr}
                               </span>
                               <button onClick={() => clearMatch(item.id)}
-                                className="text-slate-500 hover:text-rose-600 transition cursor-pointer">
+                                className="text-slate-500 hover:text-danger-600 transition cursor-pointer">
                                 <X className="w-3 h-3" />
                               </button>
                             </div>
                           ) : (
                             <button
                               onClick={() => { setSearchOpen(isSearchingThis ? null : item.id); setSearchQuery(''); }}
-                              className="w-full flex items-center gap-2 bg-amber-50 border border-dashed border-amber-300 rounded-xl px-3 py-2 text-right cursor-pointer hover:border-amber-400 transition"
+                              className="w-full flex items-center gap-2 bg-warn-50 border border-dashed border-warn-300 rounded-xl px-3 py-2 text-right cursor-pointer hover:border-warn-400 transition"
                             >
-                              <Search className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                              <span className="flex-1 text-sm font-bold text-amber-700 text-right">
+                              <Search className="w-3.5 h-3.5 text-warn-600 shrink-0" />
+                              <span className="flex-1 text-sm font-bold text-warn-700 text-right">
                                 ابحث لربطه بدواء موجود في المخزون
                               </span>
-                              <ChevronDown className={`w-3 h-3 text-amber-600 transition ${isSearchingThis ? 'rotate-180' : ''}`} />
+                              <ChevronDown className={`w-3 h-3 text-warn-600 transition ${isSearchingThis ? 'rotate-180' : ''}`} />
                             </button>
                           )}
 
@@ -1144,7 +1180,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                             الحقول البيضاء قابلة للتعديل، والقيمة المشتقّة (س/شريط) مظلَّلة */}
                         {/* سطر بسعر صفر بلا توأم مدفوع: غالباً بونص لمادة أخرى أو عرض — لن يُعتمد بلا سعر */}
                         {zeroPriceLine && (
-                          <p className="text-sm font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+                          <p className="text-sm font-semibold text-warn-700 bg-warn-50 border border-warn-200 rounded-lg px-2 py-1">
                             سطر بسعر صفر — إن كان بونصاً لمادة أخرى فاحذفه وأدخل كميته في حقل «بونص» لتلك المادة، وإلا أدخل سعره؛ بلا سعر لن يُضاف للمسودة.
                           </p>
                         )}
@@ -1157,11 +1193,11 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                           </div>
                           {/* البونص: علب مجانية تدخل المخزون وتخفّض التكلفة الفعلية دون أن تدخل في المبلغ المدفوع */}
                           <div className="space-y-1">
-                            <label className={`text-sm font-bold block text-center ${bonus > 0 ? 'text-teal-700' : 'text-slate-500'}`}>بونص</label>
+                            <label className={`text-sm font-bold block text-center ${bonus > 0 ? 'text-primary-700' : 'text-slate-500'}`}>بونص</label>
                             <input type="number" min={0} value={bonus}
                               onChange={e => updateItem(item.id, { bonusBoxes: Math.max(0, Number(e.target.value)) })}
                               title="علب مجانية من المذخر — تُضاف للمخزون وتُخفّض تكلفة الشريط الفعلية"
-                              className={`w-full border rounded-lg px-2 py-1.5 text-xs font-semibold text-center focus:outline-teal-400 ${bonus > 0 ? 'bg-teal-50 border-teal-300 text-teal-800' : 'bg-white border-slate-200 text-slate-900'}`} />
+                              className={`w-full border rounded-lg px-2 py-1.5 text-xs font-semibold text-center focus:outline-primary-400 ${bonus > 0 ? 'bg-primary-50 border-primary-300 text-primary-800' : 'bg-white border-slate-200 text-slate-900'}`} />
                           </div>
                           <div className="space-y-1">
                             <label className="text-sm font-bold text-slate-500 block text-center">شريط/علبة</label>
@@ -1176,19 +1212,19 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                               className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-900 text-center focus:outline-primary-400" />
                           </div>
                           <div className="space-y-1">
-                            <label className={`text-sm font-bold block text-center ${deviates ? 'text-orange-700' : 'text-primary-700'}`}>س/شريط</label>
-                            <div className={`w-full border rounded-lg px-2 py-1.5 text-xs font-semibold text-center ${deviates ? 'bg-orange-50 border-orange-300 text-orange-800 ring-2 ring-orange-200' : 'bg-primary-50 border-primary-100 text-primary-700'}`}
+                            <label className={`text-sm font-bold block text-center ${deviates ? 'text-warn-700' : 'text-primary-700'}`}>س/شريط</label>
+                            <div className={`w-full border rounded-lg px-2 py-1.5 text-xs font-semibold text-center ${deviates ? 'bg-warn-50 border-warn-300 text-warn-800 ring-2 ring-warn-200' : 'bg-primary-50 border-primary-100 text-primary-700'}`}
                               title={deviates ? `يختلف عن آخر شراء بنسبة ${Math.round(Math.abs(deviation!) * 100)}% — تحقّق من الرقم في الفاتورة` : undefined}>
                               {fmtNum(pricePerStrip)}
                             </div>
                             {bonus > 0 && (
-                              <p className="text-sm font-semibold text-teal-700 text-center" title="التكلفة الفعلية للشريط بعد احتساب البونص المجاني">
+                              <p className="text-sm font-semibold text-primary-700 text-center" title="التكلفة الفعلية للشريط بعد احتساب البونص المجاني">
                                 فعلي {fmtNum(effectivePerStrip)}
                               </p>
                             )}
                             {/* التكلفة السابقة المسجَّلة في المخزن — رقم مجرَّد بالأحمر مباشرة تحت س/شريط، بلا تسمية ولا صندوق */}
                             {item.matchedMedicine && (item.matchedMedicine.costPrice ?? item.matchedMedicine.lastCostPrice) && (
-                              <p className={`text-sm font-semibold text-center ${deviates ? 'text-orange-700' : 'text-rose-600'}`}>
+                              <p className={`text-sm font-semibold text-center ${deviates ? 'text-warn-700' : 'text-danger-600'}`}>
                                 {fmtNum((item.matchedMedicine.costPrice ?? item.matchedMedicine.lastCostPrice)!)}
                                 {deviates && <span className="mr-1">({deviation! > 0 ? '+' : ''}{Math.round(deviation! * 100)}%)</span>}
                               </p>
@@ -1200,19 +1236,19 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                             لمسة لونية خفيفة تميّز سعر الجمهور (أزرق) عن الرسمي (بنفسجي) دون صراخ */}
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                           <div className="space-y-1">
-                            <label className={`text-sm font-bold block text-center ${sellLoss ? 'text-rose-700' : 'text-slate-500'}`}>سعر البيع للجمهور (شريط)</label>
+                            <label className={`text-sm font-bold block text-center ${sellLoss ? 'text-danger-700' : 'text-slate-500'}`}>سعر البيع للجمهور (شريط)</label>
                             <input type="number" min={0} value={item.retailPrice}
                               onChange={e => updateItem(item.id, { retailPrice: Math.max(0, Number(e.target.value)) })}
-                              className={`w-full border rounded-lg px-2 py-1.5 text-xs font-semibold text-center ${sellLoss ? 'bg-rose-50 border-rose-400 text-rose-800 ring-2 ring-rose-200 focus:outline-rose-500' : 'bg-blue-50/50 border-blue-100 text-blue-700 focus:outline-blue-400'}`} />
+                              className={`w-full border rounded-lg px-2 py-1.5 text-xs font-semibold text-center ${sellLoss ? 'bg-danger-50 border-danger-400 text-danger-800 ring-2 ring-danger-200 focus:outline-danger-500' : 'bg-info-50/50 border-info-100 text-info-700 focus:outline-info-400'}`} />
                             {sellLoss && (
-                              <p className="text-sm font-semibold text-rose-700 text-center">بيع بخسارة — التكلفة {fmtNum(effectiveCostPerStrip(item))}</p>
+                              <p className="text-sm font-semibold text-danger-700 text-center">بيع بخسارة — التكلفة {fmtNum(effectiveCostPerStrip(item))}</p>
                             )}
                           </div>
                           <div className="space-y-1">
                             <label className="text-sm font-bold text-slate-500 block text-center">سعر البيع الرسمي (شريط)</label>
                             <input type="number" min={0} value={item.officialPrice}
                               onChange={e => updateItem(item.id, { officialPrice: Math.max(0, Number(e.target.value)) })}
-                              className="w-full bg-violet-50/50 border border-violet-100 rounded-lg px-2 py-1.5 text-xs font-semibold text-violet-700 text-center focus:outline-violet-400" />
+                              className="w-full bg-special-50/50 border border-special-100 rounded-lg px-2 py-1.5 text-xs font-semibold text-special-700 text-center focus:outline-special-400" />
                           </div>
                           <div className="space-y-1">
                             <label className="text-sm font-bold text-slate-500 block text-center">تاريخ الانتهاء (ص)</label>
@@ -1280,7 +1316,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                           <div className="space-y-1">
                             <label className="text-sm font-bold text-slate-500 block text-center">إجمالي الأشرطة</label>
                             <div className="w-full bg-slate-100/70 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-700 text-center tabular-nums">
-                              {totalStrips} شريط{bonus > 0 && <span className="text-teal-700 font-bold"> (منها {bonus * item.stripsPerBox} بونص)</span>}
+                              {totalStrips} شريط{bonus > 0 && <span className="text-primary-700 font-bold"> (منها {bonus * item.stripsPerBox} بونص)</span>}
                             </div>
                           </div>
                         </div>
@@ -1311,9 +1347,9 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                             <div
                               onDoubleClick={() => setEditingStockId(item.id)}
                               title="انقر مرتين لتصحيح المخزون الفعلي"
-                              className={`rounded-xl px-3 py-1.5 flex items-center justify-between cursor-pointer transition border ${corrected ? 'bg-amber-50 border-amber-200' : 'bg-slate-100/70 border-slate-200 hover:border-slate-300'}`}
+                              className={`rounded-xl px-3 py-1.5 flex items-center justify-between cursor-pointer transition border ${corrected ? 'bg-warn-50 border-warn-200' : 'bg-slate-100/70 border-slate-200 hover:border-slate-300'}`}
                             >
-                              <span className={`text-sm font-bold flex items-center gap-1.5 flex-wrap ${corrected ? 'text-amber-700' : 'text-slate-500'}`}>
+                              <span className={`text-sm font-bold flex items-center gap-1.5 flex-wrap ${corrected ? 'text-warn-700' : 'text-slate-500'}`}>
                                 <span>المخزون الحالي في المخزن {item.soldQty ? '(مُباع بالكامل ✓)' : corrected ? '(مُصحَّح ✎)' : '— انقر مرتين للتعديل'}</span>
                                 {/* «مباع»: الرصيد الوهمي كله بيع فعلي لم يُسجَّل بالباركود — يُصفَّر ويُسجَّل فاتورة بيع عند الاعتماد */}
                                 {(item.matchedMedicine.availableQuantity > 0 || item.soldQty) && (
@@ -1325,13 +1361,13 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                                     }}
                                     title={item.soldQty ? 'إلغاء اعتبار الرصيد مبيعاً' : 'اعتبار الرصيد الحالي كله مبيعاً (يُصفَّر المخزون وتُسجَّل فاتورة بيع عند الاعتماد)'}
                                     className={`px-2 py-0.5 rounded-md text-xs font-bold border transition cursor-pointer ${item.soldQty
-                                      ? 'bg-rose-500 border-rose-500 text-white hover:bg-rose-600'
-                                      : 'bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100'}`}>
+                                      ? 'bg-danger-500 border-danger-500 text-white hover:bg-danger-600'
+                                      : 'bg-danger-50 border-danger-200 text-danger-600 hover:bg-danger-100'}`}>
                                     {item.soldQty ? `مباع ${fmtNum(item.soldQty)} ✓` : 'مباع'}
                                   </button>
                                 )}
                               </span>
-                              <span className={`text-xs font-semibold tabular-nums ${corrected ? 'text-amber-800' : 'text-slate-700'}`}>
+                              <span className={`text-xs font-semibold tabular-nums ${corrected ? 'text-warn-800' : 'text-slate-700'}`}>
                                 {corrected && (
                                   <span className="text-sm text-slate-500 line-through ml-1">{fmtNum(item.matchedMedicine.availableQuantity)}</span>
                                 )}
@@ -1354,7 +1390,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                                 value={item.barcode || ''}
                                 onChange={e => applyBarcode(item.id, e.target.value)}
                                 placeholder="امسح بالكاميرا أو اكتب الباركود — يُولَّد تلقائياً إن تُرك فارغاً"
-                                className={`flex-1 min-w-0 bg-white border rounded-lg px-3 py-1.5 text-sm tabular-nums font-bold text-slate-900 text-center focus:outline-primary-400 ${dupMed ? 'border-rose-400 bg-rose-50' : 'border-slate-200'}`}
+                                className={`flex-1 min-w-0 bg-white border rounded-lg px-3 py-1.5 text-sm tabular-nums font-bold text-slate-900 text-center focus:outline-primary-400 ${dupMed ? 'border-danger-400 bg-danger-50' : 'border-slate-200'}`}
                                 dir="ltr"
                               />
                               <button
@@ -1369,9 +1405,9 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                             </div>
                             {/* تنبيه الباركود المكرّر — منع لا دمج */}
                             {dupMed && (
-                              <div className="flex items-start gap-1.5 bg-rose-50 border border-rose-100 rounded-lg px-2.5 py-1.5">
-                                <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0 mt-px" />
-                                <p className="text-sm font-semibold text-rose-700 leading-snug">
+                              <div className="flex items-start gap-1.5 bg-danger-50 border border-danger-100 rounded-lg px-2.5 py-1.5">
+                                <AlertCircle className="w-3.5 h-3.5 text-danger-500 shrink-0 mt-px" />
+                                <p className="text-sm font-semibold text-danger-700 leading-snug">
                                   أقول لك المادة موجودة! هذا الباركود مُسجَّل مسبقاً للمادة «{dupMed.nameAr}» — غيّره أو اتركه فارغاً ليُولَّد تلقائياً.
                                 </p>
                               </div>
@@ -1417,11 +1453,11 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
               )}
             </div>
             {hasDuplicateBarcode ? (
-              <p className="text-sm text-rose-600 font-semibold text-center mt-2">
+              <p className="text-sm text-danger-600 font-semibold text-center mt-2">
                 ⚠ يوجد باركود مكرّر لمادة موجودة — صحّحه أو اتركه فارغاً قبل المتابعة.
               </p>
             ) : newCount > 0 && (
-              <p className="text-sm text-amber-600 font-bold text-center mt-2">
+              <p className="text-sm text-warn-600 font-bold text-center mt-2">
                 {newCount} صنف جديد سيُضاف تلقائياً إلى المخزون عند اعتماد الشراء
               </p>
             )}
