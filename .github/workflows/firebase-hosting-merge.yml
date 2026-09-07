@@ -1,0 +1,24 @@
+# ينشر تلقائياً إلى Firebase Hosting (anwar-alhasan) عند كل دمج في main.
+# يحتاج سرّاً باسم FIREBASE_SERVICE_ACCOUNT_ANWAR_ALHASAN في إعدادات المستودع
+# (Settings → Secrets and variables → Actions) — انظر التعليمات في PR/README.
+name: نشر إلى Firebase Hosting عند الدمج في main
+on:
+  push:
+    branches:
+      - main
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_ANWAR_ALHASAN }}'
+          channelId: live
+          projectId: anwar-alhasan
