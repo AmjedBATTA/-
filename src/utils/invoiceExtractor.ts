@@ -6,6 +6,16 @@ import { normalizeName } from './normalizeName';
 export { normalizeName };
 
 const GEMINI_KEY_STORAGE = 'anwar_gemini_api_key';
+// آخر نموذج نجح فعلاً على هذا الجهاز. بدونه تدفع كل فاتورة ثمن المحاولات الفاشلة على
+// النماذج المتوقفة من جديد (ثوانٍ ضائعة قبل كل استخراج). مجرّد تسريع: إن تعذّر التخزين
+// (وضع خاص/متصفّح مضمّن) يعمل الاستخراج كما هو دون أن ينكسر.
+const GEMINI_MODEL_STORAGE = 'anwar_gemini_model';
+const rememberedModel = (): string => {
+  try { return localStorage.getItem(GEMINI_MODEL_STORAGE) || ''; } catch { return ''; }
+};
+const rememberModel = (model: string): void => {
+  try { localStorage.setItem(GEMINI_MODEL_STORAGE, model); } catch { /* التخزين غير متاح */ }
+};
 
 // المفتاح يُدخله المستخدم من الواجهة فقط ويُحفظ محلياً على هذا الجهاز.
 // لا تقرأ المفتاح من import.meta.env: أي متغير VITE_ يُدمج في ملفات JS المنشورة
@@ -316,10 +326,9 @@ export interface ExtractOptions {
   disambiguate?: boolean;
 }
 
-// النماذج بالترتيب من الأخف/الأرخص إلى الأقوى. الانتقال للتالي يحدث في حالتين:
-// (1) النموذج غير متاح على الحساب (404)، أو (2) فشل التحليل/مخرجات فارغة — تصعيد لنموذج أقوى.
-// gemini-3.6-flash أُضيف أولاً بعد توقّف gemini-2.0-flash نهائياً من Google (رسالة الخطأ
-// الحية أوصت به مباشرةً)؛ يبقى أولاً لضمان نجاح أول محاولة دون إهدار طلبات على نماذج متوقفة.
+// نقطة بداية فقط، لا مصدر حقيقة. Google توقف نماذجها أسرع مما يُحدَّث الكود (توقف
+// gemini-2.0-flash ثم gemini-2.5-flash خلال أيام)، لذلك لا نعتمد على هذه القائمة وحدها:
+// عند فشل كل عناصرها نسأل Google مباشرةً عن النماذج المتاحة لهذا المفتاح بدل تخمين أسماء.
 const MODEL_CANDIDATES = [
   'gemini-3.6-flash',
   'gemini-3.1-flash-lite',
@@ -327,7 +336,34 @@ const MODEL_CANDIDATES = [
 ];
 
 function isModelUnavailable(msg: string): boolean {
-  return /not found|404|not supported|unsupported|no longer available|deprecated/i.test(msg);
+  return /not found|404|not supported|unsupported|no longer available|not available|deprecated/i.test(msg);
+}
+
+// رسالة الإيقاف من Google تحمل البديل الموصى به داخل نصّها:
+// "This model models/gemini-2.5-flash is no longer available… use models/gemini-3.6-flash"
+// نلتقط ما يلي «use» (لا الاسم الأول فهو النموذج المتوقف) ونجرّبه فوراً، فيتعافى التطبيق
+// من أي إيقاف مستقبلي دون انتظار تحديث الكود.
+export function suggestedModelFrom(msg: string): string | null {
+  const m = msg.match(/use\s+(?:the\s+)?models\/([a-zA-Z0-9._-]+)/i);
+  return m ? m[1] : null;
+}
+
+// آخر خط دفاع: النماذج المتاحة فعلاً لهذا المفتاح كما تعلنها Google لحظة الاستدعاء.
+// نُبقي نماذج توليد النصّ فقط (نستبعد التضمين والصور والصوت)، والأحدث أولاً ثم الأخفّ.
+async function discoverModels(ai: GoogleGenAI): Promise<string[]> {
+  const ids: string[] = [];
+  for await (const m of await ai.models.list()) {
+    const id = (m.name ?? '').replace(/^models\//, '');
+    if (!id.startsWith('gemini-')) continue;
+    if (/embedding|imagen|veo|tts|image|audio|live|aqa/i.test(id)) continue;
+    if (m.supportedActions?.length && !m.supportedActions.includes('generateContent')) continue;
+    ids.push(id);
+  }
+  const version = (id: string) => parseFloat(id.match(/gemini-(\d+(?:\.\d+)?)/)?.[1] ?? '0');
+  const tier = (id: string) => (/flash-lite/.test(id) ? 1 : /flash/.test(id) ? 0 : 2);
+  const stable = (id: string) => (/preview|exp/i.test(id) ? 1 : 0);
+  return ids.sort((a, b) =>
+    stable(a) - stable(b) || version(b) - version(a) || tier(a) - tier(b));
 }
 
 function parseJsonLoose(text: string): unknown {
@@ -338,18 +374,29 @@ function parseJsonLoose(text: string): unknown {
   return JSON.parse(m[0]);
 }
 
-// استدعاء منظَّم مع تصعيد تلقائي: يبدأ من startIdx في سلسلة النماذج، وينتقل للأقوى عند
-// عدم التوفر أو فشل التحليل. يعيد الكائن المحلَّل ومؤشّر النموذج الذي نجح.
+// استدعاء منظَّم مع تصعيد تلقائي عبر طابور نماذج ديناميكي: يبدأ بالنموذج المُمرَّر (الذي
+// نجح في جولة سابقة) ثم بقية المرشّحين، ويُضيف أثناء العمل البديل الذي توصي به رسالة Google
+// نفسها، وأخيراً — إن فشل الجميع — النماذج المتاحة فعلاً على الحساب. يعيد اسم النموذج الناجح.
 async function callStructured(
   ai: GoogleGenAI,
   parts: Array<Record<string, unknown>>,
   schema: object,
   validate: (parsed: unknown) => boolean,
-  startIdx = 0,
-): Promise<{ parsed: unknown; modelIdx: number }> {
+  startModel?: string,
+): Promise<{ parsed: unknown; model: string }> {
+  const first = startModel || rememberedModel();
+  const queue = first
+    ? [first, ...MODEL_CANDIDATES.filter(m => m !== first)]
+    : [...MODEL_CANDIDATES];
+  const tried = new Set<string>();
+  let askedGoogle = false;
   let lastError: Error | null = null;
-  for (let i = startIdx; i < MODEL_CANDIDATES.length; i++) {
-    const model = MODEL_CANDIDATES[i];
+  let lastWasUnavailable = false;
+
+  while (queue.length) {
+    const model = queue.shift()!;
+    if (tried.has(model)) continue;
+    tried.add(model);
     try {
       const response = await ai.models.generateContent({
         model,
@@ -358,14 +405,30 @@ async function callStructured(
       });
       const parsed = parseJsonLoose(response.text ?? '');
       if (!validate(parsed)) throw new Error('EMPTY_RESULT');
-      return { parsed, modelIdx: i };
+      rememberModel(model);
+      return { parsed, model };
     } catch (e: unknown) {
       const msg = getErrorMessage(e);
       lastError = new Error(msg === 'EMPTY_RESULT' ? 'لم يتمكن الذكاء الاصطناعي من استخراج البيانات. تأكد من وضوح الصورة.' : msg);
       // غير متاح أو فشل تحليل/فارغ → نصعّد للنموذج التالي؛ خطأ مفتاح/حصة/شبكة → لا فائدة من التكرار
-      const escalate = isModelUnavailable(msg) || msg === 'EMPTY_RESULT' || /JSON|Unexpected token|استخراج البيانات/i.test(msg);
+      const unavailable = isModelUnavailable(msg);
+      const escalate = unavailable || msg === 'EMPTY_RESULT' || /JSON|Unexpected token|استخراج البيانات/i.test(msg);
       if (!escalate) throw lastError;
+      lastWasUnavailable = unavailable;
+      const suggested = unavailable ? suggestedModelFrom(msg) : null;
+      if (suggested && !tried.has(suggested)) queue.unshift(suggested);
+      if (!queue.length && !askedGoogle) {
+        askedGoogle = true;
+        const available = await discoverModels(ai).catch(() => [] as string[]);
+        queue.push(...available.filter(m => !tried.has(m)));
+      }
     }
+  }
+  // نفدت النماذج بسبب الإيقاف/عدم التوفر: نسمّي ما جُرِّب فعلاً ليكون البلاغ قابلاً
+  // للتشخيص من أول مرة. أما فشل القراءة (صورة غير واضحة) فيبقى برسالته الأصلية.
+  if (lastWasUnavailable) {
+    throw new Error(`لم يقبل أي نموذج Gemini متاح لهذا المفتاح الطلب. جُرِّبت: ${[...tried].join('، ')}. ` +
+      `جرّب مفتاحاً جديداً من Google AI Studio. آخر رد من Google: ${lastError?.message ?? 'غير معروف'}`);
   }
   throw lastError ?? new Error('تعذّر الاتصال بنموذج Gemini.');
 }
@@ -434,7 +497,7 @@ export async function extractInvoice(
     ...imgs.map(im => ({ inlineData: { mimeType: im.mimeType, data: im.base64 } })),
     { text: EXTRACTION_PROMPT + supplierMemoryPrompt(supplierMemory) },
   ];
-  const { parsed, modelIdx } = await callStructured(
+  const { parsed, model: usedModel } = await callStructured(
     ai, parts, INVOICE_SCHEMA,
     // شرط القبول: أسطر موجودة وسعر واحد على الأقل مقروء — كل الأسعار صفر/null يعني أن الصورة
     // لم تُقرأ (ضبابية/صغيرة) لا أن الفاتورة مجانية، فنصعّد لنموذج أقوى بدل عرض أصفار.
@@ -513,7 +576,7 @@ export async function extractInvoice(
         const { parsed: p2 } = await callStructured(
           ai, [{ text: prompt }], DISAMBIGUATION_SCHEMA,
           (p) => !!p && Array.isArray((p as { decisions?: unknown }).decisions),
-          modelIdx,
+          usedModel,
         );
         const decisions = (p2 as { decisions: Array<{ line: number; chosenId?: string | null }> }).decisions;
         decisions.forEach(d => {
