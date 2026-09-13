@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseNumber, matchToInventory, ampouleVialCount, sanitizeApiKey, normalizeName, resolveStripsPerBox, mergeBonusLines } from './invoiceExtractor';
+import { parseNumber, matchToInventory, ampouleVialCount, sanitizeApiKey, normalizeName, resolveStripsPerBox, mergeBonusLines, isTransientError } from './invoiceExtractor';
 import type { Medicine } from '../types';
 
 describe('parseNumber', () => {
@@ -236,5 +236,21 @@ describe('mergeBonusLines — بونص بسطر مكرَّر بسعر صفر', (
       { rawName: 'Diovan 80', quantityBoxes: 1, pricePerBox: 0 },
     ]);
     expect(out).toHaveLength(2);
+  });
+});
+
+describe('isTransientError — أخطاء عابرة من خادم Gemini تستحق إعادة المحاولة', () => {
+  it('يتعرّف على 503 «ضغط مرتفع» بصيغة REST الخام', () => {
+    const raw = '{"error":{"code":503,"message":"This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.","status":"UNAVAILABLE"}}';
+    expect(isTransientError(raw)).toBe(true);
+    expect(isTransientError('The model is overloaded. Please try again later.')).toBe(true);
+    expect(isTransientError('429 RESOURCE_EXHAUSTED')).toBe(true);
+    expect(isTransientError('Failed to fetch')).toBe(true);
+  });
+  it('لا يعتبر أخطاء المفتاح أو النموذج غير الموجود عابرة', () => {
+    expect(isTransientError('API_KEY_INVALID 400')).toBe(false);
+    expect(isTransientError('403 PERMISSION_DENIED')).toBe(false);
+    expect(isTransientError('models/gemini-x is not found 404')).toBe(false);
+    expect(isTransientError('EMPTY_RESULT')).toBe(false);
   });
 });

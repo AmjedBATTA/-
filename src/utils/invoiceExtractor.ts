@@ -328,6 +328,18 @@ function isModelUnavailable(msg: string): boolean {
   return /not found|404|not supported|unsupported/i.test(msg);
 }
 
+// خطأ عابر من خادم Google: ضغط مؤقت على النموذج (503 / UNAVAILABLE / overloaded / high demand)،
+// أو تجاوز الحصة اللحظية (429 / RESOURCE_EXHAUSTED)، أو مهلة. هذه تُحلّ بإعادة المحاولة بعد
+// انتظار قصير، ثم بالانتقال لنموذج آخر — لا بإظهار الخطأ الخام للمستخدم.
+export function isTransientError(msg: string): boolean {
+  return /503|429|UNAVAILABLE|RESOURCE_EXHAUSTED|overloaded|high demand|try again later|DEADLINE_EXCEEDED|timed? ?out|ECONNRESET|fetch failed|Failed to fetch|NetworkError/i.test(msg);
+}
+
+const TRANSIENT_RETRY_DELAYS_MS = [1200, 3000];
+const TRANSIENT_USER_MESSAGE = 'خادم Gemini مضغوط مؤقتاً ولم يستجب رغم إعادة المحاولة عدة مرات. انتظر دقيقة ثم أعد المحاولة — الصورة والمورد محفوظان.';
+
+const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+
 function parseJsonLoose(text: string): unknown {
   const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
   try { return JSON.parse(cleaned); } catch { /* نحاول اقتطاع أول كائن */ }
@@ -344,27 +356,46 @@ async function callStructured(
   schema: object,
   validate: (parsed: unknown) => boolean,
   startIdx = 0,
+  onProgress?: (msg: string) => void,
 ): Promise<{ parsed: unknown; modelIdx: number }> {
   let lastError: Error | null = null;
+  let sawTransient = false;
   for (let i = startIdx; i < MODEL_CANDIDATES.length; i++) {
     const model = MODEL_CANDIDATES[i];
-    try {
-      const response = await ai.models.generateContent({
-        model,
-        contents: [{ role: 'user', parts }],
-        config: { responseMimeType: 'application/json', responseSchema: schema, temperature: 0 },
-      });
-      const parsed = parseJsonLoose(response.text ?? '');
-      if (!validate(parsed)) throw new Error('EMPTY_RESULT');
-      return { parsed, modelIdx: i };
-    } catch (e: unknown) {
-      const msg = getErrorMessage(e);
-      lastError = new Error(msg === 'EMPTY_RESULT' ? 'لم يتمكن الذكاء الاصطناعي من استخراج البيانات. تأكد من وضوح الصورة.' : msg);
-      // غير متاح أو فشل تحليل/فارغ → نصعّد للنموذج التالي؛ خطأ مفتاح/حصة/شبكة → لا فائدة من التكرار
-      const escalate = isModelUnavailable(msg) || msg === 'EMPTY_RESULT' || /JSON|Unexpected token|استخراج البيانات/i.test(msg);
-      if (!escalate) throw lastError;
+    // على كل نموذج: محاولة أولى + إعادة محاولة بانتظار متزايد إن كان الخطأ عابراً (503/429)
+    for (let attempt = 0; attempt <= TRANSIENT_RETRY_DELAYS_MS.length; attempt++) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents: [{ role: 'user', parts }],
+          config: { responseMimeType: 'application/json', responseSchema: schema, temperature: 0 },
+        });
+        const parsed = parseJsonLoose(response.text ?? '');
+        if (!validate(parsed)) throw new Error('EMPTY_RESULT');
+        return { parsed, modelIdx: i };
+      } catch (e: unknown) {
+        const msg = getErrorMessage(e);
+        lastError = new Error(msg === 'EMPTY_RESULT' ? 'لم يتمكن الذكاء الاصطناعي من استخراج البيانات. تأكد من وضوح الصورة.' : msg);
+        if (isTransientError(msg)) {
+          sawTransient = true;
+          const delay = TRANSIENT_RETRY_DELAYS_MS[attempt];
+          if (delay !== undefined) {
+            onProgress?.(`خادم Gemini مضغوط مؤقتاً — إعادة المحاولة ${attempt + 1}/${TRANSIENT_RETRY_DELAYS_MS.length} بعد ${Math.round(delay / 1000)} ث…`);
+            await sleep(delay);
+            continue;
+          }
+          // استُنفدت محاولات هذا النموذج → نجرّب النموذج التالي
+          break;
+        }
+        // غير متاح أو فشل تحليل/فارغ → نصعّد للنموذج التالي؛ خطأ مفتاح/حصة دائمة → لا فائدة من التكرار
+        const escalate = isModelUnavailable(msg) || msg === 'EMPTY_RESULT' || /JSON|Unexpected token|استخراج البيانات/i.test(msg);
+        if (!escalate) throw lastError;
+        break;
+      }
     }
   }
+  if (lastError && isTransientError(lastError.message)) throw new Error(TRANSIENT_USER_MESSAGE);
+  if (sawTransient && lastError && isModelUnavailable(lastError.message)) throw new Error(TRANSIENT_USER_MESSAGE);
   throw lastError ?? new Error('تعذّر الاتصال بنموذج Gemini.');
 }
 
@@ -442,6 +473,8 @@ export async function extractInvoice(
       if (!Array.isArray(its) || its.length === 0) return false;
       return (its as RawGeminiItem[]).some(it => parseNumber(it.pricePerBox) > 0);
     },
+    0,
+    onProgress,
   ).catch((e: unknown) => {
     const msg = getErrorMessage(e);
     if (/استخراج البيانات/.test(msg)) {
@@ -512,6 +545,7 @@ export async function extractInvoice(
           ai, [{ text: prompt }], DISAMBIGUATION_SCHEMA,
           (p) => !!p && Array.isArray((p as { decisions?: unknown }).decisions),
           modelIdx,
+          onProgress,
         );
         const decisions = (p2 as { decisions: Array<{ line: number; chosenId?: string | null }> }).decisions;
         decisions.forEach(d => {
