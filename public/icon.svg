@@ -1,7 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#059669"/>
-  <rect x="224" y="112" width="64" height="288" rx="16" fill="white"/>
-  <rect x="112" y="224" width="288" height="64" rx="16" fill="white"/>
-  <circle cx="256" cy="256" r="52" fill="#059669"/>
-  <text x="256" y="278" font-family="serif" font-size="56" font-weight="bold" fill="white" text-anchor="middle">آ</text>
+  <!-- شعار أنوار الحسن: صليب صيدلاني بحرف «أ» (مسار من خط IBM Plex Sans Arabic، لا يعتمد على خطوط الجهاز) -->
+  <rect width="512" height="512" rx="96" fill="#0F766E"/>
+  <rect x="224" y="112" width="64" height="288" rx="16" fill="#FFFFFF"/>
+  <rect x="112" y="224" width="288" height="64" rx="16" fill="#FFFFFF"/>
+  <circle cx="256" cy="256" r="52" fill="#0F766E"/>
+  <path fill="#FFFFFF" d="M251.76 289L251.76 245.33L260.24 245.33L260.24 289L251.76 289M247.59 239.68L247.59 233.95L250.56 233.95L250.63 233.60Q249.22 232.04 249.22 229.85Q249.22 226.89 251.37 224.94Q253.53 223 256.92 223Q258.97 223 260.88 223.85Q262.78 224.70 264.20 226.18L260.81 230.91Q259.11 229.22 256.92 229.22Q255.72 229.22 254.98 229.78Q254.23 230.35 254.23 231.13Q254.23 233.46 259.11 233.46L264.34 233.46L264.34 239.68"/>
 </svg>

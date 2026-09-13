@@ -1,5 +1,6 @@
 import React from 'react';
 import type { Medicine } from '../../types';
+import { fmtNum } from '../../utils/format';
 
 // =========================================================
 // MEDICINE CARD — مكوّن معزول بـ React.memo لرف POS
@@ -10,11 +11,12 @@ import type { Medicine } from '../../types';
 interface MedicineCardProps {
   med: Medicine;
   showVirtualPrice: boolean;
+  showCost: boolean; // إخفاء الكلفة ونسبة الربح عن دور الكاشير — الكاشير لا يحتاج قرار الشراء
   daysUntilExpiry: number;   // محسوب مسبقاً في الأب — لا استدعاء دالة داخل المكوّن
   onAdd: (med: Medicine) => void;
 }
 
-export const MedicineCard = React.memo(({ med, showVirtualPrice, daysUntilExpiry, onAdd }: MedicineCardProps) => {
+export const MedicineCard = React.memo(({ med, showVirtualPrice, showCost, daysUntilExpiry, onAdd }: MedicineCardProps) => {
   const isLow = med.availableQuantity < 15;
   const isOut = med.availableQuantity <= 0;
   const isExpiringSoon = daysUntilExpiry <= 30;
@@ -30,57 +32,57 @@ export const MedicineCard = React.memo(({ med, showVirtualPrice, daysUntilExpiry
       onClick={() => onAdd(med)}
       className={`p-3.5 rounded-2xl border text-right transition-all flex flex-col gap-2 relative cursor-pointer active:scale-[0.98] ${
         isOut
-          ? 'bg-rose-50/70 border-rose-200 hover:border-rose-400 hover:shadow-md shadow-sm'
-          : 'bg-white border-slate-200 hover:border-emerald-400 hover:shadow-md shadow-sm'
+          ? 'bg-danger-50/70 border-danger-200 hover:border-danger-400 hover:shadow-md shadow-sm'
+          : 'bg-white border-slate-200 hover:border-primary-400 hover:shadow-md shadow-sm'
       }`}
     >
       {/* Status badge */}
       <div className="flex justify-between items-start gap-1">
-        <span className={`text-[8px] font-black px-2 py-0.5 rounded-full ${
-          isOut ? 'bg-rose-100 text-rose-700'
-            : isLow ? 'bg-amber-100 text-amber-700'
-            : 'bg-emerald-50 text-emerald-700'
+        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+          isOut ? 'bg-danger-100 text-danger-700'
+            : isLow ? 'bg-warn-100 text-warn-700'
+            : 'bg-primary-50 text-primary-700'
         }`}>
           {isOut ? 'نفذ' : isLow ? 'حرج' : '✓'}
         </span>
         {isExpiringSoon && (
-          <span className="text-[7px] bg-rose-600 text-white px-1.5 py-0.5 rounded-full font-bold">منتهٍ قريباً</span>
+          <span className="text-xs bg-danger-600 text-white px-1.5 py-0.5 rounded-full font-bold">منتهٍ قريباً</span>
         )}
-        <span className="text-[9px] font-mono font-bold text-slate-400 mr-auto">{med.availableQuantity}</span>
+        <span className="text-xs tabular-nums font-bold text-slate-500 mr-auto">{med.availableQuantity}</span>
       </div>
 
       {/* Name */}
       <div>
-        <h4 className="font-extrabold text-slate-900 text-xs leading-snug line-clamp-2">{med.nameAr}</h4>
-        <p className="text-[9px] text-slate-400 font-mono truncate mt-0.5">{med.nameEn}</p>
+        <h4 className="font-semibold text-slate-900 text-xs leading-snug line-clamp-2">{med.nameAr}</h4>
+        <p className="text-xs text-slate-500 tabular-nums truncate mt-0.5">{med.nameEn}</p>
       </div>
 
       {/* Prices — وضع «الرسمي»: الرسمي وحده بخط واضح، وتُخفى «بيع» و«شراء» ونسبة الربح
           (شاشة تواجه الزبون — لا تكشف السعر الداخلي ولا الكلفة، كما في السلة) */}
       <div className="border-t border-slate-100 pt-2 flex justify-between items-end">
         {showVirtualPrice ? (
-          <span className="text-base font-black font-mono block text-purple-700">
-            {officialPrice.toLocaleString()}
-            <span className="text-[9px] font-bold text-purple-400 mr-0.5">د.ع</span>
+          <span className="text-base font-bold tabular-nums block text-special-700">
+            {fmtNum(officialPrice)}
+            <span className="text-xs font-bold text-special-400 mr-0.5">د.ع</span>
           </span>
         ) : (
           <>
             <div className="space-y-0.5">
-              <span className="text-sm font-black font-mono block text-emerald-700">
-                {med.price.toLocaleString()}
-                <span className="text-[9px] font-bold text-slate-400 mr-0.5">د.ع</span>
+              <span className="text-sm font-bold tabular-nums block text-primary-700">
+                {fmtNum(med.price)}
+                <span className="text-xs font-bold text-slate-500 mr-0.5">د.ع</span>
               </span>
-              {med.costPrice && med.costPrice > 0 && (
-                <span className="text-[9px] text-slate-400 font-mono block">
-                  شراء: <span className="text-slate-500 font-bold">{med.costPrice.toLocaleString()}</span>
+              {showCost && med.costPrice && med.costPrice > 0 && (
+                <span className="text-xs text-slate-500 tabular-nums block">
+                  شراء: <span className="text-slate-500 font-bold">{fmtNum(med.costPrice)}</span>
                 </span>
               )}
             </div>
-            {margin !== null && (
-              <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
-                margin >= 20 ? 'bg-emerald-50 text-emerald-700'
-                  : margin >= 10 ? 'bg-amber-50 text-amber-700'
-                  : 'bg-rose-50 text-rose-700'
+            {showCost && margin !== null && (
+              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                margin >= 20 ? 'bg-primary-50 text-primary-700'
+                  : margin >= 10 ? 'bg-warn-50 text-warn-700'
+                  : 'bg-danger-50 text-danger-700'
               }`}>
                 {margin}%
               </span>

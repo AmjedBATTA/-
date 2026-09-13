@@ -60,7 +60,7 @@ export default class ErrorBoundary extends Component<Props, State> {
           {/* زر إعادة التحميل */}
           <button
             onClick={this.handleReload}
-            className="rounded-lg bg-emerald-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 transition-colors"
+            className="rounded-lg bg-primary-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 transition-colors"
           >
             إعادة تحميل الصفحة
           </button>

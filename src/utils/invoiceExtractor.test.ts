@@ -244,12 +244,12 @@ describe('isTransientError — أخطاء عابرة من خادم Gemini تست
     const raw = '{"error":{"code":503,"message":"This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.","status":"UNAVAILABLE"}}';
     expect(isTransientError(raw)).toBe(true);
     expect(isTransientError('The model is overloaded. Please try again later.')).toBe(true);
-    expect(isTransientError('429 RESOURCE_EXHAUSTED')).toBe(true);
     expect(isTransientError('Failed to fetch')).toBe(true);
   });
   it('لا يعتبر أخطاء المفتاح أو النموذج غير الموجود عابرة', () => {
     expect(isTransientError('API_KEY_INVALID 400')).toBe(false);
     expect(isTransientError('403 PERMISSION_DENIED')).toBe(false);
+    expect(isTransientError('429 RESOURCE_EXHAUSTED: quota exceeded')).toBe(false);
     expect(isTransientError('models/gemini-x is not found 404')).toBe(false);
     expect(isTransientError('EMPTY_RESULT')).toBe(false);
   });
