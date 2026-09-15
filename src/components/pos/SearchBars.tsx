@@ -38,6 +38,7 @@ export const POSSearchBar = forwardRef<POSSearchHandle, POSSearchBarProps>(
           <Search className="w-4 h-4 text-slate-500 absolute right-3 top-2.5" />
           <input
             ref={inputRef}
+            id="pos-search-input"
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}

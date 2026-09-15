@@ -2717,8 +2717,9 @@ export default function Dashboard() {
   const incCartQty = useCallback((medId: string) => updateCartQty(medId, 1), [updateCartQty]);
   const decCartQty = useCallback((medId: string) => updateCartQty(medId, -1), [updateCartQty]);
   // اختصارات لوحة المفاتيح في نقطة البيع (اتُّفق عليها مع المستخدم):
-  // F2 بحث · F4 خصم · F8 تبديل السعر الرسمي · F9 دفع · Esc مسح السلة (بتأكيد) · ↑/↓ كمية آخر مادة أُضيفت.
-  // لا تعمل أثناء الكتابة داخل حقل (عدا F2 وF9)، ولا Esc والحاسبة/الإيصال/الماسح مفتوح كي لا تتعارض.
+  // F2 بحث · Space (خارج الحقول، أو داخل حقل البحث نفسه) تفريغ حقل البحث للتحضير لعلاج جديد ·
+  // F4 خصم · F8 تبديل السعر الرسمي · F9 دفع · Esc مسح السلة (بتأكيد) · ↑/↓ تمرير سلة البيع.
+  // لا تعمل أثناء الكتابة داخل حقل (عدا F2 وF9 والمسطرة)، ولا Esc والحاسبة/الإيصال/الماسح مفتوح كي لا تتعارض.
   useEffect(() => {
     if (activeTab !== 'pos') return;
     const onKey = (e: KeyboardEvent) => {
@@ -2733,6 +2734,14 @@ export default function Dashboard() {
         posFormRef.current?.requestSubmit(); // نفس مسار زر «إتمام البيع» (onSubmit) — لا يتجاوز أي تحقق
         return;
       }
+      // المسطرة: تعمل خارج الحقول أو داخل حقل البحث نفسه فقط، كي لا تكسر كتابة مسافة
+      // ضمن حقول أخرى (اسم العميل مثلاً). تُفرِّغ حقل البحث وتُركّز عليه لإدخال علاج جديد.
+      if (k === ' ' && (!inField || t?.id === 'pos-search-input')) {
+        e.preventDefault();
+        posSearchRef.current?.setValue('');
+        posSearchRef.current?.focus();
+        return;
+      }
       if (inField) return;
       if (k === 'F4') { e.preventDefault(); posDiscountRef.current?.focus(); return; }
       if (k === 'F8') { e.preventDefault(); setShowVirtualPriceInPOS(v => !v); return; }
@@ -2742,15 +2751,14 @@ export default function Dashboard() {
         return;
       }
       if (k === 'ArrowUp' || k === 'ArrowDown') {
-        const top = currentCart[0]; // آخر مادة أُضيفت تكون دائماً في رأس السلة
-        if (!top || top.outOfStock) return;
+        if (!cartListRef.current) return;
         e.preventDefault();
-        updateCartQty(top.medicine.id, k === 'ArrowUp' ? 1 : -1);
+        cartListRef.current.scrollBy({ top: k === 'ArrowUp' ? -80 : 80, behavior: 'smooth' });
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [activeTab, showCalculator, showReceiptModal, isScanning, currentCart, updateCartQty]);
+  }, [activeTab, showCalculator, showReceiptModal, isScanning, currentCart]);
 
   // يدفع قيمة لمرجع الحاسبة مباشرة — هوية ثابتة دائماً (لا تعتمد على حالة) فلا تُعيد تصيير صفوف السلة
   const addToCalculator = useCallback((amount: number) => { calculatorRef.current?.pushValue(amount); }, []);
@@ -4371,13 +4379,13 @@ export default function Dashboard() {
                   // بلا y (بخلاف بقية التبويبات): إبقاء الانتقال بلا transform حتى لا يصبح
                   // هذا العنصر هو الحاوية المرجعية لكل fixed بداخله (ورقة السلة والشريط السفلي
                   // على الهاتف) بدل نافذة العرض — وهي مشكلة CSS معروفة مع أي أب له transform.
-                  className="grid grid-cols-1 lg:grid-cols-12 gap-6"
+                  className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-3"
                 >
-                  
+
                   {/* Left Column: POS Register — دائم الظهور على سطح المكتب؛ على الهاتف يبقى
                       شريط البحث فقط هنا (لاصق أعلى الشاشة) وتنزلق السلة كورقة سفلية عند الحاجة
                       كي يصل الكاشير للأصناف فوراً بدل أن تحجب السلة الشاشة أولاً. */}
-                  <div className="order-first lg:order-none lg:col-span-7 flex flex-col gap-3 lg:bg-slate-900 lg:rounded-3xl lg:p-5 lg:shadow-lg">
+                  <div className="order-first lg:order-none lg:col-span-7 flex flex-col gap-3 lg:bg-slate-900 lg:rounded-3xl lg:px-3 lg:py-5 lg:shadow-lg">
 
                     {/* شريط البحث لاصق أعلى الشاشة على الهاتف — في صندوق خاص به بخلفية ضبابية،
                         منفصل عمداً عن الحاوية الخارجية: أي عنصر أب يحمل backdrop-blur أو transform
@@ -4415,8 +4423,8 @@ export default function Dashboard() {
                         <div className="flex items-center gap-2">
                           <div className="w-2 h-2 bg-primary-400 rounded-full animate-pulse" />
                           <h3 className="font-semibold text-white text-sm">سلة البيع</h3>
-                          <span className="hidden lg:inline text-xs text-slate-500 font-bold mr-1" title="اختصارات لوحة المفاتيح (لا تعمل أثناء الكتابة في حقل، عدا F2 وF9)">
-                            F2 بحث · F4 خصم · F8 رسمي · F9 دفع · Esc مسح · ↑↓ كمية
+                          <span className="hidden lg:inline text-xs text-slate-500 font-bold mr-1" title="اختصارات لوحة المفاتيح (لا تعمل أثناء الكتابة في حقل، عدا F2 وF9 والمسطرة)">
+                            F2 بحث · Space تفريغ البحث · F4 خصم · F8 رسمي · F9 دفع · Esc مسح · ↑↓ تمرير
                           </span>
                           {currentCart.length > 0 && (
                             <span className="bg-primary-500 text-white text-sm font-bold px-2 py-0.5 rounded-full">
@@ -4542,7 +4550,7 @@ export default function Dashboard() {
                   </div>
 
                   {/* Right Column: Searchable fast-add medicines shelf */}
-                  <div className="lg:col-span-5 bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-5">
+                  <div className="lg:col-span-5 bg-white border border-slate-200 rounded-3xl px-4 py-6 shadow-sm space-y-5">
                     <div>
                       <h3 className="font-semibold text-slate-900 text-sm">أدوية ومخازن الصيدلة الحاضرة</h3>
                       <p className="text-sm text-slate-500 font-semibold mt-0.5">انقر على الدواء المتوفر لإضافته إلى فاتورة العميل مباشرة</p>
