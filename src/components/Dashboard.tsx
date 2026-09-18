@@ -2717,29 +2717,29 @@ export default function Dashboard() {
   const incCartQty = useCallback((medId: string) => updateCartQty(medId, 1), [updateCartQty]);
   const decCartQty = useCallback((medId: string) => updateCartQty(medId, -1), [updateCartQty]);
   // اختصارات لوحة المفاتيح في نقطة البيع (اتُّفق عليها مع المستخدم):
-  // F2 بحث · Space (خارج الحقول، أو داخل حقل البحث نفسه) تفريغ حقل البحث للتحضير لعلاج جديد ·
+  // F2 بحث · Alt (خارج الحقول، أو داخل حقل البحث نفسه) تفريغ حقل البحث للتحضير لعلاج جديد ·
   // F4 خصم · F8 تبديل السعر الرسمي · F9 دفع · Esc مسح السلة (بتأكيد) · ↑/↓ تمرير سلة البيع.
-  // لا تعمل أثناء الكتابة داخل حقل (عدا F2 وF9 والمسطرة)، ولا Esc والحاسبة/الإيصال/الماسح مفتوح كي لا تتعارض.
+  // لا تعمل أثناء الكتابة داخل حقل (عدا F2 وF9 وAlt)، ولا Esc والحاسبة/الإيصال/الماسح مفتوح كي لا تتعارض.
   useEffect(() => {
     if (activeTab !== 'pos') return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
       const t = e.target as HTMLElement | null;
       const inField = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
       const k = e.key;
+      // Alt: تعمل خارج الحقول أو داخل حقل البحث نفسه فقط، كي لا تكسر أي استخدام آخر
+      // ضمن حقول أخرى (اسم العميل مثلاً). تُفرِّغ حقل البحث وتُركّز عليه لإدخال علاج جديد.
+      if (k === 'Alt' && (!inField || t?.id === 'pos-search-input')) {
+        e.preventDefault();
+        posSearchRef.current?.setValue('');
+        posSearchRef.current?.focus();
+        return;
+      }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (k === 'F2') { e.preventDefault(); posSearchRef.current?.focus(); return; }
       if (k === 'F9') {
         e.preventDefault();
         if (showReceiptModal || isScanning) return;
         posFormRef.current?.requestSubmit(); // نفس مسار زر «إتمام البيع» (onSubmit) — لا يتجاوز أي تحقق
-        return;
-      }
-      // المسطرة: تعمل خارج الحقول أو داخل حقل البحث نفسه فقط، كي لا تكسر كتابة مسافة
-      // ضمن حقول أخرى (اسم العميل مثلاً). تُفرِّغ حقل البحث وتُركّز عليه لإدخال علاج جديد.
-      if (k === ' ' && (!inField || t?.id === 'pos-search-input')) {
-        e.preventDefault();
-        posSearchRef.current?.setValue('');
-        posSearchRef.current?.focus();
         return;
       }
       if (inField) return;
@@ -4423,8 +4423,8 @@ export default function Dashboard() {
                         <div className="flex items-center gap-2">
                           <div className="w-2 h-2 bg-primary-400 rounded-full animate-pulse" />
                           <h3 className="font-semibold text-white text-sm">سلة البيع</h3>
-                          <span className="hidden lg:inline text-xs text-slate-500 font-bold mr-1" title="اختصارات لوحة المفاتيح (لا تعمل أثناء الكتابة في حقل، عدا F2 وF9 والمسطرة)">
-                            F2 بحث · Space تفريغ البحث · F4 خصم · F8 رسمي · F9 دفع · Esc مسح · ↑↓ تمرير
+                          <span className="hidden lg:inline text-xs text-slate-500 font-bold mr-1" title="اختصارات لوحة المفاتيح (لا تعمل أثناء الكتابة في حقل، عدا F2 وF9 وAlt)">
+                            F2 بحث · Alt تفريغ البحث · F4 خصم · F8 رسمي · F9 دفع · Esc مسح · ↑↓ تمرير
                           </span>
                           {currentCart.length > 0 && (
                             <span className="bg-primary-500 text-white text-sm font-bold px-2 py-0.5 rounded-full">
