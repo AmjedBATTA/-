@@ -1588,8 +1588,13 @@ export default function Dashboard() {
   const shortageStats = useCallback((s: { id: string; name: string }) => {
     const sold = soldLast60.byId.get(s.id) ?? soldLast60.byName.get(s.name) ?? 0;
     const suggested = sold > 0 ? Math.ceil((sold / 60) * 14) : 0;
-    const stock = inventory.find(m => m.id === s.id)?.availableQuantity ?? null;
-    return { sold, suggested, stock };
+    const med = inventory.find(m => m.id === s.id);
+    const stock = med?.availableQuantity ?? null;
+    // اسم العرض: الإنكليزي المحفوظ للعلاج (من مطابقة فواتير الصور) إن وُجد وفيه حروف لاتينية،
+    // وإلا الاسم العربي المخزَّن. الاسم المخزَّن نفسه لا يتغيّر — عليه تعتمد مطابقة الشراء والمبيع.
+    const en = med?.nameEn?.trim();
+    const displayName = en && /[A-Za-z]/.test(en) ? en : s.name;
+    return { sold, suggested, stock, displayName };
   }, [soldLast60, inventory]);
 
   // آخر بيع لكل مادة (أحدث طابع زمني في سجل المبيعات) — أساس تقرير المخزون الراكد
@@ -4620,7 +4625,7 @@ export default function Dashboard() {
                                   {freshShortages.map(s => { const st = shortageStats(s); return (
                                     <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-slate-50 group">
                                       <div className="min-w-0">
-                                        <span className="text-sm font-semibold text-slate-700 truncate block">{s.name}</span>
+                                        <span dir="auto" className="text-sm font-semibold text-slate-700 truncate block" title={s.name}>{st.displayName}</span>
                                         {/* مبيع آخر شهرين + كمية مقترحة للطلب (تغطية أسبوعين) + الرصيد الحالي */}
                                         <span className="text-xs font-bold text-slate-500 tabular-nums block">
                                           مبيع شهرين: <span className={st.sold > 0 ? 'text-primary-700' : 'text-slate-500'}>{st.sold}</span>
@@ -4652,7 +4657,7 @@ export default function Dashboard() {
                                       {staleShortages.map(s => { const st = shortageStats(s); return (
                                         <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-danger-50 group">
                                           <div className="min-w-0">
-                                            <span className="text-sm font-semibold text-danger-900/70 truncate block">{s.name}</span>
+                                            <span dir="auto" className="text-sm font-semibold text-danger-900/70 truncate block" title={s.name}>{st.displayName}</span>
                                             <span className="text-xs font-bold text-danger-800/60 tabular-nums block">
                                               مبيع شهرين: {st.sold}
                                               {st.sold > 0 ? <> · مقترح للطلب: {st.suggested} شريط</> : ' · لم يُبَع خلال شهرين'}
