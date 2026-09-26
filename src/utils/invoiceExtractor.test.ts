@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseNumber, matchToInventory, ampouleVialCount, sanitizeApiKey, normalizeName, resolveStripsPerBox, mergeBonusLines, isTransientError } from './invoiceExtractor';
+import { parseNumber, matchToInventory, ampouleVialCount, sanitizeApiKey, normalizeName, resolveStripsPerBox, mergeBonusLines, isTransientError, strengthNumbers, compareStrength, compareCompany } from './invoiceExtractor';
 import type { Medicine } from '../types';
 
 describe('parseNumber', () => {
@@ -252,5 +252,51 @@ describe('isTransientError — أخطاء عابرة من خادم Gemini تست
     expect(isTransientError('429 RESOURCE_EXHAUSTED: quota exceeded')).toBe(false);
     expect(isTransientError('models/gemini-x is not found 404')).toBe(false);
     expect(isTransientError('EMPTY_RESULT')).toBe(false);
+  });
+});
+
+describe('المطابقة بثلاثة اعتبارات — الاسم + الجرعة/الشكل + الشركة', () => {
+  it('يستخرج العيار ويتجاهل عدد العبوة وحجم القنينة ومقام /5 مل', () => {
+    expect(strengthNumbers('Amoxil 250mg/5ml 100ml susp')).toEqual(['250']);
+    expect(strengthNumbers('Bactiflox neo 500 mg * 10 tab acino m')).toEqual(['500']);
+    expect(strengthNumbers('أوجمنتين 1 غم 14 حبة')).toEqual(['1000']);
+  });
+
+  it('يقبل مجموع التركيبة (500/125 = 625 و 400/57 = 457)', () => {
+    expect(compareStrength(['500', '125'], ['625'])).toBe('match');
+    expect(compareStrength(['457'], ['400', '57'])).toBe('match');
+    expect(compareStrength(['625'], ['1000'])).toBe('mismatch');
+    expect(compareStrength([], ['1000'])).toBe('unknown');
+  });
+
+  it('الشكل المختلف (شراب مقابل كبسول) يُستبعد', () => {
+    const inv = [med('caps', 'اموكسيل 250 كبسول', 'Amoxil 250mg caps'), med('syr', 'اموكسيل 250 شراب', 'Amoxil 250mg/5ml syrup')];
+    expect(matchToInventory('', inv, 'Amoxil 250mg/5ml susp 100ml').medicine?.id).toBe('syr');
+    expect(matchToInventory('', inv, 'Amoxil 250mg * 16 cap').medicine?.id).toBe('caps');
+  });
+
+  it('الشركة المطابقة ترفع الثقة وتحسم بين نفس الاسم والعيار', () => {
+    const inv = [
+      { ...med('aj', 'سيبروفلوكساسين 500', 'Ciprofloxacin 500mg'), manufacturer: 'Ajanta' },
+      { ...med('pi', 'سيبروفلوكساسين 500', 'Ciprofloxacin 500mg'), manufacturer: 'Pioneer' },
+    ] as Medicine[];
+    const r = matchToInventory('', inv, 'Ciprofloxacin 500 mg * 10 tab', undefined, 'pioneer pharma');
+    expect(r.medicine?.id).toBe('pi');
+    expect(r.factors?.company).toBe('match');
+    expect(r.score).toBeGreaterThanOrEqual(0.8);
+  });
+
+  it('الشركة المختلفة لا تُقبل تلقائياً (تحت عتبة 0.8 للمراجعة)', () => {
+    const inv = [{ ...med('aj', 'سيبروفلوكساسين 500', 'Ciprofloxacin 500mg'), manufacturer: 'Ajanta' }] as Medicine[];
+    const r = matchToInventory('', inv, 'Ciprofloxacin 500 mg * 10 tab', undefined, 'SDI');
+    expect(r.factors?.company).toBe('mismatch');
+    expect(r.score).toBeLessThan(0.8);
+  });
+
+  it('تطبيع أسماء الشركات', () => {
+    expect(compareCompany('acino m', 'Acino Pharma AG')).toBe('match');
+    expect(compareCompany('Pioneer Co. for Pharmaceutical Industries', 'pioneer')).toBe('match');
+    expect(compareCompany('SDI', 'Ajanta')).toBe('mismatch');
+    expect(compareCompany('', 'Ajanta')).toBe('unknown');
   });
 });

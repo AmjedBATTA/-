@@ -136,6 +136,24 @@ function toMonthInput(s?: string): string {
   return m ? `${m[1]}-${m[2].padStart(2, '0')}` : '';
 }
 
+// شارات الاعتبارات الثلاثة للمطابقة: ✓ متطابق · ✗ مختلف · ؟ غير مذكور في أحد الطرفين
+type FactorView = 'match' | 'mismatch' | 'unknown';
+function factorChips(f: NonNullable<ExtractedInvoiceItem['matchFactors']>): Array<{ label: string; state: FactorView; title: string }> {
+  const dose: FactorView = f.strength === 'mismatch' || f.form === 'mismatch' ? 'mismatch'
+    : f.strength === 'match' || f.form === 'match' ? 'match' : 'unknown';
+  return [
+    { label: 'الاسم', state: f.name >= 0.8 ? 'match' : 'unknown', title: f.name >= 0.8 ? 'الاسم متطابق' : 'الاسم متشابه جزئياً فقط' },
+    { label: 'الجرعة', state: dose, title: dose === 'match' ? 'العيار/الشكل متطابق' : 'العيار غير مذكور في أحد الطرفين' },
+    { label: 'الشركة', state: f.company, title: f.company === 'match' ? 'الشركة متطابقة' : f.company === 'mismatch' ? 'الشركة مختلفة — تأكد أنه نفس المنتج' : 'الشركة غير مسجّلة في أحد الطرفين' },
+  ];
+}
+const FACTOR_CLS: Record<FactorView, string> = {
+  match: 'bg-primary-50 text-primary-700 border-primary-200',
+  mismatch: 'bg-danger-50 text-danger-700 border-danger-300',
+  unknown: 'bg-slate-100 text-slate-500 border-slate-200',
+};
+const FACTOR_MARK: Record<FactorView, string> = { match: '✓', mismatch: '✗', unknown: '؟' };
+
 function matchBadge(score: number, isMatched: boolean, byAlias?: boolean, byAI?: boolean) {
   if (!isMatched) return { label: 'جديد', cls: 'bg-warn-100 text-warn-700 border-warn-200' };
   if (byAlias) return { label: 'محفوظ ✓', cls: 'bg-special-100 text-special-700 border-special-200' };
@@ -429,6 +447,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
       matchedMedicine: med,
       matchScore: 1,
       matchedByAlias: false,
+      matchFactors: undefined, // ربط يدوي = مؤكَّد من المستخدم، لا حاجة لتفصيل الاعتبارات
       arabicName: med.nameAr,
       // الشركة المصنّعة المسجَّلة في المخزون تحلّ محل تخمين OCR من الفاتورة عند الربط
       ...(med.manufacturer ? { company: med.manufacturer } : {}),
@@ -449,7 +468,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
     // إلغاء المطابقة = تصحيح صريح: نمحو من الذاكرة ما كان يشير لهذا الدواء بهذه الأسماء،
     // حتى لا تتكرر المطابقة الخاطئة في الفواتير القادمة
     if (it?.matchedMedicine) onForgetAliases(aliasKeysOf(it), it.matchedMedicine.id);
-    updateItem(itemId, { matchedMedicine: null, matchScore: 0, matchedByAlias: false });
+    updateItem(itemId, { matchedMedicine: null, matchScore: 0, matchedByAlias: false, matchFactors: undefined });
   };
 
   // في فواتير «ساوة» تُدمج الشركة بنهاية الاسم — نزيلها من الاسم الإنكليزي المخزَّن
@@ -1059,6 +1078,12 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                           <span className={`shrink-0 mt-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-full border ${badge.cls}`}>
                             {badge.label}
                           </span>
+                          {item.matchedMedicine && !item.matchedByAlias && item.matchFactors && factorChips(item.matchFactors).map(c => (
+                            <span key={c.label} title={c.title}
+                              className={`shrink-0 mt-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-full border ${FACTOR_CLS[c.state]}`}>
+                              {c.label} {FACTOR_MARK[c.state]}
+                            </span>
+                          ))}
                           {item.uncertain && (
                             <span className="shrink-0 mt-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-full border bg-danger-100 text-danger-700 border-danger-300"
                               title="النموذج قرأ رقماً أو اسماً في هذا السطر بصعوبة — قارنه بالصورة">

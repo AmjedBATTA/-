@@ -93,6 +93,8 @@ export interface ExtractedInvoiceItem {
   matchScore: number;
   matchedByAlias?: boolean; // المطابقة جاءت من «ذاكرة المطابقات» المُتعلَّمة (مؤكَّدة سابقاً من المستخدم)
   matchedByAI?: boolean;    // المطابقة حُسمت في الجولة الثانية (النموذج اختار بين مرشّحي المخزون)
+  // تفصيل المطابقة بالاعتبارات الثلاثة (الاسم / الجرعة والشكل / الشركة) — يُعرض في المراجعة
+  matchFactors?: { name: number; strength: 'match' | 'mismatch' | 'unknown'; form: 'match' | 'mismatch' | 'unknown'; company: 'match' | 'mismatch' | 'unknown' };
   uncertain?: boolean;      // النموذج نفسه علّم هذا السطر «غير واضح» (رقم أو اسم قُرئ بصعوبة) — يُراجع أولاً
   nameEnOverride?: string;  // تصحيح المستخدم للاسم الإنكليزي قبل حفظه الأول في المخزن (يسري فقط حين لا اسم إنكليزي للمادة)
 }

@@ -9,7 +9,8 @@ const GEMINI_KEY_STORAGE = 'anwar_gemini_api_key';
 // آخر نموذج نجح فعلاً على هذا الجهاز. بدونه تدفع كل فاتورة ثمن المحاولات الفاشلة على
 // النماذج المتوقفة من جديد (ثوانٍ ضائعة قبل كل استخراج). مجرّد تسريع: إن تعذّر التخزين
 // (وضع خاص/متصفّح مضمّن) يعمل الاستخراج كما هو دون أن ينكسر.
-const GEMINI_MODEL_STORAGE = 'anwar_gemini_model';
+// v2: رُفع 3.8-flash لرأس القائمة — مفتاح جديد كي لا يبقى كل جهاز عالقاً على النموذج القديم المحفوظ
+const GEMINI_MODEL_STORAGE = 'anwar_gemini_model_v2';
 const rememberedModel = (): string => {
   try { return localStorage.getItem(GEMINI_MODEL_STORAGE) || ''; } catch { return ''; }
 };
@@ -69,17 +70,97 @@ export type StripsMemoryMap = Record<string, number>;
 
 // فهرس مخزون مطبَّع مسبقاً: يُبنى مرة واحدة لكل استخراج بدل إعادة تطبيع أسماء آلاف المواد
 // (أربع مرات لكل مادة) مع كل سطر من الفاتورة — المطابقة تصير فورية.
-export interface InventoryIndexEntry { med: Medicine; keys: string[] }
+// =========================================================
+// المطابقة بثلاثة اعتبارات: الاسم + الجرعة (مع الشكل الصيدلاني) + الشركة المصنّعة
+//  • الجرعة: إن ظهرت في الطرفين واختلفت → ليست نفس المادة (تُستبعد كلياً، لا تُخفَّض فقط).
+//  • الشكل: أقراص/شراب/أمبول… إن عُرف في الطرفين واختلف → تُستبعد كذلك.
+//  • الشركة: إن عُرفت في الطرفين واختلفت → لا تُقبل تلقائياً (تبقى «تقريبي» للمراجعة)؛
+//    وإن تطابقت ترتفع الثقة. لا تُستبعد كلياً لأن كتابة أسماء الشركات تختلف بين المذاخر.
+//  • ما لم يُذكر في أحد الطرفين = «غير معروف» ولا يُحتسب لصالح ولا ضد.
+// =========================================================
+export type FactorState = 'match' | 'mismatch' | 'unknown';
+export interface MatchFactors { name: number; strength: FactorState; form: FactorState; company: FactorState }
+
+const PACK_RE = /[*x×]?\s*\d+\s*(?:tab|tablet|cap|capsule|amp|ampoule|vial|sachet|supp|حبة|حبه|حبات|قرص|اقراص|أقراص|كبسولة|كبسوله|كبسولات|شريط|اشرطة|أمبول|امبول|فيال|ظرف|اكياس|أكياس|تحاميل)[a-z؀-ۿ]*/gi;
+
+/** أرقام العيار في اسم الدواء: الغرامات تُحوَّل لملغ، ويُحذف عدد العبوة وحجم القنينة ومقام «/5 مل». */
+export function strengthNumbers(text: string): string[] {
+  let t = ` ${String(text || '').toLowerCase()} `;
+  // عدد العبوة: «* 20 tab» / «30 حبة» / «x10 amp» — ليس عياراً
+  t = t.replace(PACK_RE, ' ');
+  // المقام في الشرابات والمحاليل: «250mg/5ml» → 250 (نفس الدواء بعبوة 60 أو 100 مل)
+  t = t.replace(/\/\s*\d*(?:\.\d+)?\s*(?:ml|مل)/gi, ' ');
+  // الغرامات → ملغ (1g → 1000، 1.2 غم → 1200)
+  t = t.replace(/(\d+(?:\.\d+)?)\s*(?:gm|gram|g|غرام|غم|جم)(?![a-z])/gi, (_, n) => ` ${Math.round(parseFloat(n) * 1000)} `);
+  // حجم القنينة أو الأمبول بالمل (100 ml) ليس عياراً
+  t = t.replace(/\d+(?:\.\d+)?\s*(?:ml|مل)(?![a-z])/gi, ' ');
+  return Array.from(new Set(t.match(/\d+(?:\.\d+)?/g) ?? []));
+}
+
+/** مقارنة العيار: رقم مشترك = تطابق؛ ويُقبل مجموع التركيبة (500/125 = 625، 400/57 = 457). */
+export function compareStrength(a: string[], b: string[]): FactorState {
+  if (!a.length || !b.length) return 'unknown';
+  if (a.some(n => b.includes(n))) return 'match';
+  const sum = (xs: string[]) => xs.reduce((s, n) => s + parseFloat(n), 0);
+  const near = (x: number, ys: string[]) => ys.some(y => Math.abs(parseFloat(y) - x) <= 1);
+  if ((a.length > 1 && near(sum(a), b)) || (b.length > 1 && near(sum(b), a))) return 'match';
+  return 'mismatch';
+}
+
+// مجموعات الشكل الصيدلاني — الأقراص والكبسولات مجموعة واحدة (كثير من الأدوية يُباع بالشكلين)
+const FORM_GROUPS: Array<[string, RegExp]> = [
+  ['liquid', /\b(syrup|syp|susp|suspension|elixir|oral\s*sol(ution)?)\b|شراب|معلق|محلول فموي/i],
+  ['drops', /\b(drops?|gtt)\b|قطرة|قطره|نقط/i],
+  ['inj', /\b(amp|ampoules?|vials?|inj|injection)\b|أمبول|امبول|فيال|حقن/i],
+  ['topical', /\b(cream|oint(ment)?|gel|lotion)\b|كريم|مرهم|لوشن/i],
+  ['supp', /\b(supp|suppositor(y|ies))\b|تحاميل|تحميلة/i],
+  ['sachet', /\b(sachets?|granules?)\b|ساشيت|أكياس|اكياس/i],
+  ['spray', /\b(spray|inhaler|nebuli\w*)\b|بخاخ/i],
+  ['solid', /\b(tabs?|tablets?|caps?|capsules?|caplets?)\b|حبوب|حبة|اقراص|أقراص|قرص|كبسول/i],
+];
+export function dosageForm(text: string): string | null {
+  for (const [g, re] of FORM_GROUPS) if (re.test(text || '')) return g;
+  return null;
+}
+function compareForm(a: string | null, b: string | null): FactorState {
+  return !a || !b ? 'unknown' : a === b ? 'match' : 'mismatch';
+}
+
+/** تطبيع اسم الشركة: حذف اللواحق العامة (pharma/ltd/labs/شركة…) والرموز. */
+export function normalizeCompany(s: string): string[] {
+  return String(s || '').toLowerCase()
+    .replace(/[أإآ]/g, 'ا')
+    .replace(/\b(pharma(ceuticals?)?|pharm|co|company|ltd|limited|inc|labs?|laboratories|industries|ind|gmbh|plc|group|healthcare|medical)\b|شركة|شركه|للادوية|ادوية/g, ' ')
+    .replace(/[^a-z0-9؀-ۿ\s]/g, ' ')
+    .split(/\s+/).filter(w => w.length >= 2);
+}
+export function compareCompany(a: string, b: string): FactorState {
+  const wa = normalizeCompany(a), wb = normalizeCompany(b);
+  if (!wa.length || !wb.length) return 'unknown';
+  const ja = wa.join(''), jb = wb.join('');
+  if (ja === jb) return 'match';
+  if (Math.min(ja.length, jb.length) >= 3 && (ja.includes(jb) || jb.includes(ja))) return 'match';
+  // الكلمة الأولى المميّزة (≥3 أحرف) مشتركة: «acino m» ↔ «Acino Pharma»
+  if (wa[0].length >= 3 && wa[0] === wb[0]) return 'match';
+  return 'mismatch';
+}
+
+const stripDigits = (s: string) => s.replace(/\d+(?:\.\d+)?/g, ' ').replace(/\s+/g, ' ').trim();
+
+export interface InventoryIndexEntry { med: Medicine; keys: string[]; strength: string[]; form: string | null }
 export type InventoryIndex = InventoryIndexEntry[];
 export function buildInventoryIndex(inventory: Medicine[]): InventoryIndex {
   return inventory.map(med => ({
     med,
+    // مفاتيح الاسم بلا أرقام: العيار يُقارن وحده كاعتبار مستقل فلا يُحتسب مرتين
     keys: Array.from(new Set([
       normalizeName(med.nameAr),
       normalizeName(med.nameEn || ''),
       normalizeName(med.scientificName || ''),
       normalizeName(med.activeIngredient || ''),
-    ].filter(Boolean))),
+    ].map(stripDigits).filter(Boolean))),
+    strength: Array.from(new Set([...strengthNumbers(med.nameAr), ...strengthNumbers(med.nameEn || '')])),
+    form: dosageForm(`${med.nameEn || ''} ${med.nameAr} ${med.category || ''}`),
   }));
 }
 
@@ -95,17 +176,37 @@ function matchInputs(name: string, altName?: string): string[] {
 
 // أفضل N مرشّحين من المخزون لاسمٍ ما (مرتّبين تنازلياً بالدرجة) — تُستخدم للجولة الثانية
 // حيث يختار النموذج بينهم، وللمطابقة العادية (المرشّح الأول).
-export function topCandidates(name: string, index: InventoryIndex, altName?: string, n = 5): Array<{ medicine: Medicine; score: number }> {
-  const inputs = matchInputs(name, altName);
+export function topCandidates(name: string, index: InventoryIndex, altName?: string, n = 5, company?: string): Array<{ medicine: Medicine; score: number; factors: MatchFactors }> {
+  // مفاتيح الذاكرة تحمل الأرقام (العيار) أما مقارنة الاسم فبلا أرقام — العيار اعتبار مستقل
+  const inputs = matchInputs(name, altName).map(stripDigits).filter(Boolean);
   if (!inputs.length) return [];
-  const scored: Array<{ medicine: Medicine; score: number }> = [];
-  for (const { med, keys } of index) {
-    let best = 0;
+  // العيار والشكل من الاسم الخام (نص الفاتورة الأصلي) أولاً، ثم الاسم العربي إن لم يحملهما
+  const rawStrength = strengthNumbers(altName || '');
+  const lineStrength = rawStrength.length ? rawStrength : strengthNumbers(name);
+  const lineForm = dosageForm(altName || '') ?? dosageForm(name);
+  const scored: Array<{ medicine: Medicine; score: number; factors: MatchFactors }> = [];
+  for (const { med, keys, strength, form } of index) {
+    let nameScore = 0;
     for (const key of keys) for (const input of inputs) {
       const sc = scorePair(input, key);
-      if (sc > best) best = sc;
+      if (sc > nameScore) nameScore = sc;
     }
-    if (best > 0) scored.push({ medicine: med, score: best });
+    if (nameScore <= 0) continue;
+    const factors: MatchFactors = {
+      name: nameScore,
+      strength: compareStrength(lineStrength, strength),
+      form: compareForm(lineForm, form),
+      company: company ? compareCompany(company, med.manufacturer || '') : 'unknown',
+    };
+    // جرعة أو شكل مختلفان = مادة مختلفة قطعاً → لا تُعرض حتى كمرشّح
+    if (factors.strength === 'mismatch' || factors.form === 'mismatch') continue;
+    let score = nameScore;
+    if (factors.strength === 'match') score += 0.05;
+    if (factors.company === 'match') score += 0.1;
+    score = Math.min(1, score);
+    // شركة مختلفة: تبقى مرشّحة لكن تحت عتبة القبول التلقائي (0.8) فتُحسم ذكياً أو تُراجع
+    if (factors.company === 'mismatch') score = Math.min(score, 0.75);
+    scored.push({ medicine: med, score, factors });
   }
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, n);
@@ -115,7 +216,7 @@ export function topCandidates(name: string, index: InventoryIndex, altName?: str
 // نجرّب اسمين (الترجمة العربية + الاسم الإنجليزي الخام) لأن أغلب المخزون
 // محفوظ بالعربية بينما الفاتورة إنجليزية — فنطابق العربي بالعربي والإنجليزي بالإنجليزي معاً.
 // يقبل مخزوناً خاماً (يبني الفهرس داخلياً) أو فهرساً مبنياً مسبقاً.
-export function matchToInventory(name: string, inventory: Medicine[] | InventoryIndex, altName?: string, aliases?: InvoiceAliasMap): { medicine: Medicine | null; score: number; byAlias?: boolean } {
+export function matchToInventory(name: string, inventory: Medicine[] | InventoryIndex, altName?: string, aliases?: InvoiceAliasMap, company?: string): { medicine: Medicine | null; score: number; byAlias?: boolean; factors?: MatchFactors } {
   const index: InventoryIndex = (inventory.length && 'keys' in (inventory[0] as object))
     ? inventory as InventoryIndex
     : buildInventoryIndex(inventory as Medicine[]);
@@ -133,9 +234,11 @@ export function matchToInventory(name: string, inventory: Medicine[] | Inventory
     }
   }
 
-  const [best] = topCandidates(name, index, altName, 1);
+  const [best] = topCandidates(name, index, altName, 1, company);
   const bestScore = best?.score ?? 0;
-  return { medicine: bestScore >= 0.5 ? best.medicine : null, score: bestScore };
+  return bestScore >= 0.5
+    ? { medicine: best.medicine, score: bestScore, factors: best.factors }
+    : { medicine: null, score: bestScore };
 }
 
 // عدد الأمبولات/الفيالات في العلبة من نص الاسم (يُعدّ قطعاً ويُقسم السعر عليه).
@@ -330,6 +433,7 @@ export interface ExtractOptions {
 // gemini-2.0-flash ثم gemini-2.5-flash خلال أيام)، لذلك لا نعتمد على هذه القائمة وحدها:
 // عند فشل كل عناصرها نسأل Google مباشرةً عن النماذج المتاحة لهذا المفتاح بدل تخمين أسماء.
 const MODEL_CANDIDATES = [
+  'gemini-3.8-flash', // أحدث Flash مستقر (أيلول 2026) — أدق قراءة للجداول من 3.6
   'gemini-3.6-flash',
   'gemini-3.1-flash-lite',
   'gemini-2.5-flash',
@@ -558,7 +662,8 @@ export async function extractInvoice(
     // نطابق بالعربي والإنجليزي معاً — أغلب المخزون عربي والفاتورة إنجليزية، مع أولوية «ذاكرة
     // المطابقات» المُتعلَّمة سابقاً. نمرّر اسم Gemini العربي الخام (قبل الاستبدال باسم الفاتورة
     // عند غيابه) حتى تعتمد matchToInventory على الإنكليزي وحده متى لم يكن هناك اسم عربي فعلي.
-    const { medicine, score, byAlias } = matchToInventory((item.arabicName || '').trim(), index, rawName, aliases);
+    const company = (item.company || '').trim();
+    const { medicine, score, byAlias, factors } = matchToInventory((item.arabicName || '').trim(), index, rawName, aliases, company);
     // الأمبول/الفيال: عدد القطع من الاسم (يتجاوز تقدير Gemini). الأقراص تبقى بمنطق الأشرطة.
     const avCount = ampouleVialCount(rawName || arabicName);
     // ذاكرة الأشرطة أولاً: إن سبق للمستخدم تصحيح/تأكيد «شريط/علبة» لهذا الدواء،
@@ -574,7 +679,7 @@ export async function extractInvoice(
       id: `inv-${Date.now()}-${idx}`,
       rawName,
       arabicName,
-      company: (item.company || '').trim(),
+      company,
       quantityBoxes: Math.max(1, parseNumber(item.quantityBoxes) || 1),
       bonusBoxes: Math.max(0, parseNumber(item.bonusBoxes)),
       pricePerBox: parseNumber(item.pricePerBox),
@@ -588,6 +693,7 @@ export async function extractInvoice(
       matchedMedicine: medicine,
       matchScore: score,
       matchedByAlias: byAlias || false,
+      matchFactors: factors,
     };
   });
 
@@ -596,7 +702,7 @@ export async function extractInvoice(
   // استدعاء واحد لكل الأسطر معاً، وبالنموذج الذي نجح في الجولة الأولى (أو أقوى منه).
   if (disambiguate) {
     const fuzzy = items
-      .map((it, line) => ({ it, line, cands: it.matchedByAlias || it.matchScore >= 0.8 ? [] : topCandidates(it.arabicName, index, it.rawName, 5).filter(c => c.score >= 0.25) }))
+      .map((it, line) => ({ it, line, cands: it.matchedByAlias || it.matchScore >= 0.8 ? [] : topCandidates(it.arabicName, index, it.rawName, 5, it.company).filter(c => c.score >= 0.25) }))
       .filter(x => x.cands.length > 0);
     if (fuzzy.length) {
       onProgress?.(`جولة ثانية: حسم ${fuzzy.length} سطر ضبابي بين مرشّحي المخزون…`);
@@ -605,7 +711,9 @@ export async function extractInvoice(
         x.cands.map(c => `   • id=${c.medicine.id} | ${c.medicine.nameAr}${c.medicine.nameEn ? ` | ${c.medicine.nameEn}` : ''}${c.medicine.manufacturer ? ` | ${c.medicine.manufacturer}` : ''}`).join('\n')
       ).join('\n');
       const prompt = `أنت صيدلي خبير بالأسماء التجارية في العراق. لكل سطر من فاتورة شراء، اختر معرّف المادة (id) من مرشّحي المخزون
-التي هي نفس الدواء بنفس العيار/التركيز ونفس الشكل الصيدلاني (أقراص/شراب/أمبول…). العيار المختلف = مادة مختلفة → لا تختره.
+التي هي نفس الدواء بثلاثة اعتبارات معاً: (1) نفس الاسم التجاري، (2) نفس العيار/التركيز ونفس الشكل الصيدلاني
+(أقراص/شراب/أمبول…)، (3) نفس الشركة المصنّعة إن ذُكرت في الطرفين. العيار المختلف = مادة مختلفة → لا تختره.
+الشركة المختلفة مع تشابه الاسم = غالباً منتج مختلف → لا تختره إلا إن كان واضحاً أنها كتابة أخرى لاسم الشركة نفسها.
 إن لم يكن أيٌّ من المرشّحين هو نفس المادة أرجع chosenId = null. لا تخمّن.\n\n${lines}`;
       try {
         const { parsed: p2 } = await callStructured(
@@ -625,6 +733,7 @@ export async function extractInvoice(
             it.matchedMedicine = chosen.medicine;
             it.matchScore = 0.9;
             it.matchedByAI = true;
+            it.matchFactors = chosen.factors;
             if (memStrips && memStrips > 0) it.stripsPerBox = memStrips;
             const pps = it.stripsPerBox > 0 ? Math.round(it.pricePerBox / it.stripsPerBox) : it.pricePerBox;
             it.retailPrice = chosen.medicine.price || Math.round(pps * 1.25);
@@ -633,6 +742,7 @@ export async function extractInvoice(
             // النموذج رفض المرشّح الضبابي الذي اختارته المطابقة النصية → نتركه «جديداً» للمراجعة
             it.matchedMedicine = null;
             it.matchScore = 0;
+            it.matchFactors = undefined;
           }
         });
       } catch {
