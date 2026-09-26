@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Baby, Trash2 } from 'lucide-react';
 import type { Medicine } from '../../types';
 import type { POSItem } from '../dashboard/shared';
 import { fmtNum } from '../../utils/format';
+import { findSyrupDrug } from '../../utils/pediatricDoses';
 
 // =========================================================
 // CART ITEM ROW — مكوّن معزول بـ React.memo لصفوف السلة
@@ -22,9 +23,12 @@ interface CartItemRowProps {
   onAddToCalculator?: (amount: number) => void; // موجودة فقط والحاسبة مفتوحة — زر إجمالي السطر أعلى يسار الصف
   soldToday: number; // ما بيع من هذه المادة اليوم في سجل المبيعات (يُعرض على صفوف النافذة/بلا رصيد)
   onSetPrice: (medId: string, price: number | null) => void; // سعر مخصّص للسطر (null = العودة لسعر المخزون)
+  onOpenDose: (med: Medicine) => void; // زر الطفل: يفتح نافذة جرعات الشرابات مع اختيار هذه المادة
 }
 
-export const CartItemRow = React.memo(({ item, showVirtualPrice, showCost, onInc, onDec, onRemove, onAddShortage, onAddToCalculator, soldToday, onSetPrice }: CartItemRowProps) => {
+export const CartItemRow = React.memo(({ item, showVirtualPrice, showCost, onInc, onDec, onRemove, onAddShortage, onAddToCalculator, soldToday, onSetPrice, onOpenDose }: CartItemRowProps) => {
+  // شراب أطفال معروف؟ (مادة فعالة في جدول الجرعات + كلمة شراب/معلق في الاسم)
+  const isSyrup = useMemo(() => findSyrupDrug(item.medicine) !== null, [item.medicine]);
   // السعر المُحاسَب دائماً هو الجمهوري — «الرسمي» للعرض فقط ولا يدخل في المحاسبة.
   // وضع «السعر الرسمي» مفعّلاً: يُعرض الرسمي وحده (سعراً وإجمالياً) ويُخفى الجمهوري
   // و«الشراء» — شاشة تواجه الزبون، لا تكشف السعر الداخلي ولا الكلفة.
@@ -92,6 +96,14 @@ export const CartItemRow = React.memo(({ item, showVirtualPrice, showCost, onInc
         title="نقرة مزدوجة: إضافة إلى نواقص الأدوية">
         <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
           <span className={`font-semibold text-xs leading-snug line-clamp-2 ${item.zeroStock ? 'text-danger-100' : 'text-white'}`}>{item.medicine.nameAr}</span>
+          {isSyrup && (
+            <button type="button" onClick={e => { e.stopPropagation(); onOpenDose(item.medicine); }}
+              onDoubleClick={e => e.stopPropagation()}
+              title="جرعة هذا الشراب للطفل حسب الوزن/العمر"
+              className="w-6 h-6 rounded-md bg-primary-900/60 hover:bg-primary-700 text-primary-300 hover:text-white flex items-center justify-center cursor-pointer transition shrink-0">
+              <Baby className="w-3.5 h-3.5" />
+            </button>
+          )}
           {item.customPrice !== undefined && (
             <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-custom-900/60 text-custom-300 shrink-0" title={`سعر المخزون ${fmtNum(item.medicine.price)} د.ع`}>سعر مخصّص</span>
           )}

@@ -6,7 +6,7 @@ import {
   MapPin, UserCheck, ShieldCheck, Users, Sparkles, Plus, Check,
   TrendingUp, FileText, Ban, DollarSign, Calendar, RefreshCw, BarChart3, Pill, ClipboardList, ShieldAlert, Heart,
   Barcode, X, Volume2, VolumeX, Camera, Download, Upload, Bell, Pencil, ScanLine, ChevronDown,
-  Calculator as CalculatorIcon,
+  Calculator as CalculatorIcon, Baby,
   Snail, Trophy, Phone, User as UserIcon, CreditCard, AlertTriangle, LogOut, Sun, Moon
 } from 'lucide-react';
 import { Medicine, Order, Supplier, InvoiceImportDraft, SupplierMemory } from '../types';
@@ -59,6 +59,7 @@ import { MedicineCard } from './pos/MedicineCard';
 import { CartItemRow } from './pos/CartItemRow';
 import type { CalculatorHandle } from './pos/Calculator';
 import { DraggableCalculator } from './pos/Calculator';
+import { PediatricDoseModal } from './pos/PediatricDoseModal';
 
 export default function Dashboard() {
   const { isDark: isDarkTheme, toggle: toggleTheme } = useTheme();
@@ -241,6 +242,10 @@ export default function Dashboard() {
   const [showCalculator, setShowCalculator] = useState(() => { try { return localStorage.getItem('anwar_calc_open') === '1'; } catch { return false; } });
   useEffect(() => { try { localStorage.setItem('anwar_calc_open', showCalculator ? '1' : '0'); } catch {} }, [showCalculator]);
   const calculatorRef = useRef<CalculatorHandle>(null);
+  // نافذة جرعات شرابات الأطفال — med: الصنف الذي فُتحت منه (من زر الطفل في صف السلة) أو null من رأس السلة
+  const [doseModal, setDoseModal] = useState<{ open: boolean; med: Medicine | null }>({ open: false, med: null });
+  const openDoseModal = useCallback((med: Medicine) => setDoseModal({ open: true, med }), []);
+  const closeDoseModal = useCallback(() => setDoseModal(d => ({ ...d, open: false })), []);
   // اختصارات لوحة المفاتيح في نقطة البيع: مراجع لحقل الخصم ونموذج الدفع (F4 / F9)
   const posDiscountRef = useRef<HTMLSelectElement>(null);
   const posFormRef = useRef<HTMLFormElement>(null);
@@ -2726,6 +2731,7 @@ export default function Dashboard() {
       const t = e.target as HTMLElement | null;
       const inField = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable);
       const k = e.key;
+      if (doseModal.open) return; // نافذة الجرعات مفتوحة: لا اختصارات بيع (F9 مثلاً) خلفها
       // Alt: تعمل خارج الحقول أو داخل حقل البحث نفسه فقط، كي لا تكسر أي استخدام آخر
       // ضمن حقول أخرى (اسم العميل مثلاً). تُفرِّغ حقل البحث وتُركّز عليه لإدخال علاج جديد.
       if (k === 'Alt' && (!inField || t?.id === 'pos-search-input')) {
@@ -2758,7 +2764,7 @@ export default function Dashboard() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [activeTab, showCalculator, showReceiptModal, isScanning, currentCart]);
+  }, [activeTab, showCalculator, showReceiptModal, isScanning, currentCart, doseModal.open]);
 
   // يدفع قيمة لمرجع الحاسبة مباشرة — هوية ثابتة دائماً (لا تعتمد على حالة) فلا تُعيد تصيير صفوف السلة
   const addToCalculator = useCallback((amount: number) => { calculatorRef.current?.pushValue(amount); }, []);
@@ -4432,6 +4438,12 @@ export default function Dashboard() {
                             </span>
                           )}
                         </div>
+                        <button type="button" onClick={() => setDoseModal({ open: true, med: null })}
+                          title="حاسبة جرعات شرابات الأطفال حسب الوزن والعمر"
+                          className="mr-auto ml-3 text-primary-400 hover:text-primary-300 transition text-sm font-bold flex items-center gap-1 cursor-pointer">
+                          <Baby className="w-4 h-4" />
+                          <span>جرعات الأطفال</span>
+                        </button>
                         <button
                           onClick={() => setCurrentCart([])}
                           className="text-slate-500 hover:text-danger-400 transition text-sm font-bold flex items-center gap-1 cursor-pointer"
@@ -4458,6 +4470,7 @@ export default function Dashboard() {
                               item={item}
                               soldToday={soldTodayByMed.get(item.medicine.id) || 0}
                               onSetPrice={setCartPrice}
+                              onOpenDose={openDoseModal}
                               showVirtualPrice={showVirtualPriceInPOS}
                               showCost={currentRole !== 'cashier'}
                               onInc={incCartQty}
@@ -7156,6 +7169,7 @@ export default function Dashboard() {
       {(activeTab === 'pos' || activeTab === 'b2b') && (
         <DraggableCalculator ref={calculatorRef} show={showCalculator} onShowChange={setShowCalculator} />
       )}
+      {activeTab === 'pos' && <PediatricDoseModal open={doseModal.open} medicine={doseModal.med} onClose={closeDoseModal} />}
 
       {/* Invoice Import Modal — محمّل كسولاً، ويُعرض داخل تبويب طلبيات المذاخر حصراً:
           مغادرة التبويب تُخفيه دون مسح المسودة السحابية، ويعود عند الرجوع للتبويب.
