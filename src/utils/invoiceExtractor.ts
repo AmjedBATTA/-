@@ -510,38 +510,35 @@ async function callStructured(
   let lastError: Error | null = null;
   let lastWasUnavailable = false;
   let sawTransient = false;
+  // النماذج التي ردّت بضغط عابر (503) في الجولة الحالية — لا ننتظرها، بل ننتقل فوراً للنموذج
+  // التالي (لكل نموذج سعة خوادم مستقلة، وغالباً يكون أحدها متاحاً). ولا نعود إليها بانتظار
+  // متزايد إلا بعد أن يكون كل نموذج آخر قد جُرِّب وازدحم أيضاً.
+  let busy: string[] = [];
+  let round = 0;
 
   while (queue.length) {
     const model = queue.shift()!;
     if (tried.has(model)) continue;
     tried.add(model);
-    // على كل نموذج: محاولة أولى + إعادة محاولة بانتظار متزايد إن كان الخطأ عابراً (503/429)
-    for (let attempt = 0; attempt <= TRANSIENT_RETRY_DELAYS_MS.length; attempt++) {
-      try {
-        const response = await ai.models.generateContent({
-          model,
-          contents: [{ role: 'user', parts }],
-          config: { responseMimeType: 'application/json', responseSchema: schema, temperature: 0 },
-        });
-        const parsed = parseJsonLoose(response.text ?? '');
-        if (!validate(parsed)) throw new Error('EMPTY_RESULT');
-        rememberModel(model);
-        return { parsed, model };
-      } catch (e: unknown) {
-        const msg = getErrorMessage(e);
-        lastError = new Error(msg === 'EMPTY_RESULT' ? 'لم يتمكن الذكاء الاصطناعي من استخراج البيانات. تأكد من وضوح الصورة.' : msg);
-        if (isTransientError(msg)) {
-          sawTransient = true;
-          lastWasUnavailable = false;
-          const delay = TRANSIENT_RETRY_DELAYS_MS[attempt];
-          if (delay !== undefined) {
-            onProgress?.(`خادم Gemini مضغوط مؤقتاً — إعادة المحاولة ${attempt + 1}/${TRANSIENT_RETRY_DELAYS_MS.length} بعد ${Math.round(delay / 1000)} ث…`);
-            await sleep(delay);
-            continue;
-          }
-          // استُنفدت محاولات هذا النموذج → نجرّب النموذج التالي في الطابور
-          break;
-        }
+    try {
+      const response = await ai.models.generateContent({
+        model,
+        contents: [{ role: 'user', parts }],
+        config: { responseMimeType: 'application/json', responseSchema: schema, temperature: 0 },
+      });
+      const parsed = parseJsonLoose(response.text ?? '');
+      if (!validate(parsed)) throw new Error('EMPTY_RESULT');
+      rememberModel(model);
+      return { parsed, model };
+    } catch (e: unknown) {
+      const msg = getErrorMessage(e);
+      lastError = new Error(msg === 'EMPTY_RESULT' ? 'لم يتمكن الذكاء الاصطناعي من استخراج البيانات. تأكد من وضوح الصورة.' : msg);
+      if (isTransientError(msg)) {
+        sawTransient = true;
+        lastWasUnavailable = false;
+        busy.push(model);
+        if (queue.length) onProgress?.(`النموذج ${model} مزدحم — تجربة نموذج آخر فوراً…`);
+      } else {
         // غير متاح أو فشل تحليل/فارغ → نصعّد للنموذج التالي؛ خطأ مفتاح/حصة دائمة → لا فائدة من التكرار
         const unavailable = isModelUnavailable(msg);
         const escalate = unavailable || msg === 'EMPTY_RESULT' || /JSON|Unexpected token|استخراج البيانات/i.test(msg);
@@ -549,13 +546,21 @@ async function callStructured(
         lastWasUnavailable = unavailable;
         const suggested = unavailable ? suggestedModelFrom(msg) : null;
         if (suggested && !tried.has(suggested)) queue.unshift(suggested);
-        break;
       }
     }
     if (!queue.length && !askedGoogle) {
       askedGoogle = true;
       const available = await discoverModels(ai).catch(() => [] as string[]);
       queue.push(...available.filter(m => !tried.has(m)));
+    }
+    // جُرِّب كل نموذج ولم يبقَ إلا المزدحمة → انتظار متزايد ثم جولة جديدة عليها وحدها
+    if (!queue.length && busy.length && round < TRANSIENT_RETRY_DELAYS_MS.length) {
+      const delay = TRANSIENT_RETRY_DELAYS_MS[round++];
+      onProgress?.(`كل نماذج Gemini مزدحمة الآن — إعادة المحاولة ${round}/${TRANSIENT_RETRY_DELAYS_MS.length} بعد ${Math.round(delay / 1000)} ث…`);
+      await sleep(delay);
+      busy.forEach(m => tried.delete(m));
+      queue.push(...busy);
+      busy = [];
     }
   }
   // كل النماذج فشلت بضغط عابر → رسالة مطمئنة تدعو لإعادة المحاولة بعد قليل، لا الخطأ الخام

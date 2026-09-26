@@ -118,3 +118,36 @@ describe('تصعيد النماذج عند الإيقاف', () => {
     expect(list).not.toHaveBeenCalled();
   });
 });
+
+describe('الازدحام العابر (503)', () => {
+  const busy = () => Object.assign(new Error('503 UNAVAILABLE: The model is overloaded. Please try again later.'), { status: 503 });
+
+  it('ينتقل فوراً لنموذج آخر عند الازدحام بدل الانتظار على النموذج نفسه', async () => {
+    generateContent
+      .mockRejectedValueOnce(busy())
+      .mockResolvedValueOnce(okResponse);
+
+    const out = await extractInvoice(IMG, KEY, INVENTORY, { disambiguate: false });
+    expect(out.items).toHaveLength(1);
+    const used = modelsUsed();
+    expect(used).toHaveLength(2);
+    expect(used[0]).not.toBe(used[1]);
+  });
+
+  it('حين تزدحم كل النماذج ينتظر ثم يعيد المحاولة على المزدحمة وينجح', async () => {
+    let calls = 0;
+    generateContent.mockImplementation(() => (++calls <= 4 ? Promise.reject(busy()) : Promise.resolve(okResponse)));
+    list.mockResolvedValue([]);
+
+    const out = await extractInvoice(IMG, KEY, INVENTORY, { disambiguate: false });
+    expect(out.items).toHaveLength(1);
+    expect(list).toHaveBeenCalledTimes(1);
+  });
+
+  it('رسالة مطمئنة حين يبقى الازدحام بعد كل الجولات', async () => {
+    generateContent.mockRejectedValue(busy());
+    list.mockResolvedValue([]);
+
+    await expect(extractInvoice(IMG, KEY, INVENTORY, { disambiguate: false })).rejects.toThrow(/مضغوط مؤقتاً/);
+  }, 15000);
+});
