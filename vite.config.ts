@@ -59,6 +59,8 @@ export default defineConfig(() => {
             // مع مكتبتَي tslib وidb اللتين تعتمد عليهما Firebase — يمنع الحلقة الدائرية بين الحزم
             if (id.includes('firebase') || id.includes('/tslib/') || id.includes('/idb/')) return 'firebase-vendor';
             if (id.includes('/@google/genai')) return 'genai-vendor';
+            // مكتبة Claude مثل genai: تُحمَّل مع نافذة استيراد الفواتير فقط، لا عند فتح التطبيق
+            if (id.includes('/@anthropic-ai/')) return 'anthropic-vendor';
             if (id.includes('/motion') || id.includes('framer-motion')) return 'motion-vendor';
             if (id.includes('/lucide-react/')) return 'icons-vendor';
             if (id.includes('/react-dom/') || id.includes('/react/') || id.includes('/scheduler/')) return 'react-vendor';

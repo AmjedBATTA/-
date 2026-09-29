@@ -8,7 +8,7 @@ import type { Medicine, ExtractedInvoiceItem, ExtractedInvoice, InvoiceImportDra
 import { fmtNum } from '../utils/format';
 import { confirmDialog } from './ui/dialogs';
 import SupplierPicker from './SupplierPicker';
-import { extractInvoice, getStoredApiKey, saveApiKey, matchToInventory, normalizeName, getErrorMessage } from '../utils/invoiceExtractor';
+import { extractInvoice, getStoredApiKey, saveApiKey, getStoredClaudeKey, saveClaudeKey, matchToInventory, normalizeName, getErrorMessage } from '../utils/invoiceExtractor';
 import type { InvoiceAliasMap, StripsMemoryMap, InvoiceImage } from '../utils/invoiceExtractor';
 
 interface DraftItem {
@@ -164,10 +164,13 @@ function matchBadge(score: number, isMatched: boolean, byAlias?: boolean, byAI?:
 
 export default function InvoiceImportModal({ inventory, suppliers, supplierMemory, b2bOrders, expiryDates, lastEnteredExpiry, aliases, stripsMemory, onLearnAliases, onForgetAliases, onLearnStrips, initialDraft, onDraftChange, onClose, onConfirm }: Props) {
   const initialKey = getStoredApiKey();
+  const initialClaudeKey = getStoredClaudeKey();
   // مسودة سحابية معلَّقة (فاتورة رُوجعت ولم تُضَف لمسودة الشراء بعد) — تُستعاد مباشرة في خطوة المراجعة
-  const [step, setStep] = useState<Step>(initialDraft ? 'review' : (initialKey ? 'upload' : 'key'));
+  const [step, setStep] = useState<Step>(initialDraft ? 'review' : (initialKey || initialClaudeKey ? 'upload' : 'key'));
   const [apiKey, setApiKey] = useState(initialKey);
+  const [claudeKey, setClaudeKey] = useState(initialClaudeKey);
   const [showKey, setShowKey] = useState(false);
+  const hasAnyKey = !!(apiKey.trim() || claudeKey.trim());
   // صور متعددة لفاتورة واحدة (الفواتير الطويلة تحتاج صفحتين أو أكثر) — تُرسل معاً في طلب واحد
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
@@ -373,7 +376,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
 
   const handleAnalyze = async (filesOverride?: File[]) => {
     const files = filesOverride ?? imageFiles;
-    if (!files.length || !apiKey.trim()) return;
+    if (!files.length || !hasAnyKey) return;
     closeCamera();
     setStep('processing');
     setError('');
@@ -385,7 +388,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
       const chosenSupplier = suppliers.find(sp => sp.name === supplierName.trim());
       const mem = chosenSupplier ? supplierMemory[chosenSupplier.id] : null;
       const invoice = await extractInvoice(imgs, apiKey.trim(), inventory, {
-        aliases, stripsMemory, supplierMemory: mem, onProgress: setProgressMsg,
+        aliases, stripsMemory, supplierMemory: mem, onProgress: setProgressMsg, claudeKey: claudeKey.trim(),
       });
       setExtractedInvoice(invoice);
       // تهيئة كل صنف: تاريخ الانتهاء (YYYY-MM) — الأولوية: تاريخ الفاتورة الحالية (OCR) أولاً،
@@ -406,7 +409,8 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
       setStep('review');
     } catch (err: unknown) {
       const msg = getErrorMessage(err);
-      setError(msg.includes('API_KEY') || msg.includes('403') || msg.includes('401')
+      // أخطاء Claude تحمل اسمه ورسالتها العربية الخاصة — لا نحوّلها إلى «تحقق من مفتاح Gemini»
+      setError(!msg.includes('Claude') && (msg.includes('API_KEY') || msg.includes('403') || msg.includes('401'))
         ? 'مفتاح API غير صالح. تحقق من مفتاح Gemini.'
         : msg);
       setStep('upload');
@@ -666,7 +670,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
             <div>
               <h2 className="font-semibold text-sm text-slate-900">استيراد فاتورة من صورة</h2>
               <p className="text-sm text-slate-500 font-bold mt-0.5">
-                {step === 'key' && 'أدخل مفتاح Gemini API لتفعيل الميزة'}
+                {step === 'key' && 'أدخل مفتاح Gemini أو Claude لتفعيل الميزة'}
                 {batchTotal > 1 && step !== 'key' && <span className="text-special-700">فاتورة {batchPos} من {batchTotal} · </span>}
                 {step === 'upload' && 'ارفع صورة الفاتورة أو صوّرها مباشرة لاستخراج البيانات تلقائياً'}
                 {step === 'processing' && 'جارٍ تحليل الفاتورة بالذكاء الاصطناعي...'}
@@ -716,10 +720,11 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                   <div className="flex items-start gap-3">
                     <KeyRound className="w-5 h-5 text-warn-600 shrink-0 mt-0.5" />
                     <div>
-                      <p className="text-xs font-semibold text-warn-900">مفتاح Gemini API مطلوب</p>
+                      <p className="text-xs font-semibold text-warn-900">مفتاح Gemini أو Claude مطلوب</p>
                       <p className="text-sm text-warn-700 mt-1 leading-relaxed font-medium">
                         هذه الميزة تستخدم Google Gemini لقراءة الفواتير. أدخل مفتاح API مرة واحدة وسيُحفظ على جهازك.
                         احصل على مفتاح مجاني من Google AI Studio.
+                        مفتاح Claude اختياري: يُستخدم تلقائياً حين يتعذّر Gemini (ازدحام أو نفاد الحصة)، وهو مدفوع من console.anthropic.com.
                       </p>
                     </div>
                   </div>
@@ -741,9 +746,20 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                     </button>
                   </div>
                 </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-slate-600 block">مفتاح Claude API (اختياري — احتياطي)</label>
+                  <input
+                    type={showKey ? 'text' : 'password'}
+                    value={claudeKey}
+                    onChange={e => setClaudeKey(e.target.value)}
+                    placeholder="sk-ant-..."
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-xs tabular-nums text-slate-900 focus:outline-primary-500 text-left"
+                    dir="ltr"
+                  />
+                </div>
                 <button
-                  disabled={!apiKey.trim()}
-                  onClick={() => { saveApiKey(apiKey); setStep('upload'); }}
+                  disabled={!hasAnyKey}
+                  onClick={() => { saveApiKey(apiKey); saveClaudeKey(claudeKey); setStep('upload'); }}
                   className="w-full bg-primary-600 text-white rounded-xl py-3 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary-700 transition cursor-pointer"
                 >
                   حفظ المفتاح والمتابعة

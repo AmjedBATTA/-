@@ -1,4 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
+import Anthropic from '@anthropic-ai/sdk';
 import type { Medicine, ExtractedInvoiceItem, ExtractedInvoice, SupplierMemory } from '../types';
 // انتقلت normalizeName إلى ملف مستقل حتى تستوردها لوحة التحكم دون جرّ @google/genai
 // إلى الحزمة الرئيسية؛ يُعاد تصديرها هنا حفاظاً على الواجهة القديمة (الشاشة والاختبارات).
@@ -35,6 +36,13 @@ export function sanitizeApiKey(raw: string): string {
 export const getStoredApiKey = (): string =>
   localStorage.getItem(GEMINI_KEY_STORAGE) || '';
 export const saveApiKey = (key: string) => localStorage.setItem(GEMINI_KEY_STORAGE, sanitizeApiKey(key));
+
+// مفتاح Claude اختياري: مزوّد احتياطي يُستدعى حين يتعذّر Gemini (ازدحام/حصة/مفتاح)، أو أساسي
+// إن لم يُحفظ مفتاح Gemini أصلاً. يُحفظ محلياً مثل مفتاح Gemini تماماً.
+const CLAUDE_KEY_STORAGE = 'anwar_claude_api_key';
+export const getStoredClaudeKey = (): string =>
+  localStorage.getItem(CLAUDE_KEY_STORAGE) || '';
+export const saveClaudeKey = (key: string) => localStorage.setItem(CLAUDE_KEY_STORAGE, sanitizeApiKey(key));
 
 // درجة تطابق نصّين مُطبَّعين
 function scorePair(input: string, candidate: string): number {
@@ -427,6 +435,8 @@ export interface ExtractOptions {
   onProgress?: (msg: string) => void;
   // الجولة الثانية (اختيار النموذج بين مرشّحي المخزون للأسطر الضبابية) — مفعّلة افتراضياً
   disambiguate?: boolean;
+  // مفتاح Claude (اختياري): احتياطي حين يتعذّر Gemini، أو أساسي إن لم يوجد مفتاح Gemini
+  claudeKey?: string;
 }
 
 // نقطة بداية فقط، لا مصدر حقيقة. Google توقف نماذجها أسرع مما يُحدَّث الكود (توقف
@@ -575,6 +585,66 @@ async function callStructured(
   throw lastError ?? new Error('تعذّر الاتصال بنموذج Gemini.');
 }
 
+// Claude: Sonnet يقرأ الصورة (دقة الصور العالية)، وHaiku الأرخص يكفي لجولة الحسم النصية.
+const CLAUDE_EXTRACT_MODEL = 'claude-sonnet-5';
+const CLAUDE_DISAMBIGUATE_MODEL = 'claude-haiku-4-5';
+
+// مخطط Gemini (Type.OBJECT… مع nullable) → JSON Schema الذي تشترطه مخرجات Claude المنظَّمة:
+// كل كائن additionalProperties:false، وكل الحقول مطلوبة والاختيارية منها تقبل null — فيبقى
+// لنا مصدر واحد للمخطط بدل نسختين تنحرفان مع الوقت.
+type GeminiSchema = { type: string; nullable?: boolean; properties?: Record<string, GeminiSchema>; items?: GeminiSchema };
+export function toClaudeSchema(s: GeminiSchema): Record<string, unknown> {
+  const base: Record<string, unknown> = { type: String(s.type).toLowerCase() };
+  if (s.properties) {
+    base.properties = Object.fromEntries(Object.entries(s.properties).map(([k, v]) => [k, toClaudeSchema(v)]));
+    base.required = Object.keys(s.properties);
+    base.additionalProperties = false;
+  }
+  if (s.items) base.items = toClaudeSchema(s.items);
+  return s.nullable ? { anyOf: [base, { type: 'null' }] } : base;
+}
+
+async function callClaude(
+  client: Anthropic,
+  model: string,
+  images: InvoiceImage[],
+  text: string,
+  schema: object,
+  validate: (parsed: unknown) => boolean,
+): Promise<unknown> {
+  let response: Anthropic.Message;
+  try {
+    response = await client.messages.create({
+      model,
+      max_tokens: 16000,
+      thinking: { type: 'disabled' },
+      output_config: { format: { type: 'json_schema', schema: toClaudeSchema(schema as GeminiSchema) } },
+      messages: [{
+        role: 'user',
+        content: [
+          ...images.map(im => ({
+            type: 'image' as const,
+            source: { type: 'base64' as const, media_type: im.mimeType as 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif', data: im.base64 },
+          })),
+          { type: 'text' as const, text },
+        ],
+      }],
+    });
+  } catch (e: unknown) {
+    if (e instanceof Anthropic.AuthenticationError) {
+      throw new Error('مفتاح Claude غير صالح. انسخه كاملاً من console.anthropic.com ثم أعد حفظه.');
+    }
+    const msg = getErrorMessage(e);
+    if (/credit balance/i.test(msg)) throw new Error('رصيد Claude نفد. اشحن الرصيد من console.anthropic.com ثم أعد المحاولة.');
+    throw new Error(`Claude: ${msg}`);
+  }
+  if (response.stop_reason === 'max_tokens') throw new Error('Claude: الفاتورة أطول من حد الرد — قسّمها إلى صور أقل.');
+  const out = response.content.map(b => (b.type === 'text' ? b.text : '')).join('');
+  const parsed = parseJsonLoose(out);
+  if (!validate(parsed)) throw new Error('لم يتمكن الذكاء الاصطناعي من استخراج البيانات. تأكد من وضوح الصورة.');
+  return parsed;
+}
+
 // شبكة أمان للبونص بالسطر المكرَّر: إن أخرج النموذج سطراً بسعر صفر لمادة لها سطر مدفوع
 // في الفاتورة نفسها (نفس الاسم بعد التطبيع)، نُدمج كميته كبونص في السطر المدفوع ونحذفه —
 // حتى لو تجاهل النموذج قاعدة الدمج في التعليمات. السطر الصفري بلا توأم مدفوع يبقى كما هو.
@@ -625,22 +695,54 @@ export async function extractInvoice(
   // ننظّف المفتاح أولاً: نزيل المحارف الخفية ونستخرج توكن AIza… من أي نص محيط،
   // فيَقبل اللصق حتى مع علامات اتجاه أو مسافات غير مرئية تُلتقط عند النسخ على نظام عربي.
   const key = sanitizeApiKey(apiKey);
+  const claudeKey = sanitizeApiKey(opts.claudeKey || '');
   // لا نفترض بادئة معيّنة: مفاتيح Google قد تبدأ بـ AIza (قديمة) أو AQ. (أحدث). نرفض فقط
   // ما هو فارغ أو قصير جداً أو يحوي حروفاً غير إنجليزية (نص عربي مؤقت) — والباقي يتحقق منه الخادم.
-  if (!key || key.length < 20 || !/^[\x20-\x7E]+$/.test(key)) {
+  const usable = (k: string) => k.length >= 20 && /^[\x20-\x7E]+$/.test(k);
+  if (!usable(key) && !usable(claudeKey)) {
     throw new Error('مفتاح Gemini API غير صالح. الصق المفتاح كاملاً من Google AI Studio (استخدم أيقونة النسخ في القائمة، لا التحديد اليدوي).');
   }
 
-  const ai = new GoogleGenAI({ apiKey: key });
+  // Gemini أولاً (مجاني/أرخص) وClaude احتياطياً: إن فشل Gemini لأي سبب (ازدحام/حصة/مفتاح/صورة
+  // لم تُقرأ) نكمل بـ Claude بالصور والتعليمات نفسها. وبعد أول فشل تذهب الجولة الثانية إلى Claude
+  // مباشرةً بدل إعادة المرور على Gemini المتعثّر.
+  let ai: GoogleGenAI | null = usable(key) ? new GoogleGenAI({ apiKey: key }) : null;
+  const claude = usable(claudeKey) ? new Anthropic({ apiKey: claudeKey, dangerouslyAllowBrowser: true }) : null;
+  let geminiModel: string | undefined;
+  let geminiError = '';
+  const ask = async (
+    withImages: boolean, text: string, schema: object,
+    validate: (parsed: unknown) => boolean, claudeModel: string,
+  ): Promise<unknown> => {
+    if (ai) {
+      try {
+        const parts: Array<Record<string, unknown>> = [
+          ...(withImages ? imgs.map(im => ({ inlineData: { mimeType: im.mimeType, data: im.base64 } })) : []),
+          { text },
+        ];
+        const r = await callStructured(ai, parts, schema, validate, geminiModel, onProgress);
+        geminiModel = r.model;
+        return r.parsed;
+      } catch (e: unknown) {
+        if (!claude) throw e;
+        geminiError = getErrorMessage(e);
+        ai = null;
+        onProgress?.('تعذّر Gemini — المتابعة بـ Claude…');
+      }
+    }
+    try {
+      return await callClaude(claude!, claudeModel, withImages ? imgs : [], text, schema, validate);
+    } catch (e: unknown) {
+      if (!geminiError) throw e;
+      throw new Error(`تعذّر Gemini وClaude معاً. Gemini: ${geminiError} | ${getErrorMessage(e)}`);
+    }
+  };
+
   const index = buildInventoryIndex(inventory);
 
   onProgress?.(imgs.length > 1 ? `جارٍ قراءة ${imgs.length} صور للفاتورة…` : 'جارٍ قراءة الفاتورة…');
-  const parts: Array<Record<string, unknown>> = [
-    ...imgs.map(im => ({ inlineData: { mimeType: im.mimeType, data: im.base64 } })),
-    { text: EXTRACTION_PROMPT + supplierMemoryPrompt(supplierMemory) },
-  ];
-  const { parsed, model: usedModel } = await callStructured(
-    ai, parts, INVOICE_SCHEMA,
+  const parsed = await ask(
+    true, EXTRACTION_PROMPT + supplierMemoryPrompt(supplierMemory), INVOICE_SCHEMA,
     // شرط القبول: أسطر موجودة وسعر واحد على الأقل مقروء — كل الأسعار صفر/null يعني أن الصورة
     // لم تُقرأ (ضبابية/صغيرة) لا أن الفاتورة مجانية، فنصعّد لنموذج أقوى بدل عرض أصفار.
     (p) => {
@@ -649,8 +751,7 @@ export async function extractInvoice(
       if (!Array.isArray(its) || its.length === 0) return false;
       return (its as RawGeminiItem[]).some(it => parseNumber(it.pricePerBox) > 0);
     },
-    undefined,
-    onProgress,
+    CLAUDE_EXTRACT_MODEL,
   ).catch((e: unknown) => {
     const msg = getErrorMessage(e);
     if (/استخراج البيانات/.test(msg)) {
@@ -704,7 +805,7 @@ export async function extractInvoice(
 
   // --- الجولة الثانية: الأسطر الضبابية فقط (لا ذاكرة، ودرجة أقل من 0.8) تُعرض على النموذج
   // مع أفضل خمسة مرشّحين لكل سطر من المخزون ليختار الصحيح أو يرفضهم كلهم — نصّ فقط بلا صورة،
-  // استدعاء واحد لكل الأسطر معاً، وبالنموذج الذي نجح في الجولة الأولى (أو أقوى منه).
+  // استدعاء واحد لكل الأسطر معاً، وبنموذج Gemini الذي نجح في الجولة الأولى (أو Claude Haiku إن تعذّر Gemini).
   if (disambiguate) {
     const fuzzy = items
       .map((it, line) => ({ it, line, cands: it.matchedByAlias || it.matchScore >= 0.8 ? [] : topCandidates(it.arabicName, index, it.rawName, 5, it.company).filter(c => c.score >= 0.25) }))
@@ -721,11 +822,10 @@ export async function extractInvoice(
 الشركة المختلفة مع تشابه الاسم = غالباً منتج مختلف → لا تختره إلا إن كان واضحاً أنها كتابة أخرى لاسم الشركة نفسها.
 إن لم يكن أيٌّ من المرشّحين هو نفس المادة أرجع chosenId = null. لا تخمّن.\n\n${lines}`;
       try {
-        const { parsed: p2 } = await callStructured(
-          ai, [{ text: prompt }], DISAMBIGUATION_SCHEMA,
+        const p2 = await ask(
+          false, prompt, DISAMBIGUATION_SCHEMA,
           (p) => !!p && Array.isArray((p as { decisions?: unknown }).decisions),
-          usedModel,
-          onProgress,
+          CLAUDE_DISAMBIGUATE_MODEL,
         );
         const decisions = (p2 as { decisions: Array<{ line: number; chosenId?: string | null }> }).decisions;
         decisions.forEach(d => {
