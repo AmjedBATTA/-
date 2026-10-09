@@ -7,6 +7,8 @@ import {
 import type { Medicine, Order } from '../../types';
 import { fmtNum, fmtDate } from '../../utils/format';
 import { escapeHtml, MOVEMENT_DROPDOWN_LIMIT, EXPIRY_LIST_LIMIT } from '../dashboard/shared';
+import type { SaleRecord, SalesReturn } from '../dashboard/shared';
+import TopSellersPanel from '../dashboard/TopSellersPanel';
 import { InventorySearchBar, type POSSearchHandle } from '../pos/SearchBars';
 import { todayLocalISO } from '../../utils/finance';
 
@@ -19,6 +21,8 @@ interface InventoryScreenProps {
   expiryDates: Record<string, string>;
   currentRole: 'admin' | 'pharmacist' | 'cashier';
   b2bOrders: Order[];
+  salesLedger: SaleRecord[];
+  salesReturns: SalesReturn[];
   setActiveTab: (tab: ActiveTab) => void;
   addToPurchaseDraft: (med: Medicine, overrideQty?: number) => void;
   startScanning: (target: 'pos' | 'inventory' | 'add-drug' | 'purchase-order' | 'movement' | 'purchase-new-product') => void | Promise<void>;
@@ -137,7 +141,7 @@ interface InventoryScreenProps {
 
 export default function InventoryScreen(props: InventoryScreenProps) {
   const {
-    inventory, filteredInventory, expiryDates, currentRole, b2bOrders, setActiveTab, addToPurchaseDraft, startScanning, setDeleteMedTarget,
+    inventory, filteredInventory, expiryDates, currentRole, b2bOrders, salesLedger, salesReturns, setActiveTab, addToPurchaseDraft, startScanning, setDeleteMedTarget,
     bulkImportStatus, bulkImportProgress, bulkImportMsg, setShowBulkImportConfirm, exportInventoryToCSV, handleSeedTestData,
     searchInInventoryQuery, handleInvQueryChange, invSearchRef, setSearchInInventoryQuery, invRenderCap, setInvRenderCap,
     showNearExpiry30, setShowNearExpiry30, showExpiryHorizon, setShowExpiryHorizon, selectedExpiryMonth, setSelectedExpiryMonth,
@@ -463,6 +467,11 @@ export default function InventoryScreen(props: InventoryScreenProps) {
                         </div>
                       )}
                     </div>
+
+                    <TopSellersPanel
+                      inventory={inventory} salesLedger={salesLedger} salesReturns={salesReturns}
+                      addToPurchaseDraft={addToPurchaseDraft}
+                    />
 
                     {/* Expandable Box: Add drug Form */}
                     {isAddingDrug && (

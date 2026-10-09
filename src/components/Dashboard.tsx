@@ -4905,7 +4905,8 @@ export default function Dashboard() {
               {activeTab === 'inventory' && (
                 <InventoryScreen
                   inventory={inventory} filteredInventory={filteredInventory} expiryDates={expiryDates} currentRole={currentRole}
-                  b2bOrders={b2bOrders} setActiveTab={setActiveTab} addToPurchaseDraft={addToPurchaseDraft} startScanning={startScanning}
+                  b2bOrders={b2bOrders} salesLedger={salesLedger} salesReturns={salesReturns}
+                  setActiveTab={setActiveTab} addToPurchaseDraft={addToPurchaseDraft} startScanning={startScanning}
                   setDeleteMedTarget={setDeleteMedTarget}
                   bulkImportStatus={bulkImportStatus} bulkImportProgress={bulkImportProgress} bulkImportMsg={bulkImportMsg}
                   setShowBulkImportConfirm={setShowBulkImportConfirm} exportInventoryToCSV={exportInventoryToCSV} handleSeedTestData={handleSeedTestData}
