@@ -205,6 +205,11 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
 
+  // الخروج من قائمة المطابقة يُفقد مراجعة المستخدم — يسأل أولاً إن كانت هناك مواد مستخرجة
+  const requestClose = () => {
+    if (items.length === 0 || window.confirm('هل تريد الخروج من قائمة المطابقة؟')) onClose();
+  };
+
   // --- ماسح الباركود بالكاميرا (مكتفٍ بذاته داخل النافذة، بنفس تقنية BarcodeDetector) ---
   const [scanningItemId, setScanningItemId] = useState<string | null>(null);
   const [scanStream, setScanStream] = useState<MediaStream | null>(null);
@@ -633,7 +638,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 bg-black/20"
-        onClick={onClose}
+        onClick={requestClose}
       />
 
       {/* طبقة قارئ الباركود بالكاميرا (فوق كل شيء) */}
@@ -677,7 +682,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                 {step === 'review' && `${items.length} صنف مستخرج · ${matchedCount} مطابق · ${newCount} جديد`}
               </p>
             </div>
-            <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-xl transition cursor-pointer">
+            <button onClick={requestClose} className="p-2 hover:bg-slate-100 rounded-xl transition cursor-pointer">
               <X className="w-4 h-4 text-slate-500" />
             </button>
           </div>
@@ -822,8 +827,8 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
 
                 {/* الكاميرا المباشرة: معاينة حيّة داخل النافذة، كل التقاط يُضاف كصفحة للفاتورة الحالية */}
                 {cameraOpen && (
-                  <div className="bg-slate-900 rounded-2xl p-3 space-y-2">
-                    <video ref={cameraVideoRef} playsInline muted className="w-full max-h-72 rounded-xl object-contain bg-black" />
+                  <div className="fixed inset-0 z-[200] bg-black flex flex-col gap-2 p-3">
+                    <video ref={cameraVideoRef} playsInline muted className="w-full flex-1 min-h-0 object-contain bg-black" />
                     <div className="flex items-center justify-between gap-2">
                       <button type="button" onClick={closeCamera}
                         className="px-3 py-2 rounded-xl bg-slate-700 text-slate-200 text-sm font-semibold hover:bg-slate-600 transition cursor-pointer">
@@ -835,7 +840,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                         التقاط {imageFiles.length > 0 ? `صفحة ${imageFiles.length + 1}` : 'الفاتورة'}
                       </button>
                     </div>
-                    <p className="text-sm text-slate-500 font-bold text-center">ثبّت الهاتف فوق الفاتورة كاملةً بإضاءة جيدة، ثم التقط. صفحة ثانية؟ التقط مرة أخرى.</p>
+                    <p className="text-sm text-slate-400 font-bold text-center">ثبّت الهاتف فوق الفاتورة كاملةً بإضاءة جيدة، ثم التقط. صفحة ثانية؟ التقط مرة أخرى.</p>
                   </div>
                 )}
                 {cameraError && (
@@ -1072,7 +1077,8 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                     const zeroPriceLine = item.pricePerBox === 0 && item.quantityBoxes > 0;
                     const sellLoss = isSellingAtLoss(item);
                     const badge = matchBadge(item.matchScore, !!item.matchedMedicine, item.matchedByAlias, item.matchedByAI);
-                    const deviation = priceDeviation(pricePerStrip, item.matchedMedicine);
+                    // سعر الشراء المعروض = بعد البونص (مُذوَّب)؛ وهو نفسه المعتمد في المسودة
+                    const deviation = priceDeviation(bonus > 0 ? effectivePerStrip : pricePerStrip, item.matchedMedicine);
                     const deviates = deviation !== null && Math.abs(deviation) > PRICE_DEVIATION_LIMIT;
                     const isSearchingThis = searchOpen === item.id;
 
@@ -1256,11 +1262,11 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                             <label className={`text-sm font-bold block text-center ${deviates ? 'text-warn-700' : 'text-primary-700'}`}>س/شريط</label>
                             <div className={`w-full border rounded-lg px-2 py-1.5 text-xs font-semibold text-center ${deviates ? 'bg-warn-50 border-warn-300 text-warn-800 ring-2 ring-warn-200' : 'bg-primary-50 border-primary-100 text-primary-700'}`}
                               title={deviates ? `يختلف عن آخر شراء بنسبة ${Math.round(Math.abs(deviation!) * 100)}% — تحقّق من الرقم في الفاتورة` : undefined}>
-                              {fmtNum(pricePerStrip)}
+                              {fmtNum(bonus > 0 ? effectivePerStrip : pricePerStrip)}
                             </div>
                             {bonus > 0 && (
-                              <p className="text-sm font-semibold text-primary-700 text-center" title="التكلفة الفعلية للشريط بعد احتساب البونص المجاني">
-                                فعلي {fmtNum(effectivePerStrip)}
+                              <p className="text-xs font-semibold text-primary-700 text-center" title={`السعر الأصلي للشريط ${fmtNum(pricePerStrip)} — خُفّض باحتساب البونص المجاني`}>
+                                سعر مذوّب
                               </p>
                             )}
                             {/* التكلفة السابقة المسجَّلة في المخزن — رقم مجرَّد بالأحمر مباشرة تحت س/شريط، بلا تسمية ولا صندوق */}

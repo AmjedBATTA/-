@@ -288,6 +288,7 @@ const EXTRACTION_PROMPT = `أنت نظام استخراج بيانات دقيق 
       "quantityBoxes": 10,
       "bonusBoxes": 1,
       "pricePerBox": 5000,
+      "lineValue": 50000,
       "stripsPerBox": 2,
       "unitType": "strip",
       "batchNo": "PA123",
@@ -311,8 +312,10 @@ const EXTRACTION_PROMPT = `أنت نظام استخراج بيانات دقيق 
 • unitType: "strip" للأقراص والكبسولات | "unit" لكل الباقي (شراب/كريم/أمبول/فيال...)
 • البونص (العلب المجانية) يظهر بأحد شكلين — افصله دائماً عن الكمية المدفوعة:
   - عمود مستقل بعنوان «بونص» أو Bonus أو Free أو FOC أو صيغة «10+1»: quantityBoxes = المدفوع (10)، bonusBoxes = المجاني (1)
-  - سطر مكرَّر لنفس المادة بكمية ما وبسعر/مبلغ صفر: هذا السطر هو البونص — لا تُخرجه كسطر مستقل،
+  - سطر مكرَّر لنفس المادة (يلي سطرها مباشرة) بكمية ما وبسعر/مبلغ صفر، أو يحمل السعر نفسه لكن خلية
+    القيمة/المبلغ (Value) فيه فارغة: هذا السطر هو البونص — لا تُخرجه كسطر مستقل،
     بل أضف كميته إلى bonusBoxes في سطر المادة المدفوع نفسه
+• lineValue: محتوى خلية «القيمة/المبلغ/Value» للسطر كما هو مكتوب، أو null إن كانت فارغة (مهم لكشف البونص)
   - لا بونص → bonusBoxes = 0
 • uncertain: اجعله true إذا كان أي رقم (كمية/سعر) أو اسم في هذا السطر مقروءاً بصعوبة — خط يد، ضبابية،
   رقم محتمل خطأ، تداخل أسطر — وإلا false. كن صريحاً: علامة «غير واضح» أفضل من رقم خاطئ بثقة.
@@ -358,6 +361,7 @@ const INVOICE_SCHEMA = {
           quantityBoxes: { type: Type.STRING, nullable: true },
           bonusBoxes: { type: Type.STRING, nullable: true },
           pricePerBox: { type: Type.STRING, nullable: true },
+          lineValue: { type: Type.STRING, nullable: true },
           stripsPerBox: { type: Type.STRING, nullable: true },
           unitType: { type: Type.STRING, nullable: true },
           batchNo: { type: Type.STRING, nullable: true },
@@ -397,6 +401,7 @@ export interface RawGeminiItem {
   quantityBoxes?: number | string;
   bonusBoxes?: number | string;
   pricePerBox?: number | string;
+  lineValue?: number | string | null; // خلية القيمة/المبلغ للسطر — فارغة في سطر البونص حتى لو ظهر السعر
   stripsPerBox?: number | string;
   unitType?: string;
   batchNo?: string;
@@ -657,8 +662,22 @@ export function mergeBonusLines(items: RawGeminiItem[]): RawGeminiItem[] {
     const key = keyOf(it);
     const price = parseNumber(it.pricePerBox);
     const qty = parseNumber(it.quantityBoxes);
+    // بونص بسعر ظاهر: السطر التالي مباشرةً لنفس المادة وبالسعر نفسه لكن خلية القيمة فارغة
+    // (فواتير سيادة: «Gllox Wipes» 10 × 1,105 = 11,050 ثم سطر 2 × 1,105 بلا قيمة)
+    const last = out[out.length - 1];
+    if (key && price > 0 && qty > 0 && it.lineValue !== undefined && parseNumber(it.lineValue) === 0
+        && last && keyOf(last) === key && parseNumber(last.pricePerBox) === price && parseNumber(last.lineValue) > 0) {
+      last.bonusBoxes = parseNumber(last.bonusBoxes) + qty;
+      continue;
+    }
     if (key && price === 0 && qty > 0) {
-      const paid = paidByKey.get(key);
+      // تطابق تام، أو السطر المدفوع السابق مباشرةً باسم يحتوي الاسم الآخر («Panadol» ↔ «Panadol Extra») —
+      // بعض الموردين يكرّرون الاسم بصياغة مختلفة قليلاً أسفل سطر العلاج الأصلي
+      const prev = out[out.length - 1];
+      const prevKey = prev ? keyOf(prev) : '';
+      const looseSame = !!prev && parseNumber(prev.pricePerBox) > 0 && prevKey.length >= 4 && key.length >= 4
+        && (prevKey.startsWith(key) || key.startsWith(prevKey));
+      const paid = paidByKey.get(key) || (looseSame ? prev : undefined);
       if (paid) { paid.bonusBoxes = parseNumber(paid.bonusBoxes) + qty; continue; }
       // السطر المدفوع قد يأتي بعد الصفري — نؤجّل ثم نُلحقه إن ظهر
       pendingBonus.set(key, (pendingBonus.get(key) || 0) + qty);

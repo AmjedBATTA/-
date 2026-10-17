@@ -300,3 +300,21 @@ describe('المطابقة بثلاثة اعتبارات — الاسم + الج
     expect(compareCompany('', 'Ajanta')).toBe('unknown');
   });
 });
+
+describe('mergeBonusLines — بونص بسعر ظاهر وقيمة فارغة', () => {
+  it('يدمج السطر المكرَّر بالسعر نفسه وبلا قيمة كبونص (فواتير سيادة)', () => {
+    const out = mergeBonusLines([
+      { rawName: 'Gllox Ultra Soft Wet Wipes * 120', quantityBoxes: '10', pricePerBox: '1,105', lineValue: '11,050' },
+      { rawName: 'Gllox Ultra Soft Wet Wipes * 120', quantityBoxes: '2', pricePerBox: '1,105', lineValue: null },
+    ]);
+    expect(out).toHaveLength(1);
+    expect(parseNumber(out[0].bonusBoxes)).toBe(2);
+  });
+  it('لا يدمج سطراً مكرَّراً له قيمة', () => {
+    const out = mergeBonusLines([
+      { rawName: 'Aquax cream', quantityBoxes: '2', pricePerBox: '10,982', lineValue: '21,964' },
+      { rawName: 'Aquax cream', quantityBoxes: '1', pricePerBox: '10,982', lineValue: '10,982' },
+    ]);
+    expect(out).toHaveLength(2);
+  });
+});
