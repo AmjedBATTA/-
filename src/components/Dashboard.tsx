@@ -111,6 +111,19 @@ export default function Dashboard() {
   // الترتيب بالتاريخ (الأحدث أعلاه) عبر addedAt — لا أبجدياً.
   const [shortages, setShortages] = useState<Array<{ id: string; name: string; addedAt: string }>>([]);
   const [showShortages, setShowShortages] = useState(false);
+  // معرّف النقص الذي نُسخ اسمه للتو (لإظهار «تم النسخ» لحظياً)
+  const [copiedShortageId, setCopiedShortageId] = useState<string | null>(null);
+  const copyShortageName = (id: string, text: string) => {
+    const done = () => { setCopiedShortageId(id); setTimeout(() => setCopiedShortageId(c => (c === id ? null : c)), 1200); };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => {});
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); done(); } catch { /* تجاهل */ }
+      document.body.removeChild(ta);
+    }
+  };
 
   const [dismissedLowStock, setDismissedLowStock] = useState<Set<string>>(new Set());
 
@@ -4625,7 +4638,7 @@ export default function Dashboard() {
                                   {freshShortages.map(s => { const st = shortageStats(s); return (
                                     <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-slate-50 group">
                                       <div className="min-w-0">
-                                        <span dir="auto" className="text-sm font-semibold text-slate-700 truncate block" title={s.name}>{st.displayName}</span>
+                                        <span dir="auto" role="button" onClick={() => copyShortageName(s.id, st.displayName)} className="text-sm font-semibold text-slate-700 truncate block cursor-pointer" title="اضغط لنسخ الاسم">{copiedShortageId === s.id ? '✓ تم النسخ' : st.displayName}</span>
                                         {/* مبيع آخر شهرين + كمية مقترحة للطلب (تغطية أسبوعين) + الرصيد الحالي */}
                                         <span className="text-xs font-bold text-slate-500 tabular-nums block">
                                           مبيع شهرين: <span className={st.sold > 0 ? 'text-primary-700' : 'text-slate-500'}>{st.sold}</span>
@@ -4657,7 +4670,7 @@ export default function Dashboard() {
                                       {staleShortages.map(s => { const st = shortageStats(s); return (
                                         <div key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 hover:bg-danger-50 group">
                                           <div className="min-w-0">
-                                            <span dir="auto" className="text-sm font-semibold text-danger-900/70 truncate block" title={s.name}>{st.displayName}</span>
+                                            <span dir="auto" role="button" onClick={() => copyShortageName(s.id, st.displayName)} className="text-sm font-semibold text-danger-900/70 truncate block cursor-pointer" title="اضغط لنسخ الاسم">{copiedShortageId === s.id ? '✓ تم النسخ' : st.displayName}</span>
                                             <span className="text-xs font-bold text-danger-800/60 tabular-nums block">
                                               مبيع شهرين: {st.sold}
                                               {st.sold > 0 ? <> · مقترح للطلب: {st.suggested} شريط</> : ' · لم يُبَع خلال شهرين'}
