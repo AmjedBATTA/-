@@ -1,15 +1,20 @@
 import { Fragment, useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  X, Upload, Loader2, CheckCircle2, AlertCircle, Search,
-  ChevronDown, Trash2, FileImage, KeyRound, Eye, EyeOff, Barcode, Camera, Layers,
+  X, Upload, Loader2, CheckCircle2, AlertCircle,
+  ChevronLeft, ChevronRight, MoreVertical, FileImage, KeyRound, Eye, EyeOff, Camera, Layers,
 } from 'lucide-react';
 import type { Medicine, ExtractedInvoiceItem, ExtractedInvoice, InvoiceImportDraft, Supplier, SupplierMemory, Order } from '../types';
 import { fmtNum } from '../utils/format';
 import { confirmDialog } from './ui/dialogs';
 import SupplierPicker from './SupplierPicker';
-import { extractInvoice, getStoredApiKey, saveApiKey, getStoredClaudeKey, saveClaudeKey, matchToInventory, normalizeName, getErrorMessage } from '../utils/invoiceExtractor';
+import { extractInvoice, getStoredApiKey, saveApiKey, getStoredClaudeKey, saveClaudeKey, normalizeName, getErrorMessage } from '../utils/invoiceExtractor';
 import type { InvoiceAliasMap, StripsMemoryMap, InvoiceImage } from '../utils/invoiceExtractor';
+
+import { medDisplayName, cleanEnName } from '../utils/medName';
+import InvoiceItemPage from './invoice/InvoiceItemPage';
+import { MedicineSearchSheet, ExpirySheet } from './invoice/InvoiceSheets';
+import { itemNeedsAttention, itemFrameClass, cleanEnglishName } from './invoice/reviewHelpers';
 
 interface DraftItem {
   id: string;
@@ -118,14 +123,6 @@ async function downscaleImage(file: File): Promise<InvoiceImage> {
   return { base64: out.split(',')[1], mimeType: 'image/jpeg' };
 }
 
-// انحراف سعر الجملة المقروء عن آخر تكلفة محفوظة للمادة — يكشف أخطاء قراءة الأرقام (14'765 مقابل 1'4765)
-const PRICE_DEVIATION_LIMIT = 0.3;
-function priceDeviation(pricePerStrip: number, med: Medicine | null): number | null {
-  const ref = med ? (med.lastCostPrice || med.costPrice || 0) : 0;
-  if (!ref || !pricePerStrip) return null;
-  return (pricePerStrip - ref) / ref;
-}
-
 type Step = 'key' | 'upload' | 'processing' | 'review';
 
 const DEFAULT_EXPIRY_MONTH = '2028-12';
@@ -134,32 +131,6 @@ function toMonthInput(s?: string): string {
   if (!s) return '';
   const m = s.replace(/\//g, '-').match(/(\d{4})-(\d{1,2})/);
   return m ? `${m[1]}-${m[2].padStart(2, '0')}` : '';
-}
-
-// شارات الاعتبارات الثلاثة للمطابقة: ✓ متطابق · ✗ مختلف · ؟ غير مذكور في أحد الطرفين
-type FactorView = 'match' | 'mismatch' | 'unknown';
-function factorChips(f: NonNullable<ExtractedInvoiceItem['matchFactors']>): Array<{ label: string; state: FactorView; title: string }> {
-  const dose: FactorView = f.strength === 'mismatch' || f.form === 'mismatch' ? 'mismatch'
-    : f.strength === 'match' || f.form === 'match' ? 'match' : 'unknown';
-  return [
-    { label: 'الاسم', state: f.name >= 0.8 ? 'match' : 'unknown', title: f.name >= 0.8 ? 'الاسم متطابق' : 'الاسم متشابه جزئياً فقط' },
-    { label: 'الجرعة', state: dose, title: dose === 'match' ? 'العيار/الشكل متطابق' : 'العيار غير مذكور في أحد الطرفين' },
-    { label: 'الشركة', state: f.company, title: f.company === 'match' ? 'الشركة متطابقة' : f.company === 'mismatch' ? 'الشركة مختلفة — تأكد أنه نفس المنتج' : 'الشركة غير مسجّلة في أحد الطرفين' },
-  ];
-}
-const FACTOR_CLS: Record<FactorView, string> = {
-  match: 'bg-primary-50 text-primary-700 border-primary-200',
-  mismatch: 'bg-danger-50 text-danger-700 border-danger-300',
-  unknown: 'bg-slate-100 text-slate-500 border-slate-200',
-};
-const FACTOR_MARK: Record<FactorView, string> = { match: '✓', mismatch: '✗', unknown: '؟' };
-
-function matchBadge(score: number, isMatched: boolean, byAlias?: boolean, byAI?: boolean) {
-  if (!isMatched) return { label: 'جديد', cls: 'bg-warn-100 text-warn-700 border-warn-200' };
-  if (byAlias) return { label: 'محفوظ ✓', cls: 'bg-special-100 text-special-700 border-special-200' };
-  if (byAI) return { label: 'حُسم ذكياً', cls: 'bg-custom-100 text-custom-700 border-custom-200' };
-  if (score >= 0.8) return { label: 'تطابق', cls: 'bg-primary-100 text-primary-700 border-primary-200' };
-  return { label: 'تقريبي', cls: 'bg-info-100 text-info-700 border-info-200' };
 }
 
 export default function InvoiceImportModal({ inventory, suppliers, supplierMemory, b2bOrders, expiryDates, lastEnteredExpiry, aliases, stripsMemory, onLearnAliases, onForgetAliases, onLearnStrips, initialDraft, onDraftChange, onClose, onConfirm }: Props) {
@@ -175,7 +146,6 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [progressMsg, setProgressMsg] = useState('');
-  const [sortByConfidence, setSortByConfidence] = useState(false); // الأقل ثقة أولاً في المراجعة
   // طابور الفواتير: كل عنصر = صور فاتورة واحدة بانتظار التحليل بعد الحالية؛ batchDone = ما اعتُمد منها
   const [queue, setQueue] = useState<File[][]>([]);
   const [batchDone, setBatchDone] = useState(0);
@@ -198,10 +168,13 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
     })) : []
   );
   const [error, setError] = useState<string>('');
-  const [searchOpen, setSearchOpen] = useState<string | null>(null); // item id
+  // المراجعة صفحات أفقية (دواء في كل صفحة): pageIdx = الصفحة الظاهرة، sheet = الورقة السفلية المفتوحة
+  // (بحث ربط دواء أو منتقي الانتهاء) لصنف واحد كحد أقصى
+  const [pageIdx, setPageIdx] = useState(0);
+  const [sheet, setSheet] = useState<{ kind: 'search' | 'expiry'; itemId: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [editingStockId, setEditingStockId] = useState<string | null>(null); // المخزون الحالي قيد التعديل (بالنقر المزدوج)
-  const [expiryPickerId, setExpiryPickerId] = useState<string | null>(null); // منتقي شهر/سنة الانتهاء المفتوح (بطاقة واحدة كحد أقصى)
+  const [menuOpen, setMenuOpen] = useState(false); // قائمة ⋯ للإجراءات الجماعية النادرة
+  const pagerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
 
@@ -410,7 +383,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
         };
       });
       setItems(prepared);
-      setSortByConfidence(false);
+      setPageIdx(0);
       setStep('review');
     } catch (err: unknown) {
       const msg = getErrorMessage(err);
@@ -468,7 +441,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
       retailPrice: med.price || Math.round(pricePerStrip * 1.25),
       officialPrice: med.secondaryPrice || Math.round(pricePerStrip * 1.35),
     });
-    setSearchOpen(null);
+    setSheet(null);
     setSearchQuery('');
   };
 
@@ -478,17 +451,6 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
     // حتى لا تتكرر المطابقة الخاطئة في الفواتير القادمة
     if (it?.matchedMedicine) onForgetAliases(aliasKeysOf(it), it.matchedMedicine.id);
     updateItem(itemId, { matchedMedicine: null, matchScore: 0, matchedByAlias: false, matchFactors: undefined });
-  };
-
-  // في فواتير «ساوة» تُدمج الشركة بنهاية الاسم — نزيلها من الاسم الإنكليزي المخزَّن
-  // مع بقائها في حقلها المستقل، فيبقى اسم الدواء نظيفاً.
-  const cleanEnglishName = (raw: string, company: string) => {
-    let n = (raw || '').trim();
-    const c = (company || '').trim();
-    if (c && n.toLowerCase().endsWith(c.toLowerCase())) {
-      n = n.slice(0, n.length - c.length).replace(/[\s*·\-–—]+$/, '').trim();
-    }
-    return n;
   };
 
   const handleConfirm = (onlyMatched = false) => {
@@ -521,7 +483,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
           nameAr: it.arabicName || med?.nameAr || it.rawName,
           // الاسم الإنكليزي: تعديل المستخدم في بطاقة المراجعة (إن وُجد) هو المعتمد دائماً حتى لو كان
           // للمادة اسم محفوظ سابقاً؛ وإلا المحفوظ في المخزون، وإلا الاسم الخام من الفاتورة (بلا الشركة)
-          nameEn: (it.nameEnOverride ?? (med?.nameEn || cleanEnglishName(it.rawName, it.company))).trim(),
+          nameEn: cleanEnName(it.nameEnOverride ?? (med?.nameEn || cleanEnglishName(it.rawName, it.company))),
           // الشركة: المسجَّلة في المخزون إن وُجدت، وإلا المكتشفة من الفاتورة
           manufacturer: med?.manufacturer || it.company || '',
           // تصحيح المخزون: يُمرَّر فقط إن غيّره المستخدم فعلاً عن الرصيد الحالي للمادة المطابقة
@@ -560,7 +522,6 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
     }
   };
 
-  const matchedCount = items.filter(it => it.matchedMedicine).length;
   const newCount = items.filter(it => !it.matchedMedicine).length;
   const validCount = items.filter(it => it.quantityBoxes > 0 && it.pricePerBox > 0).length;
   const matchedValidCount = items.filter(it => it.matchedMedicine && it.quantityBoxes > 0 && it.pricePerBox > 0).length;
@@ -578,35 +539,73 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
         && (!supplierName.trim() || !o.supplierName || o.supplierName === supplierName.trim()))
     : undefined;
 
-  // انحرافات السعر: عدد الأسطر التي يختلف سعرها عن آخر شراء بأكثر من الحد
-  const deviationCount = items.filter(it => {
-    const pps = it.stripsPerBox > 0 ? Math.round(it.pricePerBox / it.stripsPerBox) : 0;
-    const d = priceDeviation(pps, it.matchedMedicine);
-    return d !== null && Math.abs(d) > PRICE_DEVIATION_LIMIT;
-  }).length;
-
-  // التكلفة الفعلية للشريط (بعد البونص) — نفس معادلة الاعتماد
-  const effectiveCostPerStrip = (it: ExtractedInvoiceItem) => {
-    const total = (it.quantityBoxes + (it.bonusBoxes || 0)) * it.stripsPerBox;
-    return total > 0 ? Math.round((it.pricePerBox * it.quantityBoxes) / total) : 0;
-  };
-  // بيع بخسارة: سعر البيع للجمهور (شريط) أقل من التكلفة الفعلية للشريط
-  const isSellingAtLoss = (it: ExtractedInvoiceItem) => {
-    const cost = effectiveCostPerStrip(it);
-    return cost > 0 && it.retailPrice > 0 && it.retailPrice < cost;
-  };
-  const lossCount = items.filter(isSellingAtLoss).length;
-  const uncertainCount = items.filter(it => it.uncertain).length;
-
-  // ترتيب المراجعة: الأقل ثقة أولاً (غير واضح ← جديد ← ضبابي ← حُسم ذكياً ← تطابق ← محفوظ) — الترتيب الأصلي عند الإيقاف
-  const confidenceRank = (it: ExtractedInvoiceItem) =>
-    it.uncertain ? -1 : !it.matchedMedicine ? 0 : it.matchedByAlias ? 4 : it.matchedByAI ? 2 : it.matchScore >= 0.8 ? 3 : 1;
-  const visibleItems = sortByConfidence ? [...items].sort((a, b) => confidenceRank(a) - confidenceRank(b)) : items;
+  // أصناف تحتاج انتباه المراجع (غير واضح، انحراف سعري، بيع بخسارة، سعر صفر) — تُعرض تفاصيلها في صفحة كل صنف
+  const attentionCount = items.filter(itemNeedsAttention).length;
   const removeUnmatched = async () => {
     if (!newCount) return;
     if (!(await confirmDialog({ title: `حذف ${newCount} صنف غير مطابق من هذه الفاتورة؟`, confirmText: 'حذف', danger: true }))) return;
     setItems(prev => prev.filter(it => it.matchedMedicine));
   };
+
+  // --- التنقل بين صفحات الأدوية: scroll-snap أفقي بمحور RTL (الصنف الأول عند اليمين، والتالي عن يساره) ---
+  const total = items.length;
+  const scrollToPage = useCallback((idx: number, behavior: ScrollBehavior = 'smooth') => {
+    const page = pagerRef.current?.children[idx] as HTMLElement | undefined;
+    page?.scrollIntoView({ inline: 'center', block: 'nearest', behavior });
+  }, []);
+  const goToPage = (idx: number) => {
+    const clamped = Math.max(0, Math.min(total - 1, idx));
+    setPageIdx(clamped);
+    scrollToPage(clamped);
+  };
+  // الصفحة الظاهرة = أقرب صفحة لمنتصف الحاوية (يعمل مع السحب باللمس والأسهم معاً، ومع حافة الجارة الطالّة)
+  const onPagerScroll = () => {
+    const el = pagerRef.current;
+    if (!el || el.children.length === 0) return;
+    const box = el.getBoundingClientRect();
+    const mid = box.left + box.width / 2;
+    // تقدير أولي من مسافة التمرير ÷ عرض الصفحة+الفاصل (يتحمّل قفزة عدّة صفحات دفعة واحدة)، ثم تدقيق بالجارتين
+    const n = el.children.length;
+    let est = pageIdx;
+    if (n > 1) {
+      const pitch = Math.abs((el.children[1] as HTMLElement).getBoundingClientRect().left - (el.children[0] as HTMLElement).getBoundingClientRect().left);
+      if (pitch > 0) est = Math.round(Math.abs(el.scrollLeft) / pitch);
+    }
+    est = Math.max(0, Math.min(n - 1, est));
+    let best = est;
+    let bestDist = Infinity;
+    const from = Math.max(0, est - 1);
+    const to = Math.min(n - 1, est + 1);
+    for (let i = from; i <= to; i++) {
+      const r = (el.children[i] as HTMLElement).getBoundingClientRect();
+      const d = Math.abs(r.left + r.width / 2 - mid);
+      if (d < bestDist) { bestDist = d; best = i; }
+    }
+    setPageIdx(prev => (prev === best ? prev : best));
+  };
+  // حذف صنف قد يُنقص عدد الصفحات: إن كنا على الأخيرة المحذوفة نعود للتي قبلها
+  useEffect(() => {
+    if (step !== 'review' || total === 0) return;
+    if (pageIdx > total - 1) {
+      setPageIdx(total - 1);
+      scrollToPage(total - 1, 'auto');
+    }
+  }, [step, total, pageIdx, scrollToPage]);
+  // لوحة المفاتيح على الحاسوب: ← التالي · → السابق (اتجاه القراءة العربية) — لا تعترض الكتابة في الحقول
+  useEffect(() => {
+    if (step !== 'review') return;
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+      if (sheet || scanningItemId) return;
+      if (e.key === 'ArrowLeft') goToPage(pageIdx + 1);
+      else if (e.key === 'ArrowRight') goToPage(pageIdx - 1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, pageIdx, total, sheet, scanningItemId]);
+  const sheetItem = sheet ? items.find(i => i.id === sheet.itemId) : undefined;
 
   // صاحب باركود موجود مسبقاً في المخزون — الباركود مطابقة مؤكَّدة 100%، أوثق من تطابق الاسم الضبابي
   const barcodeOwner = (barcode: string): Medicine | null => {
@@ -623,11 +622,6 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
   };
   // شبكة أمان: صنف بقي بلا مطابقة وباركوده مع ذلك مسجَّل لمادة أخرى (مثلاً بعد إلغاء ربطه يدوياً)
   const hasDuplicateBarcode = items.some(it => !it.matchedMedicine && !!barcodeOwner(it.barcode || ''));
-
-  const filteredInventory = inventory.filter(m => {
-    const q = searchQuery.toLowerCase();
-    return m.nameAr.toLowerCase().includes(q) || m.nameEn.toLowerCase().includes(q);
-  }).slice(0, 8);
 
   return (
     <div className="fixed inset-y-0 right-0 z-50 flex max-w-full">
@@ -669,52 +663,70 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
         className="relative bg-white w-full sm:w-[600px] lg:w-[760px] h-full flex flex-col shadow-2xl rounded-l-3xl"
         dir="rtl"
       >
-        {/* Header */}
-        <div className="p-5 border-b border-slate-100 shrink-0 space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="font-semibold text-sm text-slate-900">استيراد فاتورة من صورة</h2>
-              <p className="text-sm text-slate-500 font-bold mt-0.5">
-                {step === 'key' && 'أدخل مفتاح Gemini أو Claude لتفعيل الميزة'}
-                {batchTotal > 1 && step !== 'key' && <span className="text-special-700">فاتورة {batchPos} من {batchTotal} · </span>}
-                {step === 'upload' && 'ارفع صورة الفاتورة أو صوّرها مباشرة لاستخراج البيانات تلقائياً'}
-                {step === 'processing' && 'جارٍ تحليل الفاتورة بالذكاء الاصطناعي...'}
-                {step === 'review' && `${items.length} صنف مستخرج · ${matchedCount} مطابق · ${newCount} جديد`}
-              </p>
+        {/* Header — مضغوط أثناء المراجعة: العنوان + زر الإضافة + الإغلاق في سطر واحد */}
+        <div className={`border-b border-slate-100 shrink-0 ${step === 'review'
+          ? 'px-4 pb-1 pt-[calc(var(--safe-area-inset-top,env(safe-area-inset-top,0px))+.25rem)]'
+          : 'p-5 space-y-3'}`}>
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <h2 className="font-semibold text-sm text-slate-900 truncate">استيراد فاتورة من صورة</h2>
+              {(step !== 'review' || batchTotal > 1) && (
+                <p className="text-sm text-slate-500 font-bold mt-0.5">
+                  {step === 'key' && 'أدخل مفتاح Gemini أو Claude لتفعيل الميزة'}
+                  {batchTotal > 1 && step !== 'key' && <span className="text-special-700">فاتورة {batchPos} من {batchTotal}{step !== 'review' && ' · '}</span>}
+                  {step === 'upload' && 'ارفع صورة الفاتورة أو صوّرها مباشرة لاستخراج البيانات تلقائياً'}
+                  {step === 'processing' && 'جارٍ تحليل الفاتورة بالذكاء الاصطناعي...'}
+                </p>
+              )}
             </div>
-            <button onClick={requestClose} className="p-2 hover:bg-slate-100 rounded-xl transition cursor-pointer">
+            {step === 'review' && (
+              <button
+                disabled={validCount === 0 || hasDuplicateBarcode}
+                onClick={() => handleConfirm(false)}
+                title={queue.length > 0 ? `إضافة ${validCount} صنف ثم الفاتورة التالية (${queue.length} متبقية)` : `إضافة ${validCount} صنف إلى مسودة الشراء`}
+                className="shrink-0 h-10 px-4 rounded-full bg-primary-600 text-white text-sm font-bold flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed active:bg-primary-700 transition cursor-pointer"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                إضافة {validCount}
+              </button>
+            )}
+            <button onClick={requestClose} aria-label="إغلاق"
+              className={`shrink-0 grid place-items-center hover:bg-slate-100 rounded-xl transition cursor-pointer ${step === 'review' ? 'h-11 w-11 -me-2' : 'p-2'}`}>
               <X className="w-4 h-4 text-slate-500" />
             </button>
           </div>
 
-          {/* مؤشر الخطوات: 1 مفتاح · 2 صورة · 3 مراجعة (processing تصنيفها ضمن خطوة الصورة — انتقالية وليست قراراً من المستخدم) */}
-          <div className="flex items-center gap-1.5" aria-label="خطوات استيراد الفاتورة">
-            {(['key', 'upload', 'review'] as const).map((s, idx, arr) => {
-              const stageOf = (st: Step) => st === 'key' ? 0 : (st === 'upload' || st === 'processing') ? 1 : 2;
-              const current = stageOf(step);
-              const done = idx < current;
-              const active = idx === current;
-              return (
-                <Fragment key={s}>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                      done ? 'bg-primary-600 text-white' : active ? 'bg-primary-100 text-primary-700 ring-2 ring-primary-300' : 'bg-slate-100 text-slate-500'
-                    }`}>
-                      {done ? '✓' : idx + 1}
-                    </span>
-                    <span className={`text-sm font-semibold ${active ? 'text-primary-700' : done ? 'text-slate-600' : 'text-slate-500'}`}>
-                      {s === 'key' ? 'مفتاح' : s === 'upload' ? 'صورة' : 'مراجعة'}
-                    </span>
-                  </div>
-                  {idx < arr.length - 1 && <span className={`h-px flex-1 ${done ? 'bg-primary-300' : 'bg-slate-200'}`} />}
-                </Fragment>
-              );
-            })}
-          </div>
+          {/* مؤشر الخطوات: 1 مفتاح · 2 صورة · 3 مراجعة (processing تصنيفها ضمن خطوة الصورة — انتقالية وليست قراراً من المستخدم).
+              يُخفى أثناء المراجعة: العدّاد في الأسفل يغني عنه ومساحة الشاشة أثمن */}
+          {step !== 'review' && (
+            <div className="flex items-center gap-1.5" aria-label="خطوات استيراد الفاتورة">
+              {(['key', 'upload', 'review'] as const).map((s, idx, arr) => {
+                const stageOf = (st: Step) => st === 'key' ? 0 : (st === 'upload' || st === 'processing') ? 1 : 2;
+                const current = stageOf(step);
+                const done = idx < current;
+                const active = idx === current;
+                return (
+                  <Fragment key={s}>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                        done ? 'bg-primary-600 text-white' : active ? 'bg-primary-100 text-primary-700 ring-2 ring-primary-300' : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        {done ? '✓' : idx + 1}
+                      </span>
+                      <span className={`text-sm font-semibold ${active ? 'text-primary-700' : done ? 'text-slate-600' : 'text-slate-500'}`}>
+                        {s === 'key' ? 'مفتاح' : s === 'upload' ? 'صورة' : 'مراجعة'}
+                      </span>
+                    </div>
+                    {idx < arr.length - 1 && <span className={`h-px flex-1 ${done ? 'bg-primary-300' : 'bg-slate-200'}`} />}
+                  </Fragment>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto">
+        <div className={`flex-1 min-h-0 ${step === 'review' ? 'flex flex-col' : 'overflow-y-auto'}`}>
           <AnimatePresence mode="wait">
 
             {/* STEP: API Key */}
@@ -951,520 +963,126 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
               </motion.div>
             )}
 
-            {/* STEP: Review */}
+            {/* STEP: Review — صفحات أفقية، دواء في كل صفحة (التفاصيل في InvoiceItemPage) */}
             {step === 'review' && (
               <motion.div key="review" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                className="flex flex-col">
+                className="flex-1 min-h-0 flex flex-col">
 
-                {/* لافتة الملخّص — المورد يُختار يدوياً من الموردين المحفوظين (لا يُلتقط من الصورة)،
-                    ورقم الفاتورة والتاريخ بيانات ثانوية هادئة */}
-                <div className="mx-4 sm:mx-5 mt-4 mb-2 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 flex flex-wrap items-start gap-x-6 gap-y-1.5 text-right">
-                  <div className="flex-1 min-w-[200px]">
-                    <p className="text-sm text-slate-500 font-bold mb-1">المورد / المذخر</p>
-                    <SupplierPicker suppliers={suppliers} value={supplierName} onChange={setSupplierName} />
+                {/* الشريط العلوي: المورد يُختار يدوياً من الموردين المحفوظين (لا يُلتقط من الصورة)،
+                    ورقم الفاتورة والتاريخ بيانات ثانوية. التنبيهات عند وجودها فقط وبسطر واحد لكلٍّ منها. */}
+                <div className="shrink-0 bg-white border-b border-slate-100">
+                  <div className="px-3 py-1.5 flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <SupplierPicker
+                        suppliers={suppliers}
+                        value={supplierName}
+                        onChange={setSupplierName}
+                        selectClassName="w-full h-11 rounded-xl bg-slate-50 border border-slate-200 px-3 text-sm font-bold text-slate-800"
+                        inputClassName="w-full h-11 rounded-xl bg-slate-50 border border-primary-300 px-3 text-sm font-bold text-slate-800"
+                      />
+                    </div>
+                    {(extractedInvoice?.invoiceNo || extractedInvoice?.date) && (
+                      <div className="shrink-0 text-xs leading-4 tabular-nums text-right">
+                        {extractedInvoice?.invoiceNo && <p className="font-semibold text-slate-700">{extractedInvoice.invoiceNo}</p>}
+                        {extractedInvoice?.date && <p className="text-slate-500">{extractedInvoice.date}</p>}
+                      </div>
+                    )}
+                    {/* إجراءات جماعية نادرة — تظهر فقط حين توجد أصناف غير مطابقة */}
+                    {newCount > 0 && (
+                      <div className="relative shrink-0">
+                        <button type="button" onClick={() => setMenuOpen(v => !v)} aria-label="المزيد من الإجراءات"
+                          className="h-11 w-11 grid place-items-center rounded-xl border border-slate-200 bg-white active:bg-slate-50 transition cursor-pointer">
+                          <MoreVertical className="w-5 h-5 text-slate-600" />
+                        </button>
+                        {menuOpen && (
+                          <>
+                            <div className="fixed inset-0 z-20" onClick={() => setMenuOpen(false)} />
+                            <div className="absolute left-0 top-full mt-1 z-30 w-64 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden">
+                              {matchedValidCount > 0 && (
+                                <button type="button" disabled={hasDuplicateBarcode}
+                                  onClick={() => { setMenuOpen(false); handleConfirm(true); }}
+                                  className="w-full px-4 h-12 text-right text-sm font-semibold text-primary-800 active:bg-primary-50 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+                                  إضافة المطابق فقط ({matchedValidCount})
+                                </button>
+                              )}
+                              <button type="button"
+                                onClick={() => { setMenuOpen(false); void removeUnmatched(); }}
+                                className="w-full px-4 h-12 text-right text-sm font-semibold text-danger-700 active:bg-danger-50 border-t border-slate-100 transition cursor-pointer">
+                                حذف غير المطابق ({newCount})
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="px-3 pb-1.5 space-y-1 empty:hidden">
                     {/* تلميح المورد بلا تعبئة تلقائية: الاسم المقروء من الصورة يُقترح بنقرة، لا يُلتقط بصمت */}
                     {!supplierName.trim() && (extractedInvoice?.supplierName || '').trim() && (() => {
                       const ocr = (extractedInvoice?.supplierName || '').trim();
                       const sug = suggestSupplier(ocr, suppliers);
                       return sug ? (
-                        <button type="button" onClick={() => setSupplierName(sug.name)}
-                          className="mt-1.5 text-sm font-semibold text-special-700 bg-special-50 border border-special-200 rounded-lg px-2 py-1 hover:bg-special-100 transition cursor-pointer text-right">
-                          يبدو أن الفاتورة من «{sug.name}» — اختره بنقرة
-                        </button>
+                        <AlertLine tone="info" onClick={() => setSupplierName(sug.name)}
+                          text={`يبدو أن الفاتورة من «${sug.name}» — اختره بنقرة`} />
                       ) : (
-                        <button type="button" onClick={() => setSupplierName(ocr)}
-                          className="mt-1.5 text-sm font-semibold text-slate-600 bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 hover:bg-slate-200 transition cursor-pointer text-right">
-                          المورد المكتوب في الفاتورة: «{ocr}» — غير محفوظ، إضافته كمورد جديد؟
-                        </button>
+                        <AlertLine tone="info" onClick={() => setSupplierName(ocr)}
+                          text={`المورد المكتوب في الفاتورة: «${ocr}» — غير محفوظ، إضافته كمورد جديد؟`} />
                       );
                     })()}
+                    {duplicateOrder && (
+                      <AlertLine tone="danger"
+                        text={`فاتورة مكرّرة؟ الرقم «${invoiceNo}» سبق اعتماده بتاريخ ${duplicateOrder.date}${duplicateOrder.supplierName ? ` للمورد «${duplicateOrder.supplierName}»` : ''} بقيمة ${fmtNum(duplicateOrder.totalAmount)} د.ع.`} />
+                    )}
+                    {totalMismatch && (
+                      <AlertLine tone="danger"
+                        text={`مجموع الأسطر ${fmtNum(linesTotal)} ≠ إجمالي الفاتورة ${fmtNum(invoiceTotal)} د.ع (فرق ${totalDiff > 0 ? '+' : ''}${fmtNum(totalDiff)}) — قد يكون سطر ضائع أو رقم مقروء خطأً.`} />
+                    )}
+                    {/* تنبيه سلبي بلا تنقّل: تفاصيل كل صنف (غير واضح، انحراف سعر، بيع بخسارة، سعر صفر) في صفحته */}
+                    {attentionCount > 0 && (
+                      <AlertLine tone="warn" text={`${attentionCount} صنف يحتاج انتباهك — صفحاته بحدّ أحمر أثناء التمرير.`} />
+                    )}
                   </div>
-                  {extractedInvoice?.invoiceNo && (
-                    <div className="text-right">
-                      <p className="text-sm text-slate-500 font-bold">رقم الفاتورة</p>
-                      <p className="text-xs font-semibold text-slate-700 tabular-nums">{extractedInvoice.invoiceNo}</p>
-                    </div>
-                  )}
-                  {extractedInvoice?.date && (
-                    <div className="text-right">
-                      <p className="text-sm text-slate-500 font-bold">التاريخ</p>
-                      <p className="text-xs font-semibold text-slate-700 tabular-nums">{extractedInvoice.date}</p>
-                    </div>
-                  )}
                 </div>
 
-                {/* تنبيهات ما قبل الاعتماد: فاتورة مكرّرة / إجمالي لا يطابق / انحرافات سعر */}
-                {duplicateOrder && (
-                  <div className="mx-4 sm:mx-5 mb-2 bg-danger-50 border border-danger-300 rounded-2xl px-4 py-2.5 flex items-start gap-2 text-right">
-                    <AlertCircle className="w-4 h-4 text-danger-600 shrink-0 mt-0.5" />
-                    <p className="text-sm font-semibold text-danger-800 leading-snug">
-                      فاتورة مكرّرة؟ الرقم «{invoiceNo}» سبق اعتماده بتاريخ {duplicateOrder.date}
-                      {duplicateOrder.supplierName ? ` للمورد «${duplicateOrder.supplierName}»` : ''} بقيمة {fmtNum(duplicateOrder.totalAmount)} د.ع.
-                    </p>
-                  </div>
-                )}
-                {totalMismatch && (
-                  <div className="mx-4 sm:mx-5 mb-2 bg-danger-50 border border-danger-200 rounded-2xl px-4 py-2.5 flex items-start gap-2 text-right">
-                    <AlertCircle className="w-4 h-4 text-danger-600 shrink-0 mt-0.5" />
-                    <p className="text-sm font-semibold text-danger-700 leading-snug">
-                      مجموع الأسطر {fmtNum(linesTotal)} ≠ إجمالي الفاتورة {fmtNum(invoiceTotal)} د.ع
-                      (فرق {totalDiff > 0 ? '+' : ''}{fmtNum(totalDiff)}) — قد يكون سطر ضائع أو رقم مقروء خطأً.
-                    </p>
-                  </div>
-                )}
-                {lossCount > 0 && (
-                  <div className="mx-4 sm:mx-5 mb-2 bg-danger-50 border border-danger-300 rounded-2xl px-4 py-2.5 flex items-start gap-2 text-right">
-                    <AlertCircle className="w-4 h-4 text-danger-600 shrink-0 mt-0.5" />
-                    <p className="text-sm font-semibold text-danger-800 leading-snug">
-                      بيع بخسارة: {lossCount} سطر سعر بيعه للجمهور أقل من تكلفة الشريط الجديدة — راجع الأسعار المعلَّمة بالأحمر.
-                    </p>
-                  </div>
-                )}
-                {uncertainCount > 0 && (
-                  <div className="mx-4 sm:mx-5 mb-2 bg-danger-50 border border-danger-200 rounded-2xl px-4 py-2 flex items-start gap-2 text-right">
-                    <AlertCircle className="w-4 h-4 text-danger-600 shrink-0 mt-0.5" />
-                    <p className="text-sm font-semibold text-danger-700 leading-snug">
-                      {uncertainCount} سطر علّمه النموذج «غير واضح» (رقم أو اسم قُرئ بصعوبة) — قارنه بالصورة قبل الاعتماد.
-                    </p>
-                  </div>
-                )}
-                {deviationCount > 0 && (
-                  <div className="mx-4 sm:mx-5 mb-2 bg-warn-50 border border-warn-200 rounded-2xl px-4 py-2 flex items-start gap-2 text-right">
-                    <AlertCircle className="w-4 h-4 text-warn-600 shrink-0 mt-0.5" />
-                    <p className="text-sm font-semibold text-warn-800 leading-snug">
-                      {deviationCount} سطر سعره يختلف عن آخر شراء بأكثر من {Math.round(PRICE_DEVIATION_LIMIT * 100)}% — راجع الأرقام المعلَّمة بالبرتقالي.
-                    </p>
-                  </div>
-                )}
-
-                {/* صفّ الإحصاءات — أقراص مدمجة خفيفة بدل ثلاث بطاقات ضخمة + إجراءات جماعية */}
-                <div className="mx-4 sm:mx-5 mb-3 flex items-center gap-2 flex-wrap">
-                  <span className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 bg-primary-50 border border-primary-100 rounded-full px-3.5 py-1.5">
-                    <span className="text-xs font-semibold text-primary-700">{matchedCount}</span>
-                    <span className="text-sm text-primary-600 font-bold">مطابق</span>
-                  </span>
-                  <span className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 bg-warn-50 border border-warn-100 rounded-full px-3.5 py-1.5">
-                    <span className="text-xs font-semibold text-warn-700">{newCount}</span>
-                    <span className="text-sm text-warn-600 font-bold">جديد</span>
-                  </span>
-                  <span className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 bg-slate-50 border border-slate-200 rounded-full px-3.5 py-1.5">
-                    <span className="text-xs font-semibold text-slate-700">{items.length}</span>
-                    <span className="text-sm text-slate-500 font-bold">إجمالي</span>
-                  </span>
-                  <span className="flex-1" />
-                  <button type="button" onClick={() => setSortByConfidence(v => !v)}
-                    className={`text-sm font-semibold px-3 py-1.5 rounded-full border transition cursor-pointer ${sortByConfidence ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'}`}
-                    title="عرض الأصناف الأقل ثقة أولاً لتبدأ المراجعة بالمشكوك فيه">
-                    {sortByConfidence ? '✓ الأقل ثقة أولاً' : 'ترتيب: الأقل ثقة أولاً'}
-                  </button>
-                  {newCount > 0 && (
-                    <button type="button" onClick={removeUnmatched}
-                      className="text-sm font-semibold px-3 py-1.5 rounded-full border border-danger-200 bg-danger-50 text-danger-700 hover:bg-danger-100 transition cursor-pointer"
-                      title="حذف كل الأصناف غير المطابقة من هذه الفاتورة">
-                      حذف غير المطابق ({newCount})
-                    </button>
+                {/* الصفحات: السحب الأفقي يتبع اتجاه القراءة العربية (الأول عند اليمين).
+                    حافة الصفحة التالية تطلّ قليلاً فتدلّ على إمكان السحب. الصفحة الحالية وجارتاها فقط
+                    تُرسم كاملة؛ البقية هياكل خفيفة بالعرض نفسه فيبقى التمرير سلساً مع القوائم الكبيرة */}
+                <div
+                  ref={pagerRef}
+                  dir="rtl"
+                  role="group"
+                  onScroll={onPagerScroll}
+                  className="flex-1 min-h-0 flex gap-1 px-3 py-2 bg-slate-50 overflow-x-auto snap-x snap-mandatory overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                >
+                  {items.length === 0 && (
+                    <p className="w-full text-center text-sm font-bold text-slate-500 py-10">لا توجد أصناف في هذه الفاتورة.</p>
                   )}
-                </div>
-
-                {/* Items list */}
-                <div className="px-4 sm:px-5 pb-3 space-y-2.5">
-                  {visibleItems.map(item => {
-                    const pricePerStrip = item.stripsPerBox > 0 ? Math.round(item.pricePerBox / item.stripsPerBox) : 0;
-                    const bonus = item.bonusBoxes || 0;
-                    const totalStrips = (item.quantityBoxes + bonus) * item.stripsPerBox;
-                    // التكلفة الفعلية للشريط بعد البونص (المبلغ المدفوع ÷ كل الأشرطة) — تُعرض حين يوجد بونص
-                    const effectivePerStrip = totalStrips > 0 ? Math.round((item.pricePerBox * item.quantityBoxes) / totalStrips) : pricePerStrip;
-                    const zeroPriceLine = item.pricePerBox === 0 && item.quantityBoxes > 0;
-                    const sellLoss = isSellingAtLoss(item);
-                    const badge = matchBadge(item.matchScore, !!item.matchedMedicine, item.matchedByAlias, item.matchedByAI);
-                    // سعر الشراء المعروض = بعد البونص (مُذوَّب)؛ وهو نفسه المعتمد في المسودة
-                    const deviation = priceDeviation(bonus > 0 ? effectivePerStrip : pricePerStrip, item.matchedMedicine);
-                    const deviates = deviation !== null && Math.abs(deviation) > PRICE_DEVIATION_LIMIT;
-                    const isSearchingThis = searchOpen === item.id;
-
-                    // حدود البطاقة تعكس درجة الثقة بدل حد أسود ثقيل واحد لكل الأصناف:
-                    // أحمر = غير واضح أو انحراف سعري يحتاج مراجعة، أخضر = مطابقة مؤكَّدة، كهرماني = صنف جديد
-                    const needsAttention = item.uncertain || deviates;
-                    const cardBorderCls = needsAttention
-                      ? 'border-2 border-danger-400 ring-2 ring-danger-100'
-                      : item.matchedMedicine
-                        ? 'border border-primary-200'
-                        : 'border border-warn-200';
-
-                    return (
-                      <div key={item.id}
-                        className={`bg-slate-50 rounded-2xl p-3.5 space-y-2.5 text-right transition ${cardBorderCls}`}>
-
-                        {/* الصف الأول: الشارة، ثم الاسم العربي وبجانبه الشركة، والحذف في الطرف البعيد */}
-                        <div className="flex items-start gap-2">
-                          <span className={`shrink-0 mt-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-full border ${badge.cls}`}>
-                            {badge.label}
-                          </span>
-                          {item.matchedMedicine && !item.matchedByAlias && item.matchFactors && factorChips(item.matchFactors).map(c => (
-                            <span key={c.label} title={c.title}
-                              className={`shrink-0 mt-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-full border ${FACTOR_CLS[c.state]}`}>
-                              {c.label} {FACTOR_MARK[c.state]}
-                            </span>
-                          ))}
-                          {item.uncertain && (
-                            <span className="shrink-0 mt-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-full border bg-danger-100 text-danger-700 border-danger-300"
-                              title="النموذج قرأ رقماً أو اسماً في هذا السطر بصعوبة — قارنه بالصورة">
-                              غير واضح ⚠
-                            </span>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-baseline gap-2">
-                              <input
-                                value={item.arabicName}
-                                onChange={e => updateItem(item.id, { arabicName: e.target.value })}
-                                className="flex-1 min-w-0 text-sm font-semibold text-slate-900 bg-transparent border-b border-transparent focus:border-primary-400 focus:outline-none pb-0.5"
-                                placeholder="الاسم العربي"
-                              />
-                              {/* الشركة المصنّعة — بجانب الاسم مباشرة (تُملأ في المخزون عند المطابقة إن كان الحقل فارغاً) */}
-                              <input
-                                value={item.company}
-                                onChange={e => updateItem(item.id, { company: e.target.value })}
-                                className="shrink-0 w-24 min-w-0 text-sm font-bold text-slate-500 bg-transparent border-b border-slate-100 focus:border-primary-400 focus:outline-none pb-0.5"
-                                placeholder="الشركة"
-                              />
-                            </div>
-                            {item.rawName !== item.arabicName && (
-                              <p className="text-sm text-slate-500 tabular-nums truncate mt-0.5">{item.rawName}</p>
-                            )}
-                          </div>
-                          <button onClick={() => removeItem(item.id)}
-                            className="shrink-0 mt-0.5 p-1 rounded-lg text-slate-300 hover:text-danger-600 hover:bg-danger-50 transition cursor-pointer">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-
-                        {/* الاسم الإنكليزي — قابل للتعديل دائماً حتى بعد المطابقة؛ يبدأ من المحفوظ في
-                            المخزون إن وُجد (فلا يضيع) أو من اسم الفاتورة، وأي تعديل هنا هو ما يُعتمد
-                            في المخزون عند الاعتماد (انظر handleConfirm) بدل القديم المحفوظ صامتاً. */}
-                        <div className="flex items-center gap-2 pr-1">
-                          <span className="text-sm font-bold text-slate-500 shrink-0">الاسم الإنكليزي</span>
-                          <input
-                            dir="ltr"
-                            value={item.nameEnOverride ?? (item.matchedMedicine?.nameEn?.trim() || cleanEnglishName(item.rawName, item.company))}
-                            onChange={e => updateItem(item.id, { nameEnOverride: e.target.value })}
-                            className="flex-1 min-w-0 text-left text-sm tabular-nums font-bold text-slate-700 bg-transparent border-b border-slate-100 focus:border-primary-400 focus:outline-none pb-0.5"
-                            placeholder="English name"
-                          />
-                        </div>
-
-                        {/* Row 2: medicine match */}
-                        <div className="relative">
-                          {item.matchedMedicine ? (
-                            <div className="flex items-center gap-2 bg-primary-50 border border-primary-100 rounded-xl px-3 py-2">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-primary-600 shrink-0" />
-                              <span className="flex-1 text-sm font-semibold text-primary-800 truncate">
-                                {item.matchedMedicine.nameAr}
-                              </span>
-                              <button onClick={() => clearMatch(item.id)}
-                                className="text-slate-500 hover:text-danger-600 transition cursor-pointer">
-                                <X className="w-3 h-3" />
-                              </button>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => { setSearchOpen(isSearchingThis ? null : item.id); setSearchQuery(''); }}
-                              className="w-full flex items-center gap-2 bg-warn-50 border border-dashed border-warn-300 rounded-xl px-3 py-2 text-right cursor-pointer hover:border-warn-400 transition"
-                            >
-                              <Search className="w-3.5 h-3.5 text-warn-600 shrink-0" />
-                              <span className="flex-1 text-sm font-bold text-warn-700 text-right">
-                                ابحث لربطه بدواء موجود في المخزون
-                              </span>
-                              <ChevronDown className={`w-3 h-3 text-warn-600 transition ${isSearchingThis ? 'rotate-180' : ''}`} />
-                            </button>
-                          )}
-
-                          {/* Dropdown search */}
-                          <AnimatePresence>
-                            {isSearchingThis && (
-                              <motion.div
-                                initial={{ opacity: 0, y: -4 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -4 }}
-                                className="absolute top-full right-0 left-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-10 overflow-hidden"
-                              >
-                                <div className="p-2 border-b border-slate-100">
-                                  <input
-                                    autoFocus
-                                    type="text"
-                                    value={searchQuery}
-                                    onChange={e => setSearchQuery(e.target.value)}
-                                    placeholder="ابحث بالاسم..."
-                                    className="w-full text-sm font-bold bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 focus:outline-primary-400"
-                                  />
-                                </div>
-                                <div className="max-h-40 overflow-y-auto">
-                                  {(searchQuery ? filteredInventory : (() => {
-                                    const { medicine } = matchToInventory(item.arabicName || item.rawName, inventory, item.rawName, aliases);
-                                    const topMatches = inventory
-                                      .map(m => ({ m, score: [m.nameAr, m.nameEn, m.scientificName].map(n => {
-                                        const na = (n || '').toLowerCase(); const nb = (item.arabicName || item.rawName).toLowerCase();
-                                        return na.includes(nb.slice(0, 4)) || nb.includes(na.slice(0, 4)) ? 0.6 : 0;
-                                      }).reduce((a: number, b) => Math.max(a, b), 0) }))
-                                      .filter(x => x.score > 0 || x.m.id === medicine?.id)
-                                      .sort((a, b) => b.score - a.score)
-                                      .slice(0, 6)
-                                      .map(x => x.m);
-                                    return topMatches.length ? topMatches : inventory.slice(0, 6);
-                                  })()).map(med => (
-                                    <button key={med.id} onClick={() => selectMedicine(item.id, med)}
-                                      className="w-full px-3 py-2 hover:bg-primary-50 text-right transition cursor-pointer">
-                                      <p className="text-sm font-semibold text-slate-900">{med.nameAr}</p>
-                                      <p className="text-sm text-slate-500 tabular-nums">{med.nameEn}</p>
-                                    </button>
-                                  ))}
-                                </div>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-
-                        {/* قسم الأرقام: الكمية والتكلفة — فاصل شعري هادئ بدل الصناديق الملوّنة.
-                            الحقول البيضاء قابلة للتعديل، والقيمة المشتقّة (س/شريط) مظلَّلة */}
-                        {/* سطر بسعر صفر بلا توأم مدفوع: غالباً بونص لمادة أخرى أو عرض — لن يُعتمد بلا سعر */}
-                        {zeroPriceLine && (
-                          <p className="text-sm font-semibold text-warn-700 bg-warn-50 border border-warn-200 rounded-lg px-2 py-1">
-                            سطر بسعر صفر — إن كان بونصاً لمادة أخرى فاحذفه وأدخل كميته في حقل «بونص» لتلك المادة، وإلا أدخل سعره؛ بلا سعر لن يُضاف للمسودة.
-                          </p>
-                        )}
-                        <div className="border-t border-slate-100 pt-2.5 grid grid-cols-5 gap-2">
-                          <div className="space-y-1">
-                            <label className="text-sm font-bold text-slate-500 block text-center">علب</label>
-                            <input type="number" min={1} value={item.quantityBoxes}
-                              onChange={e => updateItem(item.id, { quantityBoxes: Math.max(1, Number(e.target.value)) })}
-                              className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-900 text-center focus:outline-primary-400" />
-                          </div>
-                          {/* البونص: علب مجانية تدخل المخزون وتخفّض التكلفة الفعلية دون أن تدخل في المبلغ المدفوع */}
-                          <div className="space-y-1">
-                            <label className={`text-sm font-bold block text-center ${bonus > 0 ? 'text-primary-700' : 'text-slate-500'}`}>بونص</label>
-                            <input type="number" min={0} value={bonus}
-                              onChange={e => updateItem(item.id, { bonusBoxes: Math.max(0, Number(e.target.value)) })}
-                              title="علب مجانية من المذخر — تُضاف للمخزون وتُخفّض تكلفة الشريط الفعلية"
-                              className={`w-full border rounded-lg px-2 py-1.5 text-xs font-semibold text-center focus:outline-primary-400 ${bonus > 0 ? 'bg-primary-50 border-primary-300 text-primary-800' : 'bg-white border-slate-200 text-slate-900'}`} />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-sm font-bold text-slate-500 block text-center">شريط/علبة</label>
-                            <input type="number" min={1} value={item.stripsPerBox}
-                              onChange={e => updateItem(item.id, { stripsPerBox: Math.max(1, Number(e.target.value)) })}
-                              className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-900 text-center focus:outline-primary-400" />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-sm font-bold text-slate-500 block text-center">سعر/علبة</label>
-                            <input type="number" min={0} value={item.pricePerBox}
-                              onChange={e => updateItem(item.id, { pricePerBox: Math.max(0, Number(e.target.value)) })}
-                              className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-900 text-center focus:outline-primary-400" />
-                          </div>
-                          <div className="space-y-1">
-                            <label className={`text-sm font-bold block text-center ${deviates ? 'text-warn-700' : 'text-primary-700'}`}>س/شريط</label>
-                            <div className={`w-full border rounded-lg px-2 py-1.5 text-xs font-semibold text-center ${deviates ? 'bg-warn-50 border-warn-300 text-warn-800 ring-2 ring-warn-200' : 'bg-primary-50 border-primary-100 text-primary-700'}`}
-                              title={deviates ? `يختلف عن آخر شراء بنسبة ${Math.round(Math.abs(deviation!) * 100)}% — تحقّق من الرقم في الفاتورة` : undefined}>
-                              {fmtNum(bonus > 0 ? effectivePerStrip : pricePerStrip)}
-                            </div>
-                            {bonus > 0 && (
-                              <p className="text-xs font-semibold text-primary-700 text-center" title={`السعر الأصلي للشريط ${fmtNum(pricePerStrip)} — خُفّض باحتساب البونص المجاني`}>
-                                سعر مذوّب
-                              </p>
-                            )}
-                            {/* التكلفة السابقة المسجَّلة في المخزن — رقم مجرَّد بالأحمر مباشرة تحت س/شريط، بلا تسمية ولا صندوق */}
-                            {item.matchedMedicine && (item.matchedMedicine.costPrice ?? item.matchedMedicine.lastCostPrice) && (
-                              <p className={`text-sm font-semibold text-center ${deviates ? 'text-warn-700' : 'text-danger-600'}`}>
-                                {fmtNum((item.matchedMedicine.costPrice ?? item.matchedMedicine.lastCostPrice)!)}
-                                {deviates && <span className="mr-1">({deviation! > 0 ? '+' : ''}{Math.round(deviation! * 100)}%)</span>}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* أسعار البيع + تاريخ الانتهاء + إجمالي الأشرطة — صفّ واحد على الشاشات الواسعة.
-                            لمسة لونية خفيفة تميّز سعر الجمهور (أزرق) عن الرسمي (بنفسجي) دون صراخ */}
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                          <div className="space-y-1">
-                            <label className={`text-sm font-bold block text-center ${sellLoss ? 'text-danger-700' : 'text-slate-500'}`}>سعر البيع للجمهور (شريط)</label>
-                            <input type="number" min={0} value={item.retailPrice}
-                              onChange={e => updateItem(item.id, { retailPrice: Math.max(0, Number(e.target.value)) })}
-                              className={`w-full border rounded-lg px-2 py-1.5 text-xs font-semibold text-center ${sellLoss ? 'bg-danger-50 border-danger-400 text-danger-800 ring-2 ring-danger-200 focus:outline-danger-500' : 'bg-info-50/50 border-info-100 text-info-700 focus:outline-info-400'}`} />
-                            {sellLoss && (
-                              <p className="text-sm font-semibold text-danger-700 text-center">بيع بخسارة — التكلفة {fmtNum(effectiveCostPerStrip(item))}</p>
-                            )}
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-sm font-bold text-slate-500 block text-center">سعر البيع الرسمي (شريط)</label>
-                            <input type="number" min={0} value={item.officialPrice}
-                              onChange={e => updateItem(item.id, { officialPrice: Math.max(0, Number(e.target.value)) })}
-                              className="w-full bg-special-50/50 border border-special-100 rounded-lg px-2 py-1.5 text-xs font-semibold text-special-700 text-center focus:outline-special-400" />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-sm font-bold text-slate-500 block text-center">تاريخ الانتهاء (ص)</label>
-                            {/* مستطيل واحد يعرض «شهر / سنة»؛ الضغط عليه يفتح منتقياً واحداً
-                                بعمودَين متجاورَين (الشهر 1-12 والسنة) — أرقام صريحة دائماً،
-                                لا أسماء أشهر مثل Sep/Oct التي يفرضها منتقي month على أندرويد */}
-                            {(() => {
-                              const curM = item.expiry ? Number(item.expiry.split('-')[1]) : 0;
-                              const curY = item.expiry ? Number(item.expiry.split('-')[0]) : 0;
-                              const baseYear = new Date().getFullYear();
-                              const years = Array.from({ length: 11 }, (_, i) => baseYear + i);
-                              if (curY && !years.includes(curY)) years.unshift(curY);
-                              const setExpiry = (m: number, y: number) =>
-                                updateItem(item.id, { expiry: `${y}-${String(m).padStart(2, '0')}` });
-                              const isOpen = expiryPickerId === item.id;
-                              return (
-                                <div className="relative">
-                                  <button
-                                    type="button"
-                                    onClick={() => setExpiryPickerId(isOpen ? null : item.id)}
-                                    className="w-full flex items-center justify-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-900 cursor-pointer focus:outline-primary-400"
-                                    dir="ltr"
-                                  >
-                                    <span>{curM || '—'}</span>
-                                    <span className="text-slate-300">/</span>
-                                    <span>{curY || '—'}</span>
-                                  </button>
-                                  {isOpen && (
-                                    <>
-                                      {/* طبقة إغلاق بالنقر خارج المنتقي — تُزال معه فوراً (بلا AnimatePresence) */}
-                                      <div className="fixed inset-0 z-10" onClick={() => setExpiryPickerId(null)} />
-                                      <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 z-20 bg-white border border-slate-200 rounded-xl shadow-lg p-2 flex gap-2" dir="ltr">
-                                        {/* عمود الشهر */}
-                                        <div className="max-h-44 overflow-y-auto flex flex-col gap-0.5">
-                                          {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-                                            <button key={m} type="button"
-                                              onClick={() => setExpiry(m, curY || baseYear)}
-                                              className={`w-11 py-1 rounded-md text-xs font-semibold text-center cursor-pointer transition ${
-                                                m === curM ? 'bg-primary-600 text-white' : 'text-slate-700 hover:bg-primary-50'
-                                              }`}>
-                                              {m}
-                                            </button>
-                                          ))}
-                                        </div>
-                                        <div className="w-px bg-slate-100 shrink-0" />
-                                        {/* عمود السنة — اختيار السنة يُغلق المنتقي (الشهر ثم السنة هو التسلسل الطبيعي) */}
-                                        <div className="max-h-44 overflow-y-auto flex flex-col gap-0.5">
-                                          {years.map(y => (
-                                            <button key={y} type="button"
-                                              onClick={() => { setExpiry(curM || 12, y); setExpiryPickerId(null); }}
-                                              className={`w-14 py-1 rounded-md text-xs font-semibold text-center cursor-pointer transition tabular-nums ${
-                                                y === curY ? 'bg-primary-600 text-white' : 'text-slate-700 hover:bg-primary-50'
-                                              }`}>
-                                              {y}
-                                            </button>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
-                              );
-                            })()}
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-sm font-bold text-slate-500 block text-center">إجمالي الأشرطة</label>
-                            <div className="w-full bg-slate-100/70 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-700 text-center tabular-nums">
-                              {totalStrips} شريط{bonus > 0 && <span className="text-primary-700 font-bold"> (منها {bonus * item.stripsPerBox} بونص)</span>}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* المخزون الحالي في المخزن (للمادة المطابقة فقط) — قابل للتعديل بالنقر المزدوج.
-                            التصحيح يُعتمد كرصيد فعلي في المخزن عند تأكيد الاستيراد (تصحيح جرد). */}
-                        {item.matchedMedicine && <div className="border-t border-slate-100 pt-2.5">{(() => {
-                          const currentStock = item.stockOverride ?? item.matchedMedicine.availableQuantity;
-                          const corrected = item.stockOverride !== undefined && item.stockOverride !== item.matchedMedicine.availableQuantity;
-                          return editingStockId === item.id ? (
-                            <div className="bg-white border border-slate-300 rounded-xl px-3 py-1.5 flex items-center justify-between gap-2">
-                              <span className="text-sm text-slate-600 font-bold shrink-0">صحّح المخزون الفعلي</span>
-                              <input
-                                type="number"
-                                min={0}
-                                autoFocus
-                                defaultValue={currentStock}
-                                onBlur={e => {
-                                  const v = Math.max(0, Math.round(Number(e.target.value)));
-                                  updateItem(item.id, { stockOverride: Number.isFinite(v) ? v : currentStock, soldQty: undefined });
-                                  setEditingStockId(null);
-                                }}
-                                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingStockId(null); }}
-                                className="w-24 bg-white border border-slate-300 rounded-lg px-2 py-1 text-xs font-semibold text-slate-900 text-center focus:outline-primary-400"
-                              />
-                            </div>
-                          ) : (
-                            <div
-                              onDoubleClick={() => setEditingStockId(item.id)}
-                              title="انقر مرتين لتصحيح المخزون الفعلي"
-                              className={`rounded-xl px-3 py-1.5 flex items-center justify-between cursor-pointer transition border ${corrected ? 'bg-warn-50 border-warn-200' : 'bg-slate-100/70 border-slate-200 hover:border-slate-300'}`}
-                            >
-                              <span className={`text-sm font-bold flex items-center gap-1.5 flex-wrap ${corrected ? 'text-warn-700' : 'text-slate-500'}`}>
-                                <span>المخزون الحالي في المخزن {item.soldQty ? '(مُباع بالكامل ✓)' : corrected ? '(مُصحَّح ✎)' : '— انقر مرتين للتعديل'}</span>
-                                {/* «مباع»: الرصيد الوهمي كله بيع فعلي لم يُسجَّل بالباركود — يُصفَّر ويُسجَّل فاتورة بيع عند الاعتماد */}
-                                {(item.matchedMedicine.availableQuantity > 0 || item.soldQty) && (
-                                  <button type="button"
-                                    onClick={e => {
-                                      e.stopPropagation();
-                                      if (item.soldQty) updateItem(item.id, { soldQty: undefined, stockOverride: undefined });
-                                      else updateItem(item.id, { soldQty: item.matchedMedicine!.availableQuantity, stockOverride: 0 });
-                                    }}
-                                    title={item.soldQty ? 'إلغاء اعتبار الرصيد مبيعاً' : 'اعتبار الرصيد الحالي كله مبيعاً (يُصفَّر المخزون وتُسجَّل فاتورة بيع عند الاعتماد)'}
-                                    className={`px-2 py-0.5 rounded-md text-xs font-bold border transition cursor-pointer ${item.soldQty
-                                      ? 'bg-danger-500 border-danger-500 text-white hover:bg-danger-600'
-                                      : 'bg-danger-50 border-danger-200 text-danger-600 hover:bg-danger-100'}`}>
-                                    {item.soldQty ? `مباع ${fmtNum(item.soldQty)} ✓` : 'مباع'}
-                                  </button>
-                                )}
-                              </span>
-                              <span className={`text-xs font-semibold tabular-nums ${corrected ? 'text-warn-800' : 'text-slate-700'}`}>
-                                {corrected && (
-                                  <span className="text-sm text-slate-500 line-through ml-1">{fmtNum(item.matchedMedicine.availableQuantity)}</span>
-                                )}
-                                {fmtNum(currentStock)} شريط
-                              </span>
-                            </div>
-                          );
-                        })()}</div>}
-
-                        {/* باركود المادة الجديدة (لغير المطابقة فقط — يُولَّد تلقائياً إن تُرك فارغاً) */}
-                        {!item.matchedMedicine && (() => {
-                          const dupMed = barcodeOwner(item.barcode || '');
-                          return (
-                          <div className="border-t border-slate-100 pt-2.5 space-y-1">
-                            <label className="text-sm font-bold text-slate-500 block">باركود المادة الجديدة (اختياري)</label>
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                value={item.barcode || ''}
-                                onChange={e => applyBarcode(item.id, e.target.value)}
-                                placeholder="امسح بالكاميرا أو اكتب الباركود — يُولَّد تلقائياً إن تُرك فارغاً"
-                                className={`flex-1 min-w-0 bg-white border rounded-lg px-3 py-1.5 text-sm tabular-nums font-bold text-slate-900 text-center focus:outline-primary-400 ${dupMed ? 'border-danger-400 bg-danger-50' : 'border-slate-200'}`}
-                                dir="ltr"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => startScan(item.id)}
-                                title="قراءة الباركود بالكاميرا"
-                                className="shrink-0 bg-primary-600 hover:bg-primary-700 text-white rounded-lg px-3 py-1.5 flex items-center gap-1.5 text-sm font-bold transition cursor-pointer"
-                              >
-                                <Barcode className="w-3.5 h-3.5" />
-                                <span className="hidden sm:inline">قارئ باركود</span>
-                              </button>
-                            </div>
-                            {/* تنبيه الباركود المكرّر — منع لا دمج */}
-                            {dupMed && (
-                              <div className="flex items-start gap-1.5 bg-danger-50 border border-danger-100 rounded-lg px-2.5 py-1.5">
-                                <AlertCircle className="w-3.5 h-3.5 text-danger-500 shrink-0 mt-px" />
-                                <p className="text-sm font-semibold text-danger-700 leading-snug">
-                                  أقول لك المادة موجودة! هذا الباركود مُسجَّل مسبقاً للمادة «{dupMed.nameAr}» — غيّره أو اتركه فارغاً ليُولَّد تلقائياً.
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                          );
-                        })()}
-                      </div>
-                    );
-                  })}
+                  {items.map((item, i) => (
+                    <div
+                      key={item.id}
+                      role="group"
+                      aria-label={`دواء ${i + 1} من ${total}`}
+                      className={`w-[calc(100%-.5rem)] shrink-0 snap-center snap-always overflow-y-auto overscroll-contain rounded-2xl bg-white ${itemFrameClass(item)}`}
+                    >
+                      {Math.abs(i - pageIdx) <= 1 ? (
+                        <InvoiceItemPage
+                          item={item}
+                          barcodeOwner={barcodeOwner}
+                          onUpdate={updateItem}
+                          onRemove={removeItem}
+                          onOpenSearch={id => { setSheet({ kind: 'search', itemId: id }); setSearchQuery(''); }}
+                          onOpenExpiry={id => setSheet({ kind: 'expiry', itemId: id })}
+                          onApplyBarcode={applyBarcode}
+                          onScanBarcode={startScan}
+                        />
+                      ) : (
+                        <p dir="ltr" className="p-4 text-lg font-bold text-slate-400 text-right truncate">
+                          {medDisplayName({ nameAr: item.arabicName, nameEn: item.matchedMedicine?.nameEn || item.rawName })}
+                        </p>
+                      )}
+                    </div>
+                  ))}
                 </div>
               </motion.div>
             )}
@@ -1472,45 +1090,81 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
           </AnimatePresence>
         </div>
 
-        {/* Footer */}
+        {/* Footer: تنقّل بين الأدوية — في الصفحة الأخيرة يتحوّل «التالي» إلى زر الإضافة */}
         {step === 'review' && (
-          <div className="p-4 border-t border-slate-100 shrink-0 bg-white rounded-b-3xl">
-            <div className="flex items-center gap-3">
-              {/* زر «إعادة» حُذف — علامة ✕ تغلق وتمسح المسودة، وإعادة الفتح تبدأ بصورة جديدة أصلاً */}
-              <button
-                disabled={validCount === 0 || hasDuplicateBarcode}
-                onClick={() => handleConfirm(false)}
-                className="flex-1 bg-primary-600 text-white rounded-xl py-3 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary-700 transition flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                {queue.length > 0
-                  ? `إضافة ${validCount} صنف ثم الفاتورة التالية (${queue.length} متبقية)`
-                  : `إضافة ${validCount} صنف إلى مسودة الشراء`}
+          <div className="shrink-0 bg-white border-t border-slate-200 rounded-b-3xl px-3 pt-2 pb-[max(.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]">
+            {hasDuplicateBarcode && (
+              <p className="text-sm text-danger-600 font-semibold text-center mb-2">
+                ⚠ يوجد باركود مكرّر لمادة موجودة — صحّحه أو اتركه فارغاً قبل المتابعة.
+              </p>
+            )}
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={() => goToPage(pageIdx - 1)} disabled={pageIdx <= 0}
+                className="h-12 flex-1 rounded-xl border border-slate-200 bg-white text-slate-700 text-sm font-bold flex items-center justify-center gap-1.5 active:bg-slate-100 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+                <ChevronRight className="w-5 h-5" />
+                السابق
               </button>
-              {/* اعتماد المطابق فقط: يترك الأصناف الجديدة/غير المطابقة خارج المسودة دون حذفها يدوياً */}
-              {newCount > 0 && matchedValidCount > 0 && (
-                <button
-                  disabled={hasDuplicateBarcode}
-                  onClick={() => handleConfirm(true)}
-                  className="flex-none px-4 py-3 border border-primary-300 bg-primary-50 text-primary-800 rounded-xl text-xs font-semibold hover:bg-primary-100 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                  title="إضافة الأصناف المطابقة فقط وتجاهل غير المطابقة"
-                >
-                  المطابق فقط ({matchedValidCount})
+              <span className="shrink-0 min-w-[4.5rem] text-center text-sm font-bold tabular-nums text-slate-600">
+                {total > 0 ? <>{pageIdx + 1} من {total}</> : '—'}
+              </span>
+              {pageIdx >= total - 1 && total > 0 ? (
+                <button type="button" onClick={() => handleConfirm(false)} disabled={validCount === 0 || hasDuplicateBarcode}
+                  title={queue.length > 0 ? `إضافة ${validCount} صنف ثم الفاتورة التالية (${queue.length} متبقية)` : `إضافة ${validCount} صنف إلى مسودة الشراء`}
+                  className="h-12 flex-1 rounded-xl bg-primary-600 text-white text-sm font-bold flex items-center justify-center gap-1.5 active:bg-primary-700 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+                  <CheckCircle2 className="w-5 h-5" />
+                  {queue.length > 0 ? `إضافة ${validCount} ثم التالية` : `إضافة ${validCount}`}
+                </button>
+              ) : (
+                <button type="button" onClick={() => goToPage(pageIdx + 1)} disabled={total === 0}
+                  className="h-12 flex-1 rounded-xl bg-primary-600 text-white text-sm font-bold flex items-center justify-center gap-1.5 active:bg-primary-700 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+                  التالي
+                  <ChevronLeft className="w-5 h-5" />
                 </button>
               )}
             </div>
-            {hasDuplicateBarcode ? (
-              <p className="text-sm text-danger-600 font-semibold text-center mt-2">
-                ⚠ يوجد باركود مكرّر لمادة موجودة — صحّحه أو اتركه فارغاً قبل المتابعة.
-              </p>
-            ) : newCount > 0 && (
-              <p className="text-sm text-warn-600 font-bold text-center mt-2">
-                {newCount} صنف جديد سيُضاف تلقائياً إلى المخزون عند اعتماد الشراء
-              </p>
-            )}
           </div>
         )}
+
+        {/* الورقة السفلية: ربط دواء من المخزون / منتقي الانتهاء — تُرسم فوق اللوحة كلها */}
+        <AnimatePresence>
+          {sheet?.kind === 'search' && sheetItem && (
+            <MedicineSearchSheet
+              key="search-sheet"
+              item={sheetItem}
+              inventory={inventory}
+              aliases={aliases}
+              query={searchQuery}
+              onQuery={setSearchQuery}
+              onPick={med => selectMedicine(sheetItem.id, med)}
+              onUnlink={sheetItem.matchedMedicine ? () => { clearMatch(sheetItem.id); setSheet(null); setSearchQuery(''); } : undefined}
+              onClose={() => { setSheet(null); setSearchQuery(''); }}
+            />
+          )}
+          {sheet?.kind === 'expiry' && sheetItem && (
+            <ExpirySheet
+              key="expiry-sheet"
+              expiry={sheetItem.expiry}
+              onChange={expiry => updateItem(sheetItem.id, { expiry })}
+              onClose={() => setSheet(null)}
+            />
+          )}
+        </AnimatePresence>
       </motion.div>
     </div>
+  );
+}
+
+// سطر تنبيه واحد مضغوط؛ النقر يفتح نصه كاملاً (أو ينفّذ إجراءه إن كان اقتراحاً)
+function AlertLine({ tone, text, onClick }: { tone: 'danger' | 'warn' | 'info'; text: string; onClick?: () => void }) {
+  const [open, setOpen] = useState(false);
+  const cls = tone === 'danger' ? 'bg-danger-50 border-danger-300 text-danger-800'
+    : tone === 'warn' ? 'bg-warn-50 border-warn-200 text-warn-800'
+    : 'bg-special-50 border-special-200 text-special-700';
+  return (
+    <button type="button" onClick={onClick ?? (() => setOpen(v => !v))}
+      className={`w-full min-h-8 px-3 py-1 rounded-lg border flex items-center gap-2 text-xs font-semibold text-right cursor-pointer ${cls}`}>
+      <AlertCircle className="w-4 h-4 shrink-0" />
+      <span className={`flex-1 min-w-0 ${open ? 'whitespace-normal' : 'truncate'}`}>{text}</span>
+    </button>
   );
 }
