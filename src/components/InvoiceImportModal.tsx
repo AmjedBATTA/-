@@ -694,14 +694,14 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                 disabled={validCount === 0 || hasDuplicateBarcode}
                 onClick={() => handleConfirm(false)}
                 title={queue.length > 0 ? `إضافة ${validCount} صنف ثم الفاتورة التالية (${queue.length} متبقية)` : `إضافة ${validCount} صنف إلى مسودة الشراء`}
-                className="shrink-0 h-10 px-4 rounded-full bg-primary-600 text-white text-sm font-bold flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed active:bg-primary-700 transition cursor-pointer"
+                className="shrink-0 h-9 px-3.5 rounded-full bg-primary-600 text-white text-sm font-bold flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed active:bg-primary-700 transition cursor-pointer"
               >
                 <CheckCircle2 className="w-4 h-4" />
                 إضافة {validCount}
               </button>
             )}
             <button onClick={requestClose} aria-label="إغلاق"
-              className={`shrink-0 grid place-items-center hover:bg-slate-100 rounded-xl transition cursor-pointer ${step === 'review' ? 'h-11 w-11 -me-2' : 'p-2'}`}>
+              className={`shrink-0 grid place-items-center hover:bg-slate-100 rounded-xl transition cursor-pointer ${step === 'review' ? 'h-9 w-9 -me-1.5' : 'p-2'}`}>
               <X className="w-4 h-4 text-slate-500" />
             </button>
           </div>
@@ -981,18 +981,18 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                 {/* الشريط العلوي: المورد يُختار يدوياً من الموردين المحفوظين (لا يُلتقط من الصورة)،
                     ورقم الفاتورة والتاريخ بيانات ثانوية. التنبيهات عند وجودها فقط وبسطر واحد لكلٍّ منها. */}
                 <div className="shrink-0 bg-white border-b border-slate-100">
-                  <div className="px-3 py-1.5 flex items-center gap-2">
+                  <div className="px-3 py-1 flex items-center gap-2">
                     <div className="flex-1 min-w-0">
                       <SupplierPicker
                         suppliers={suppliers}
                         value={supplierName}
                         onChange={setSupplierName}
-                        selectClassName="w-full h-11 rounded-xl bg-slate-50 border border-slate-200 px-3 text-sm font-bold text-slate-800"
-                        inputClassName="w-full h-11 rounded-xl bg-slate-50 border border-primary-300 px-3 text-sm font-bold text-slate-800"
+                        selectClassName="w-full h-9 rounded-lg bg-slate-50 border border-slate-200 px-2.5 text-sm font-bold text-slate-800"
+                        inputClassName="w-full h-9 rounded-lg bg-slate-50 border border-primary-300 px-2.5 text-sm font-bold text-slate-800"
                       />
                     </div>
                     {(extractedInvoice?.invoiceNo || extractedInvoice?.date) && (
-                      <div className="shrink-0 text-xs leading-4 tabular-nums text-right">
+                      <div className="shrink-0 text-[11px] leading-[14px] tabular-nums text-right">
                         {extractedInvoice?.invoiceNo && <p className="font-semibold text-slate-700">{extractedInvoice.invoiceNo}</p>}
                         {extractedInvoice?.date && <p className="text-slate-500">{extractedInvoice.date}</p>}
                       </div>
@@ -1001,8 +1001,8 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                     {newCount > 0 && (
                       <div className="relative shrink-0">
                         <button type="button" onClick={() => setMenuOpen(v => !v)} aria-label="المزيد من الإجراءات"
-                          className="h-11 w-11 grid place-items-center rounded-xl border border-slate-200 bg-white active:bg-slate-50 transition cursor-pointer">
-                          <MoreVertical className="w-5 h-5 text-slate-600" />
+                          className="h-9 w-9 grid place-items-center rounded-lg border border-slate-200 bg-white active:bg-slate-50 transition cursor-pointer">
+                          <MoreVertical className="w-4 h-4 text-slate-600" />
                         </button>
                         {menuOpen && (
                           <>
@@ -1027,7 +1027,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                     )}
                   </div>
 
-                  <div className="px-3 pb-1.5 space-y-1 empty:hidden">
+                  <div className="px-3 pb-1 space-y-1 empty:hidden">
                     {/* تلميح المورد بلا تعبئة تلقائية: الاسم المقروء من الصورة يُقترح بنقرة، لا يُلتقط بصمت */}
                     {!supplierName.trim() && (extractedInvoice?.supplierName || '').trim() && (() => {
                       const ocr = (extractedInvoice?.supplierName || '').trim();
@@ -1058,7 +1058,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                   dir="rtl"
                   role="group"
                   onScroll={onPagerScroll}
-                  className="flex-1 min-h-0 flex gap-1 px-3 py-2 bg-slate-50 overflow-x-auto snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                  className="flex-1 min-h-0 flex gap-1 px-3 py-1.5 bg-slate-50 overflow-x-auto snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 >
                   {items.length === 0 && (
                     <p className="w-full text-center text-sm font-bold text-slate-500 py-10">لا توجد أصناف في هذه الفاتورة.</p>
@@ -1096,35 +1096,36 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
           </AnimatePresence>
         </div>
 
-        {/* Footer: تنقّل بين الأدوية — في الصفحة الأخيرة يتحوّل «التالي» إلى زر الإضافة */}
+        {/* Footer: تنقّل بين الأدوية — في الصفحة الأخيرة يتحوّل «التالي» إلى زر الإضافة.
+            الأزرار أصغر بنسبة 30% عمّا كانت (ارتفاع 34px بدل 48px) لتتّسع صفحة الدواء في شاشة واحدة */}
         {step === 'review' && (
-          <div className="shrink-0 bg-white border-t border-slate-200 rounded-b-3xl px-3 pt-2 pb-[max(.5rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]">
+          <div className="shrink-0 bg-white border-t border-slate-200 rounded-b-3xl px-3 pt-1.5 pb-[max(.375rem,var(--safe-area-inset-bottom,env(safe-area-inset-bottom,0px)))]">
             {hasDuplicateBarcode && (
-              <p className="text-sm text-danger-600 font-semibold text-center mb-2">
+              <p className="text-xs text-danger-600 font-semibold text-center mb-1.5 leading-snug">
                 ⚠ يوجد باركود مكرّر لمادة موجودة — صحّحه أو اتركه فارغاً قبل المتابعة.
               </p>
             )}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-center gap-3">
               <button type="button" onClick={() => goToPage(pageIdx - 1)} disabled={pageIdx <= 0}
-                className="h-12 flex-1 rounded-xl border border-slate-200 bg-white text-slate-700 text-sm font-bold flex items-center justify-center gap-1.5 active:bg-slate-100 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
-                <ChevronRight className="w-5 h-5" />
+                className="h-[34px] w-[92px] rounded-lg border border-slate-200 bg-white text-slate-700 text-[13px] font-bold flex items-center justify-center gap-1 active:bg-slate-100 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+                <ChevronRight className="w-4 h-4" />
                 السابق
               </button>
-              <span className="shrink-0 min-w-[4.5rem] text-center text-sm font-bold tabular-nums text-slate-600">
+              <span className="shrink-0 min-w-[3.5rem] text-center text-[13px] font-bold tabular-nums text-slate-600">
                 {total > 0 ? <>{pageIdx + 1} من {total}</> : '—'}
               </span>
               {pageIdx >= total - 1 && total > 0 ? (
                 <button type="button" onClick={() => handleConfirm(false)} disabled={validCount === 0 || hasDuplicateBarcode}
                   title={queue.length > 0 ? `إضافة ${validCount} صنف ثم الفاتورة التالية (${queue.length} متبقية)` : `إضافة ${validCount} صنف إلى مسودة الشراء`}
-                  className="h-12 flex-1 rounded-xl bg-primary-600 text-white text-sm font-bold flex items-center justify-center gap-1.5 active:bg-primary-700 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
-                  <CheckCircle2 className="w-5 h-5" />
+                  className="h-[34px] min-w-[92px] px-3 rounded-lg bg-primary-600 text-white text-[13px] font-bold flex items-center justify-center gap-1 active:bg-primary-700 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+                  <CheckCircle2 className="w-4 h-4" />
                   {queue.length > 0 ? `إضافة ${validCount} ثم التالية` : `إضافة ${validCount}`}
                 </button>
               ) : (
                 <button type="button" onClick={() => goToPage(pageIdx + 1)} disabled={total === 0}
-                  className="h-12 flex-1 rounded-xl bg-primary-600 text-white text-sm font-bold flex items-center justify-center gap-1.5 active:bg-primary-700 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+                  className="h-[34px] w-[92px] rounded-lg bg-primary-600 text-white text-[13px] font-bold flex items-center justify-center gap-1 active:bg-primary-700 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
                   التالي
-                  <ChevronLeft className="w-5 h-5" />
+                  <ChevronLeft className="w-4 h-4" />
                 </button>
               )}
             </div>

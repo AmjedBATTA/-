@@ -28,10 +28,10 @@ const TONES: Record<Tone, { cell: string; label: string; value: string }> = {
   official: { cell: 'bg-special-50 border-special-100', label: 'text-special-700', value: 'text-special-800' },
   loss: { cell: 'bg-danger-50 border-danger-400', label: 'text-danger-700', value: 'text-danger-800' },
 };
-// خلية حقل: التسمية داخل الإطار فوق القيمة الكبيرة — ارتفاع 52px أعلى من حد اللمس المريح (44)
-const CELL = 'block h-[3.25rem] rounded-xl border px-3 pt-1 focus-within:border-primary-500 focus-within:ring-1 focus-within:ring-primary-500';
-const CELL_LABEL = 'block text-xs font-bold leading-4';
-const CELL_VALUE = 'w-full h-7 bg-transparent text-xl font-bold tabular-nums text-center focus:outline-none';
+// خلية حقل: التسمية داخل الإطار فوق القيمة — ارتفاع 44px تتّسع معه صفحة الدواء في شاشة واحدة
+const CELL = 'block h-11 rounded-xl border px-1.5 pt-0.5 focus-within:border-primary-500 focus-within:ring-1 focus-within:ring-primary-500';
+const CELL_LABEL = 'block text-[11px] font-bold leading-4 truncate';
+const CELL_VALUE = 'w-full h-6 bg-transparent font-bold tabular-nums text-center focus:outline-none';
 
 function NumCell({ label, value, min, tone = 'default', onChange }: {
   label: string; value: number; min: number; tone?: Tone; onChange: (n: number) => void;
@@ -43,7 +43,7 @@ function NumCell({ label, value, min, tone = 'default', onChange }: {
       <input type="number" inputMode="numeric" min={min} value={value}
         onFocus={e => e.target.select()}
         onChange={e => onChange(Math.max(min, Number(e.target.value)))}
-        className={`${CELL_VALUE} ${t.value}`} />
+        className={`${CELL_VALUE} ${String(value).length > 6 ? 'text-sm' : 'text-base'} ${t.value}`} />
     </label>
   );
 }
@@ -100,7 +100,7 @@ export default function InvoiceItemPage({
   const corrected = !!med && item.stockOverride !== undefined && item.stockOverride !== med.availableQuantity;
 
   return (
-    <div className="p-3 space-y-2 text-right">
+    <div className="p-2.5 space-y-1.5 text-right">
 
       {/* الشارة في طرف، والحذف (المدمّر) معزول في الطرف الآخر */}
       <div className="flex items-center justify-between h-6">
@@ -113,30 +113,30 @@ export default function InvoiceItemPage({
 
       {/* العنوان: الاسم الإنكليزي (قابل للتعديل) وبجانبه الشركة، وتحته اسم الفاتورة إن اختلف */}
       <div>
-        <div className="flex items-end gap-2 h-11">
+        <div className="flex items-end gap-2 h-9">
           <input
             dir="ltr"
             value={englishName}
             onChange={e => onUpdate(item.id, { nameEnOverride: e.target.value })}
             placeholder="English name"
-            className="flex-1 min-w-0 text-right text-lg font-bold text-slate-900 bg-transparent border-b border-dashed border-slate-200 focus:border-primary-500 focus:outline-none"
+            className={`flex-1 min-w-0 text-right font-bold text-slate-900 bg-transparent border-b border-dashed border-slate-200 focus:border-primary-500 focus:outline-none ${englishName.length > 26 ? 'text-sm' : englishName.length > 18 ? 'text-base' : 'text-lg'}`}
           />
           <input
             dir="auto"
             value={item.company}
             onChange={e => onUpdate(item.id, { company: e.target.value })}
             placeholder="الشركة"
-            className="w-28 shrink-0 text-right text-sm font-bold text-slate-500 bg-transparent border-b border-dashed border-slate-200 focus:border-primary-500 focus:outline-none"
+            className="w-24 shrink-0 text-right text-[13px] font-bold text-slate-500 bg-transparent border-b border-dashed border-slate-200 focus:border-primary-500 focus:outline-none"
           />
         </div>
-        {showRawName && <p dir="auto" className="text-xs text-slate-500 truncate mt-1">{item.rawName}</p>}
+        {showRawName && <p dir="auto" className="text-xs text-slate-500 truncate mt-0.5">{item.rawName}</p>}
       </div>
 
       {/* المطابقة: بطاقة خضراء للدواء المربوط وحمراء لغير المطابق. على يسارها (✕) لإلغاء الربط وفتح قائمة
           كتابة الاسم المطابق (للمطابق فقط)، ثم زرّ قراءة الباركود: يطابق الدواء تلقائياً إن كان مسجَّلاً
           في المخزون، وإلا يبقى الصنف مادة جديدة بهذا الباركود. */}
       <div>
-        <div className={`h-12 flex items-center gap-0.5 rounded-xl border ps-3 pe-1 ${med
+        <div className={`h-10 flex items-center gap-0.5 rounded-xl border ps-3 pe-1 ${med
           ? 'bg-primary-50 border-primary-100'
           : 'bg-danger-50 border-danger-300'}`}>
           {med ? (
@@ -151,18 +151,18 @@ export default function InvoiceItemPage({
           {med && (
             <button type="button" onClick={() => { onClearMatch(item.id); onOpenSearch(item.id); }}
               aria-label="إلغاء ربط المادة وكتابة اسم المادة المطابقة"
-              className="shrink-0 h-10 w-10 grid place-items-center rounded-lg text-slate-600 active:bg-white/70 transition cursor-pointer">
+              className="shrink-0 h-9 w-9 grid place-items-center rounded-lg text-slate-600 active:bg-white/70 transition cursor-pointer">
               <X className="w-5 h-5" />
             </button>
           )}
           <button type="button" onClick={() => onScanBarcode(item.id)}
             aria-label="قراءة الباركود بالكاميرا"
-            className="shrink-0 h-10 w-10 grid place-items-center rounded-lg text-slate-600 active:bg-white/70 transition cursor-pointer">
+            className="shrink-0 h-9 w-9 grid place-items-center rounded-lg text-slate-600 active:bg-white/70 transition cursor-pointer">
             <Barcode className="w-5 h-5" />
           </button>
         </div>
         {!med && (
-          <p dir="auto" className="text-xs font-medium text-danger-700 mt-1">
+          <p dir="auto" className="text-xs font-medium text-danger-700 mt-0.5 truncate">
             {item.barcode ? `باركود ${item.barcode} غير مسجَّل في المخزون — سيُحفظ كمادة جديدة` : 'أو اتركه ليُضاف مادةً جديدة'}
           </p>
         )}
@@ -170,18 +170,18 @@ export default function InvoiceItemPage({
 
       {/* تنبيهات هذا الدواء — تظهر فقط عند وجودها */}
       {alerts.length > 0 && (
-        <div className="space-y-1.5">
-          <div className="flex flex-wrap gap-1.5">
+        <div className="space-y-1">
+          <div className="flex flex-wrap gap-1">
             {alerts.map(a => (
               <button key={a.key} type="button" onClick={() => setOpenAlert(openAlert === a.key ? null : a.key)}
-                className={`h-8 px-2.5 rounded-full border text-xs font-semibold cursor-pointer ${a.tone === 'danger'
+                className={`h-7 px-2.5 rounded-full border text-xs font-semibold cursor-pointer ${a.tone === 'danger'
                   ? 'bg-danger-50 text-danger-800 border-danger-300'
                   : 'bg-warn-50 text-warn-800 border-warn-300'}`}>
                 {a.label}
               </button>
             ))}
           </div>
-          {openedAlert && <p className="text-xs text-slate-600 bg-slate-50 rounded-lg p-2 leading-relaxed">{openedAlert.text}</p>}
+          {openedAlert && <p className="text-xs text-slate-600 bg-slate-50 rounded-lg p-1.5 leading-snug">{openedAlert.text}</p>}
         </div>
       )}
 
@@ -190,13 +190,13 @@ export default function InvoiceItemPage({
       {med && (
         <div
           onDoubleClick={() => setEditingStock(true)}
-          className={`min-h-14 flex items-center gap-3 rounded-xl border px-3 py-1.5 select-none touch-manipulation cursor-pointer ${corrected ? 'bg-warn-50 border-warn-200' : 'bg-slate-100 border-slate-200'}`}
+          className={`min-h-11 flex items-center gap-2 rounded-xl border px-3 py-1 select-none touch-manipulation cursor-pointer ${corrected ? 'bg-warn-50 border-warn-200' : 'bg-slate-100 border-slate-200'}`}
         >
           <div className="flex-1 min-w-0">
-            <p className={`text-sm font-bold ${corrected ? 'text-warn-700' : 'text-slate-600'}`}>
+            <p className={`text-[13px] leading-5 font-bold ${corrected ? 'text-warn-700' : 'text-slate-600'}`}>
               المخزون الحالي{item.soldQty ? ' (مُباع بالكامل ✓)' : corrected ? ' (مُصحَّح ✎)' : ''}
             </p>
-            {!editingStock && <p className="text-xs text-slate-500">انقر مرتين للتصحيح</p>}
+            {!editingStock && <p className="text-[11px] leading-3 text-slate-500">انقر مرتين للتصحيح</p>}
           </div>
           {editingStock ? (
             <input
@@ -208,12 +208,12 @@ export default function InvoiceItemPage({
                 setEditingStock(false);
               }}
               onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingStock(false); }}
-              className="w-28 h-11 bg-white border border-slate-300 rounded-lg px-2 text-lg font-bold text-slate-900 text-center tabular-nums focus:outline-primary-400"
+              className="w-24 h-9 bg-white border border-slate-300 rounded-lg px-2 text-base font-bold text-slate-900 text-center tabular-nums focus:outline-primary-400"
             />
           ) : (
             <p className={`shrink-0 tabular-nums ${corrected ? 'text-warn-800' : 'text-slate-900'}`}>
               {corrected && <span className="text-xs text-slate-500 line-through ml-1.5">{fmtNum(med.availableQuantity)}</span>}
-              <span className="text-2xl font-bold">{fmtNum(currentStock)}</span>
+              <span className="text-xl font-bold">{fmtNum(currentStock)}</span>
               <span className="text-xs text-slate-500 mr-1">شريط</span>
             </p>
           )}
@@ -226,7 +226,7 @@ export default function InvoiceItemPage({
                 else onUpdate(item.id, { soldQty: med.availableQuantity, stockOverride: 0 });
               }}
               title={item.soldQty ? 'إلغاء اعتبار الرصيد مبيعاً' : 'اعتبار الرصيد الحالي كله مبيعاً (يُصفَّر المخزون وتُسجَّل فاتورة بيع عند الاعتماد)'}
-              className={`shrink-0 h-11 min-w-16 px-3 rounded-xl border text-sm font-bold cursor-pointer ${item.soldQty
+              className={`shrink-0 h-9 min-w-14 px-2.5 rounded-lg border text-[13px] font-bold cursor-pointer ${item.soldQty
                 ? 'bg-danger-500 border-danger-500 text-white'
                 : 'bg-danger-50 border-danger-200 text-danger-700 active:bg-danger-100'}`}>
               {item.soldQty ? `مباع ${fmtNum(item.soldQty)} ✓` : 'مباع'}
@@ -237,7 +237,7 @@ export default function InvoiceItemPage({
 
       {/* الكمية والتكلفة: علب، بونص، شريط/علبة، سعر العلبة. البونص علب مجانية تدخل المخزون وتخفّض
           التكلفة الفعلية دون أن تدخل في المبلغ المدفوع */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <div className="grid grid-cols-4 gap-1.5">
         <NumCell label="علب" value={item.quantityBoxes} min={1} onChange={n => onUpdate(item.id, { quantityBoxes: n })} />
         <NumCell label="بونص" value={bonus} min={0} tone={bonus > 0 ? 'bonus' : 'default'} onChange={n => onUpdate(item.id, { bonusBoxes: n })} />
         <NumCell label="شريط / علبة" value={item.stripsPerBox} min={1} onChange={n => onUpdate(item.id, { stripsPerBox: n })} />
@@ -245,20 +245,20 @@ export default function InvoiceItemPage({
       </div>
 
       {/* الناتج: تكلفة الشريط (مذوّبة بعد البونص) مع مقارنتها بآخر شراء */}
-      <div className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-1 min-h-11 rounded-xl border px-3 py-1.5 ${deviates ? 'bg-warn-50 border-warn-300' : 'bg-primary-50 border-primary-100'}`}>
-        <div className="flex items-center gap-2">
-          <span className={`text-xs font-bold ${deviates ? 'text-warn-700' : 'text-primary-700'}`}>تكلفة الشريط</span>
-          <span className={`text-xl font-bold tabular-nums ${deviates ? 'text-warn-800' : 'text-primary-800'}`}>{fmtNum(shownPerStrip)}</span>
+      <div className={`flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 min-h-9 rounded-xl border px-2.5 py-1 ${deviates ? 'bg-warn-50 border-warn-300' : 'bg-primary-50 border-primary-100'}`}>
+        <div className="flex items-center gap-1.5">
+          <span className={`text-[11px] font-bold ${deviates ? 'text-warn-700' : 'text-primary-700'}`}>تكلفة الشريط</span>
+          <span className={`text-lg font-bold tabular-nums ${deviates ? 'text-warn-800' : 'text-primary-800'}`}>{fmtNum(shownPerStrip)}</span>
           {bonus > 0 && (
             <span title={`السعر الأصلي للشريط ${fmtNum(pricePerStrip)} — خُفّض باحتساب البونص المجاني`}
-              className="h-5 px-1.5 inline-flex items-center rounded-full bg-primary-100 text-primary-700 text-xs font-semibold">مذوّب</span>
+              className="h-5 px-1.5 inline-flex items-center rounded-full bg-primary-100 text-primary-700 text-[11px] font-semibold">مذوّب</span>
           )}
         </div>
         {lastCost > 0 && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 tabular-nums">آخر شراء {fmtNum(lastCost)}</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] text-slate-500 tabular-nums">آخر شراء {fmtNum(lastCost)}</span>
             {deviation !== null && (
-              <span className={`h-6 px-2 inline-flex items-center rounded-full text-xs font-bold tabular-nums ${deviates
+              <span className={`h-5 px-1.5 inline-flex items-center rounded-full text-[11px] font-bold tabular-nums ${deviates
                 ? 'bg-warn-100 text-warn-800 border border-warn-300'
                 : deviation < 0 ? 'bg-money-50 text-money-700' : 'bg-slate-100 text-slate-600'}`}>
                 {deviation < 0 ? '▼' : '▲'}{Math.round(Math.abs(deviation) * 100)}%
@@ -268,29 +268,32 @@ export default function InvoiceItemPage({
         )}
       </div>
 
-      {/* أسعار البيع + تاريخ الانتهاء + إجمالي الأشرطة */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      {/* أسعار البيع للجمهور والرسمي */}
+      <div className="grid grid-cols-2 gap-1.5">
         <NumCell label="بيع الجمهور (شريط)" value={item.retailPrice} min={0} tone={sellLoss ? 'loss' : 'retail'} onChange={n => onUpdate(item.id, { retailPrice: n })} />
         <NumCell label="البيع الرسمي (شريط)" value={item.officialPrice} min={0} tone="official" onChange={n => onUpdate(item.id, { officialPrice: n })} />
-        <button type="button" onClick={() => onOpenExpiry(item.id)} className={`${CELL} ${TONES.default.cell} text-center cursor-pointer`}>
-          <span className={`${CELL_LABEL} ${TONES.default.label}`}>تاريخ الانتهاء</span>
-          <span dir="ltr" className={`block text-xl font-bold leading-7 ${item.expiry ? 'text-slate-900' : 'text-slate-400'}`}>
+      </div>
+
+      {/* تاريخ الانتهاء + إجمالي الأشرطة: خليتان بسطر واحد (التسمية وقيمتها متقابلتان) بارتفاع 36px */}
+      <div className="grid grid-cols-2 gap-1.5">
+        <button type="button" onClick={() => onOpenExpiry(item.id)}
+          className={`h-9 flex items-center justify-between gap-2 rounded-xl border px-3 cursor-pointer ${TONES.default.cell}`}>
+          <span className={`${CELL_LABEL} ${TONES.default.label}`}>الانتهاء</span>
+          <span dir="ltr" className={`shrink-0 whitespace-nowrap text-base font-bold tabular-nums ${item.expiry ? 'text-slate-900' : 'text-slate-400'}`}>
             {item.expiry ? `${Number(item.expiry.split('-')[1])} / ${item.expiry.split('-')[0]}` : '— / —'}
           </span>
         </button>
-        <div className={`${CELL} bg-slate-100 border-slate-200`}>
+        <div title={bonus > 0 ? `منها ${bonus * item.stripsPerBox} شريط بونص` : undefined}
+          className="h-9 flex items-center justify-between gap-2 rounded-xl border px-3 bg-slate-100 border-slate-200">
           <span className={`${CELL_LABEL} text-slate-500`}>إجمالي الأشرطة</span>
-          <span className="block text-xl font-bold leading-7 tabular-nums text-center text-slate-800">
-            {totalStrips}
-            {bonus > 0 && <span className="text-xs text-primary-700 mr-1">({bonus * item.stripsPerBox} بونص)</span>}
-          </span>
+          <span className="shrink-0 whitespace-nowrap text-base font-bold tabular-nums text-slate-800">{totalStrips}</span>
         </div>
       </div>
 
       {/* المزيد: الاسم العربي (للبحث) وباركود المادة الجديدة */}
-      <div ref={moreRef} className="border-t border-slate-100 pt-1">
+      <div ref={moreRef} className="border-t border-slate-100 pt-0.5">
         <button type="button" onClick={() => setMoreOpen(v => !v)} disabled={!!dupMed}
-          className="h-11 w-full flex items-center justify-between text-sm font-bold text-slate-500 cursor-pointer disabled:cursor-default">
+          className="h-8 w-full flex items-center justify-between text-sm font-bold text-slate-500 cursor-pointer disabled:cursor-default">
           <span>المزيد</span>
           <ChevronDown className={`w-4 h-4 transition ${showMore ? 'rotate-180' : ''}`} />
         </button>
