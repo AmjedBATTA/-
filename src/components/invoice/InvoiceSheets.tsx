@@ -44,12 +44,11 @@ interface SearchSheetProps {
   query: string;
   onQuery: (q: string) => void;
   onPick: (med: Medicine) => void;
-  onUnlink?: () => void; // للصنف المطابق فقط — يلغي الربط ويعيده «جديداً» (ويُنسي المطابقة المتعلَّمة)
   onClose: () => void;
 }
 
 // ربط صنف جديد بدواء موجود في المخزون: مقترحات قريبة من اسم الفاتورة، أو بحث حر بالاسم
-export function MedicineSearchSheet({ item, inventory, aliases, query, onQuery, onPick, onUnlink, onClose }: SearchSheetProps) {
+export function MedicineSearchSheet({ item, inventory, aliases, query, onQuery, onPick, onClose }: SearchSheetProps) {
   const suggestions = useMemo(() => {
     const { medicine } = matchToInventory(item.arabicName || item.rawName, inventory, item.rawName, aliases);
     const nb = (item.arabicName || item.rawName).toLowerCase();
@@ -102,12 +101,6 @@ export function MedicineSearchSheet({ item, inventory, aliases, query, onQuery, 
             <span className="shrink-0 text-xs tabular-nums text-slate-500">{med.availableQuantity} شريط</span>
           </button>
         ))}
-        {onUnlink && (
-          <button type="button" onClick={onUnlink}
-            className="w-full h-11 mt-1 text-sm font-bold text-danger-700 active:bg-danger-50 rounded-xl transition cursor-pointer">
-            فكّ الربط
-          </button>
-        )}
       </div>
     </SheetShell>
   );

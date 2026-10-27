@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertCircle, Barcode, CheckCircle2, ChevronDown, Search, Trash2 } from 'lucide-react';
+import { AlertCircle, Barcode, ChevronDown, Search, Trash2, X } from 'lucide-react';
 import type { Medicine, ExtractedInvoiceItem } from '../../types';
 import { fmtNum } from '../../utils/format';
 import { cleanEnName, medDisplayName } from '../../utils/medName';
@@ -13,6 +13,7 @@ interface Props {
   barcodeOwner: (barcode: string) => Medicine | null;
   onUpdate: (id: string, patch: Partial<ExtractedInvoiceItem>) => void;
   onRemove: (id: string) => void;
+  onClearMatch: (id: string) => void;
   onOpenSearch: (id: string) => void;
   onOpenExpiry: (id: string) => void;
   onApplyBarcode: (id: string, barcode: string) => void;
@@ -52,7 +53,7 @@ function NumCell({ label, value, min, tone = 'default', onChange }: {
  * بلا منطق أعمال: كل التعديلات تعود للأب عبر onUpdate وأخواتها، فلا يتغيّر الاعتماد ولا المسودة ولا التعلّم.
  */
 export default function InvoiceItemPage({
-  item, barcodeOwner, onUpdate, onRemove, onOpenSearch, onOpenExpiry, onApplyBarcode, onScanBarcode,
+  item, barcodeOwner, onUpdate, onRemove, onClearMatch, onOpenSearch, onOpenExpiry, onApplyBarcode, onScanBarcode,
 }: Props) {
   const med = item.matchedMedicine;
   const { pricePerStrip, bonus, shownPerStrip, deviation, deviates } = itemCostView(item);
@@ -131,24 +132,41 @@ export default function InvoiceItemPage({
         {showRawName && <p dir="auto" className="text-xs text-slate-500 truncate mt-1">{item.rawName}</p>}
       </div>
 
-      {/* المطابقة: بطاقة كلها زرّ تفتح ورقة الربط (وفيها «فكّ الربط»)، أو زر بحث بارز للجديد */}
-      {med ? (
-        <button type="button" onClick={() => onOpenSearch(item.id)}
-          className="h-12 w-full flex items-center gap-2 rounded-xl px-3 bg-primary-50 border border-primary-100 text-right cursor-pointer">
-          <CheckCircle2 className="w-5 h-5 text-primary-600 shrink-0" />
-          <span dir="ltr" className="flex-1 min-w-0 truncate text-right text-sm font-semibold text-primary-800">{medDisplayName(med)}</span>
-          <span className="shrink-0 text-sm font-bold text-primary-700">تغيير</span>
-        </button>
-      ) : (
-        <div>
-          <button type="button" onClick={() => onOpenSearch(item.id)}
-            className="h-14 w-full rounded-xl bg-warn-50 border-2 border-dashed border-warn-300 px-3 flex items-center gap-2 text-right cursor-pointer">
-            <Search className="w-5 h-5 text-warn-700 shrink-0" />
-            <span className="flex-1 text-sm font-bold text-warn-800">ابحث لربطه بدواء في المخزون</span>
+      {/* المطابقة: بطاقة خضراء للدواء المربوط وحمراء لغير المطابق. على يسارها (✕) لإلغاء الربط وفتح قائمة
+          كتابة الاسم المطابق (للمطابق فقط)، ثم زرّ قراءة الباركود: يطابق الدواء تلقائياً إن كان مسجَّلاً
+          في المخزون، وإلا يبقى الصنف مادة جديدة بهذا الباركود. */}
+      <div>
+        <div className={`h-12 flex items-center gap-0.5 rounded-xl border ps-3 pe-1 ${med
+          ? 'bg-primary-50 border-primary-100'
+          : 'bg-danger-50 border-danger-300'}`}>
+          {med ? (
+            <span dir="ltr" className="flex-1 min-w-0 truncate text-right text-sm font-semibold text-primary-800">{medDisplayName(med)}</span>
+          ) : (
+            <button type="button" onClick={() => onOpenSearch(item.id)}
+              className="flex-1 min-w-0 h-full flex items-center gap-2 text-right cursor-pointer">
+              <Search className="w-5 h-5 text-danger-700 shrink-0" />
+              <span className="flex-1 truncate text-sm font-bold text-danger-800">ابحث لربطه بدواء في المخزون</span>
+            </button>
+          )}
+          {med && (
+            <button type="button" onClick={() => { onClearMatch(item.id); onOpenSearch(item.id); }}
+              aria-label="إلغاء ربط المادة وكتابة اسم المادة المطابقة"
+              className="shrink-0 h-10 w-10 grid place-items-center rounded-lg text-slate-600 active:bg-white/70 transition cursor-pointer">
+              <X className="w-5 h-5" />
+            </button>
+          )}
+          <button type="button" onClick={() => onScanBarcode(item.id)}
+            aria-label="قراءة الباركود بالكاميرا"
+            className="shrink-0 h-10 w-10 grid place-items-center rounded-lg text-slate-600 active:bg-white/70 transition cursor-pointer">
+            <Barcode className="w-5 h-5" />
           </button>
-          <p className="text-xs font-medium text-warn-700 mt-1">أو اتركه ليُضاف مادةً جديدة</p>
         </div>
-      )}
+        {!med && (
+          <p dir="auto" className="text-xs font-medium text-danger-700 mt-1">
+            {item.barcode ? `باركود ${item.barcode} غير مسجَّل في المخزون — سيُحفظ كمادة جديدة` : 'أو اتركه ليُضاف مادةً جديدة'}
+          </p>
+        )}
+      </div>
 
       {/* تنبيهات هذا الدواء — تظهر فقط عند وجودها */}
       {alerts.length > 0 && (

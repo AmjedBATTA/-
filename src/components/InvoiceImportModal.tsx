@@ -14,7 +14,7 @@ import type { InvoiceAliasMap, StripsMemoryMap, InvoiceImage } from '../utils/in
 import { medDisplayName, cleanEnName } from '../utils/medName';
 import InvoiceItemPage from './invoice/InvoiceItemPage';
 import { MedicineSearchSheet, ExpirySheet } from './invoice/InvoiceSheets';
-import { itemNeedsAttention, itemFrameClass, cleanEnglishName } from './invoice/reviewHelpers';
+import { itemFrameClass, cleanEnglishName } from './invoice/reviewHelpers';
 
 interface DraftItem {
   id: string;
@@ -526,12 +526,6 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
   const validCount = items.filter(it => it.quantityBoxes > 0 && it.pricePerBox > 0).length;
   const matchedValidCount = items.filter(it => it.matchedMedicine && it.quantityBoxes > 0 && it.pricePerBox > 0).length;
 
-  // مطابقة الإجمالي: مجموع الأسطر مقابل إجمالي الفاتورة المقروء — فرق يعني سطراً ضائعاً أو رقماً خاطئاً
-  const linesTotal = items.reduce((sum, it) => sum + it.quantityBoxes * it.pricePerBox, 0);
-  const invoiceTotal = extractedInvoice?.totalAmount || 0;
-  const totalDiff = invoiceTotal > 0 && linesTotal > 0 ? linesTotal - invoiceTotal : 0;
-  const totalMismatch = Math.abs(totalDiff) > Math.max(250, invoiceTotal * 0.01);
-
   // فاتورة مكرّرة: نفس رقم الفاتورة سبق اعتماده في طلبية سابقة (للمورد نفسه إن كان معروفاً)
   const invoiceNo = (extractedInvoice?.invoiceNo || '').trim();
   const duplicateOrder = invoiceNo
@@ -539,8 +533,6 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
         && (!supplierName.trim() || !o.supplierName || o.supplierName === supplierName.trim()))
     : undefined;
 
-  // أصناف تحتاج انتباه المراجع (غير واضح، انحراف سعري، بيع بخسارة، سعر صفر) — تُعرض تفاصيلها في صفحة كل صنف
-  const attentionCount = items.filter(itemNeedsAttention).length;
   const removeUnmatched = async () => {
     if (!newCount) return;
     if (!(await confirmDialog({ title: `حذف ${newCount} صنف غير مطابق من هذه الفاتورة؟`, confirmText: 'حذف', danger: true }))) return;
@@ -605,6 +597,16 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, pageIdx, total, sheet, scanningItemId]);
+  // السحب الأفقي الزائد عند أول/آخر صفحة يفسّره بعض المتصفحات إيماءة «رجوع» تُخرج المستخدم من التطبيق؛
+  // نمنعه على الجذر فقط ما دامت المراجعة مفتوحة. لا نضع overscroll-behavior-x على الحاوية ولا على الصفحات:
+  // اختُبر في Chrome فكان وضعه عليهما هو ما يُفعّل الإيماءة، وتركه تلقائياً يُمرّر الزائد إلى الجذر فيُمنع.
+  useEffect(() => {
+    if (step !== 'review') return;
+    const root = document.documentElement;
+    const prev = root.style.overscrollBehaviorX;
+    root.style.overscrollBehaviorX = 'none';
+    return () => { root.style.overscrollBehaviorX = prev; };
+  }, [step]);
   const sheetItem = sheet ? items.find(i => i.id === sheet.itemId) : undefined;
 
   // صاحب باركود موجود مسبقاً في المخزون — الباركود مطابقة مؤكَّدة 100%، أوثق من تطابق الاسم الضبابي
@@ -613,12 +615,20 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
     if (!b) return null;
     return inventory.find(m => (m.barcode || '').trim() === b) || null;
   };
-  // إدخال/مسح باركود لمادة «جديدة» يتبيّن أنه مسجَّل فعلاً لدواء في المخزون: نربطها به تلقائياً
-  // (نفس أثر اختياره يدوياً من مربّع البحث) بدل تركها «جديدة» خلف تحذير يُبقيها عالقة.
+  // إدخال/مسح باركود لصنف: إن كان مسجَّلاً لدواء في المخزون نربط الصنف به تلقائياً (نفس أثر اختياره يدوياً
+  // من مربّع البحث) بدل تركه «جديداً» خلف تحذير يُبقيه عالقاً. وإن لم يكن مسجَّلاً فالصنف مادة جديدة
+  // بهذا الباركود — وإن كان مربوطاً بدواء من قبل فيُفكّ ربطه أولاً.
   const applyBarcode = (itemId: string, barcode: string) => {
     const owner = barcodeOwner(barcode);
-    if (owner) selectMedicine(itemId, owner);
-    else updateItem(itemId, { barcode });
+    const it = items.find(x => x.id === itemId);
+    if (owner) {
+      // الباركود لنفس الدواء المربوط أصلاً: لا شيء يتغيّر (وإلا تُمسح أسعار عدّلها المستخدم)
+      if (it?.matchedMedicine?.id === owner.id) return;
+      selectMedicine(itemId, owner);
+      return;
+    }
+    if (it?.matchedMedicine) clearMatch(itemId);
+    updateItem(itemId, { barcode });
   };
   // شبكة أمان: صنف بقي بلا مطابقة وباركوده مع ذلك مسجَّل لمادة أخرى (مثلاً بعد إلغاء ربطه يدوياً)
   const hasDuplicateBarcode = items.some(it => !it.matchedMedicine && !!barcodeOwner(it.barcode || ''));
@@ -1030,30 +1040,25 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                           text={`المورد المكتوب في الفاتورة: «${ocr}» — غير محفوظ، إضافته كمورد جديد؟`} />
                       );
                     })()}
+                    {/* التنبيه الوحيد المُبقى في هذه المنطقة: يظهر فقط إن كانت الفاتورة مكرّرة */}
                     {duplicateOrder && (
                       <AlertLine tone="danger"
                         text={`فاتورة مكرّرة؟ الرقم «${invoiceNo}» سبق اعتماده بتاريخ ${duplicateOrder.date}${duplicateOrder.supplierName ? ` للمورد «${duplicateOrder.supplierName}»` : ''} بقيمة ${fmtNum(duplicateOrder.totalAmount)} د.ع.`} />
-                    )}
-                    {totalMismatch && (
-                      <AlertLine tone="danger"
-                        text={`مجموع الأسطر ${fmtNum(linesTotal)} ≠ إجمالي الفاتورة ${fmtNum(invoiceTotal)} د.ع (فرق ${totalDiff > 0 ? '+' : ''}${fmtNum(totalDiff)}) — قد يكون سطر ضائع أو رقم مقروء خطأً.`} />
-                    )}
-                    {/* تنبيه سلبي بلا تنقّل: تفاصيل كل صنف (غير واضح، انحراف سعر، بيع بخسارة، سعر صفر) في صفحته */}
-                    {attentionCount > 0 && (
-                      <AlertLine tone="warn" text={`${attentionCount} صنف يحتاج انتباهك — صفحاته بحدّ أحمر أثناء التمرير.`} />
                     )}
                   </div>
                 </div>
 
                 {/* الصفحات: السحب الأفقي يتبع اتجاه القراءة العربية (الأول عند اليمين).
                     حافة الصفحة التالية تطلّ قليلاً فتدلّ على إمكان السحب. الصفحة الحالية وجارتاها فقط
-                    تُرسم كاملة؛ البقية هياكل خفيفة بالعرض نفسه فيبقى التمرير سلساً مع القوائم الكبيرة */}
+                    تُرسم كاملة؛ البقية هياكل خفيفة بالعرض نفسه فيبقى التمرير سلساً مع القوائم الكبيرة.
+                    الصفحة تمنع التسلسل الرأسي فقط (overscroll-y-contain): المنع الكامل كان يحجب السحب الأفقي
+                    باللمس عن الحاوية فلا تنتقل الصفحات إلا بالأزرار، وكان المتصفح يفسّره إيماءة «رجوع». */}
                 <div
                   ref={pagerRef}
                   dir="rtl"
                   role="group"
                   onScroll={onPagerScroll}
-                  className="flex-1 min-h-0 flex gap-1 px-3 py-2 bg-slate-50 overflow-x-auto snap-x snap-mandatory overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                  className="flex-1 min-h-0 flex gap-1 px-3 py-2 bg-slate-50 overflow-x-auto snap-x snap-mandatory [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 >
                   {items.length === 0 && (
                     <p className="w-full text-center text-sm font-bold text-slate-500 py-10">لا توجد أصناف في هذه الفاتورة.</p>
@@ -1063,7 +1068,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                       key={item.id}
                       role="group"
                       aria-label={`دواء ${i + 1} من ${total}`}
-                      className={`w-[calc(100%-.5rem)] shrink-0 snap-center snap-always overflow-y-auto overscroll-contain rounded-2xl bg-white ${itemFrameClass(item)}`}
+                      className={`w-[calc(100%-.5rem)] shrink-0 snap-center snap-always overflow-y-auto overscroll-y-contain rounded-2xl bg-white ${itemFrameClass(item)}`}
                     >
                       {Math.abs(i - pageIdx) <= 1 ? (
                         <InvoiceItemPage
@@ -1071,6 +1076,7 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
                           barcodeOwner={barcodeOwner}
                           onUpdate={updateItem}
                           onRemove={removeItem}
+                          onClearMatch={clearMatch}
                           onOpenSearch={id => { setSheet({ kind: 'search', itemId: id }); setSearchQuery(''); }}
                           onOpenExpiry={id => setSheet({ kind: 'expiry', itemId: id })}
                           onApplyBarcode={applyBarcode}
@@ -1136,7 +1142,6 @@ export default function InvoiceImportModal({ inventory, suppliers, supplierMemor
               query={searchQuery}
               onQuery={setSearchQuery}
               onPick={med => selectMedicine(sheetItem.id, med)}
-              onUnlink={sheetItem.matchedMedicine ? () => { clearMatch(sheetItem.id); setSheet(null); setSearchQuery(''); } : undefined}
               onClose={() => { setSheet(null); setSearchQuery(''); }}
             />
           )}
